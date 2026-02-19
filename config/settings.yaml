@@ -1,0 +1,48 @@
+# Modular RAG MCP Server - 主配置文件
+
+# LLM 配置
+llm:
+  provider: azure           # azure | openai | ollama | deepseek
+  model: gpt-4o
+  azure_endpoint: ""
+  api_key: ""
+
+# Embedding 配置
+embedding:
+  provider: openai          # openai | azure | ollama
+  model: text-embedding-3-small
+
+# Vision LLM 配置
+vision_llm:
+  provider: azure           # azure
+  model: gpt-4o
+
+# 向量存储配置
+vector_store:
+  backend: chroma           # chroma
+  persist_path: ./data/db/chroma
+
+# 检索配置
+retrieval:
+  sparse_backend: bm25      # bm25
+  fusion_algorithm: rrf     # rrf
+  top_k_dense: 20
+  top_k_sparse: 20
+  top_k_final: 10
+
+# 重排配置
+rerank:
+  backend: none             # none | cross_encoder | llm
+  model: ""
+  top_m: 30
+
+# 评估配置
+evaluation:
+  backends:
+    - custom
+  golden_test_set: ./tests/fixtures/golden_test_set.json
+
+# 可观测性配置
+observability:
+  enabled: true
+  log_file: ./logs/traces.jsonl
