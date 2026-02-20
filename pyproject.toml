@@ -24,8 +24,10 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 markers = [
     "unit: Unit tests (fast, no external deps)",
     "integration: Integration tests (may need external services)",
     "e2e: End-to-end tests (full pipeline)",
 ]
+addopts = "-v --tb=short"
