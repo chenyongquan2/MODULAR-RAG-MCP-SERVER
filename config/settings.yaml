@@ -22,6 +22,12 @@ vector_store:
   backend: chroma           # chroma
   persist_path: ./data/db/chroma
 
+# 文本切分配置
+splitter:
+  strategy: recursive       # recursive | semantic | fixed
+  chunk_size: 1000
+  chunk_overlap: 200
+
 # 检索配置
 retrieval:
   sparse_backend: bm25      # bm25
@@ -35,6 +41,11 @@ rerank:
   backend: none             # none | cross_encoder | llm
   model: ""
   top_m: 30
+
+# 摄取管道配置
+ingestion:
+  chunk_refiner:
+    use_llm: false
 
 # 评估配置
 evaluation:
