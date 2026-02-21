@@ -184,13 +184,13 @@ def _build_sub_settings(
             return cls()
         except TypeError:
             raise SettingsError(
-                f"配置缺失必填 section: '{section_name}'"
+                f"Missing required config section: '{section_name}'"
             )
     try:
         return cls(**{k: v for k, v in raw.items() if v is not None})
     except TypeError as exc:
         raise SettingsError(
-            f"配置 section '{section_name}' 字段不完整: {exc}"
+            f"Incomplete fields in config section '{section_name}': {exc}"
         ) from exc
 
 
@@ -213,16 +213,16 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     """
     config_path = Path(path)
     if not config_path.exists():
-        raise SettingsError(f"配置文件不存在: {config_path}")
+        raise SettingsError(f"Config file not found: {config_path}")
 
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             raw: Any = yaml.safe_load(f)
     except yaml.YAMLError as exc:
-        raise SettingsError(f"YAML 解析失败: {exc}") from exc
+        raise SettingsError(f"Failed to parse YAML: {exc}") from exc
 
     if not isinstance(raw, dict):
-        raise SettingsError("配置文件内容不是合法的 YAML 映射")
+        raise SettingsError("Config file content is not a valid YAML mapping")
 
     # 环境变量覆盖 api_key（优先级：环境变量 > yaml）
     llm_raw: dict[str, Any] = raw.get("llm") or {}
@@ -291,5 +291,5 @@ def validate_settings(settings: Settings) -> None:
         dotted = ".".join(field_path)
         if obj is None or (isinstance(obj, str) and obj.strip() == ""):
             raise SettingsError(
-                f"必填配置字段缺失或为空: '{dotted}'"
+                f"Required config field is missing or empty: '{dotted}'"
             )

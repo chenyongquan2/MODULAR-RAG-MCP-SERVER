@@ -1917,6 +1917,17 @@ dashboard:
 > - **先打通主闭环，再补齐默认实现**：优先做“可跑通的端到端路径（Ingestion → Retrieval → MCP Tool）”，并在 Libs 层补齐可运行的默认后端实现，避免出现“只有接口没有实现”的空转。
 > - **外部依赖可替换/可 Mock**：LLM/Embedding/Vision/VectorStore 的真实调用在单元测试中一律用 Fake/Mock，集成测试再开真实后端（可选）。
 
+> **编码规范（全局约束，适用于所有阶段）**
+> 
+> - **日志与异常语言：English Only**：所有代码中的日志消息（`logger.info/warning/error`）、异常消息（`raise XxxError("...")`）、CLI 输出（`print`）**必须使用英文**。
+>   - **注释与 docstring：允许中文**：代码注释（comments）和 docstring **可以使用中文**，便于团队阅读理解。
+>   - 中文还可出现在面向最终用户的文档（README、DEV_SPEC）和 Prompt 模板中。
+>   - ✅ `logger.info("Settings loaded successfully from %s", path)`
+>   - ✅ `"""配置加载与校验（Settings）。"""`
+>   - ❌ `logger.info("配置加载成功：%s", path)`
+>   - ✅ `raise SettingsError("Missing required field: embedding.provider")`
+>   - ❌ `raise SettingsError("缺少必填字段：embedding.provider")`
+
 ### 阶段总览（大阶段 → 目的）
 
 1. **阶段 A：工程骨架与测试基座**

@@ -16,7 +16,7 @@ def main() -> None:
     try:
         settings = load_settings()
     except SettingsError as exc:
-        logger.error("配置加载失败: %s", exc)
+        logger.error("Failed to load settings: %s", exc)
         sys.exit(1)
 
     logger.info(
