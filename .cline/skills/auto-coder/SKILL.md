@@ -194,7 +194,21 @@ ask_followup_question(
 📊 执行摘要：
    - 创建/修改文件：[列出所有文件]
    - 测试结果：X/X passed (Y skipped)
-   - 建议提交信息：feat(模块): [任务ID] 简短描述
+
+📝 建议提交信息（严格遵循Conventional Commits规范）：
+   格式：<type>(<scope>): [<TaskID>] <description>
+   
+   type:        feat
+   scope:       {auto_detected_scope}
+   TaskID:      [任务ID]
+   description: {brief_english_description}
+   
+   完整示例：feat({scope}): [任务ID] {description}
+   
+   ⚠️ 格式要求（见下方5.1节）：
+   - TaskID必须用方括号 [B7.2]
+   - 描述用英文，小写开头，祈使句
+   - scope根据代码路径自动确定
 
 请选择下一步操作：
 """,
@@ -211,7 +225,7 @@ ask_followup_question(
 - **"commit"**: 
   ```powershell
   git add .
-  git commit -m "feat(模块): [任务ID] 简短描述"
+  git commit -m "<type>(<scope>): [<TaskID>] <description>"
   ```
   然后使用 `attempt_completion` 展示结果
 
@@ -220,6 +234,108 @@ ask_followup_question(
 
 - **"next"**: 
   先执行 commit，然后循环回到步骤 1 开始下一个任务
+
+---
+
+### 5.1 Commit Message Convention
+
+**统一格式规范（Conventional Commits）：**
+
+```
+<type>(<scope>): [<TaskID>] <description>
+```
+
+#### Type 类型定义
+
+| Type | 使用场景 | 示例 |
+|------|---------|------|
+| `feat` | 新功能实现 | `feat(llm): [B7.2] implement Ollama LLM provider` |
+| `fix` | Bug修复 | `fix(reranker): [B5.1] handle empty query gracefully` |
+| `docs` | 文档更新 | `docs(readme): [A1] update installation guide` |
+| `test` | 测试相关（新增/修改测试） | `test(embedding): [B3.2] add batch processing tests` |
+| `refactor` | 代码重构（无功能变化） | `refactor(splitter): [B2] simplify semantic chunking logic` |
+| `perf` | 性能优化 | `perf(vector_store): [B4.1] optimize batch upsert` |
+| `chore` | 构建/工具/依赖变更 | `chore(deps): [INFRA] upgrade pytest to 8.0` |
+
+#### Scope 自动映射规则
+
+根据任务涉及的代码路径自动确定scope：
+
+| 代码路径 | Scope | 典型TaskID |
+|---------|-------|-----------|
+| `src/libs/llm/*` | `llm` | B7.x |
+| `src/libs/embedding/*` | `embedding` | B3.x |
+| `src/libs/reranker/*` | `reranker` | B5.x |
+| `src/libs/vector_store/*` | `vector_store` | B4.x |
+| `src/libs/splitter/*` | `splitter` | B2.x |
+| `src/libs/evaluator/*` | `evaluator` | B6.x |
+| `src/libs/loader/*` | `loader` | - |
+| `src/ingestion/*` | `ingestion` | - |
+| `src/core/query_engine/*` | `query` | - |
+| `src/core/response/*` | `response` | - |
+| `src/core/trace/*` | `trace` | - |
+| `src/mcp_server/*` | `mcp` | - |
+| `src/observability/*` | `observability` | - |
+| `.github/skills/*`, `.claude/skills/*`, `.cline/skills/*` | `skills` | - |
+| 多模块 | 使用主要模块或 `core` | - |
+
+#### 强制规则
+
+| 规则 | 正确 ✅ | 错误 ❌ |
+|------|---------|---------|
+| TaskID格式 | `[B7.2]` | `(B7.2)`, `B7.2`, `B7.2:` |
+| TaskID位置 | `feat(llm): [B7.2] implement` | `feat(llm): implement (B7.2)`, `feat(B7.2): implement` |
+| 描述语言 | 英文 | 中文 |
+| 描述大小写 | 小写开头 `implement` | 大写开头 `Implement` |
+| 描述语态 | 祈使句动词原形 `add`, `fix`, `update` | 过去式 `added`, 现在分词 `adding` |
+| Scope必填 | `feat(llm): [B7.2]` | `feat: [B7.2]` |
+| 格式顺序 | `type(scope): [TaskID] desc` | `type: [TaskID](scope) desc` |
+
+#### 完整示例
+
+```bash
+# 功能实现
+feat(llm): [B7.2] implement Ollama LLM provider
+feat(embedding): [B3.1] add Azure OpenAI embedding support
+
+# Bug修复
+fix(reranker): [B5.1] handle empty query list gracefully
+fix(vector_store): [B4.2] correct batch size calculation
+
+# 文档更新
+docs(readme): [A1] update installation instructions
+docs(api): [B7] add LLM provider usage examples
+
+# 测试
+test(evaluator): [B6.1] add custom metric validation tests
+test(integration): [E2E] add end-to-end RAG pipeline test
+
+# 重构
+refactor(splitter): [B2.3] extract chunk overlap logic
+refactor(query): [C1] simplify fusion algorithm
+
+# 性能优化
+perf(embedding): [B3.2] optimize batch encoding with async
+perf(vector_store): [B4.1] add connection pooling
+
+# 工具/构建
+chore(deps): [INFRA] upgrade pytest to 8.0
+chore(ci): [INFRA] add pre-commit hooks
+```
+
+#### 自动检测Scope的逻辑
+
+在步骤5询问用户时，应自动检测修改的文件路径并推荐scope：
+
+```python
+# 伪代码示例
+modified_files = ["src/libs/llm/ollama_llm.py", "tests/unit/test_ollama_llm.py"]
+scope = detect_scope_from_paths(modified_files)  # 返回 "llm"
+
+# 如果涉及多个模块
+modified_files = ["src/libs/llm/base.py", "src/libs/embedding/base.py"]
+scope = detect_scope_from_paths(modified_files)  # 返回主要模块或 "core"
+```
 
 **⚠️ 绝对禁止的行为：**
 - ❌ 不得跳过 `ask_followup_question` 直接使用 `attempt_completion`
