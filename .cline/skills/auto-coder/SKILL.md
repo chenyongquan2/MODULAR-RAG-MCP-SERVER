@@ -164,14 +164,23 @@ Round 3 still failing → STOP, show failure report to user
 
 **执行步骤：**
 
-1. **Update `DEV_SPEC.md`** (global file): change task marker `[ ]` → `[x]`
+1. **Update `DEV_SPEC.md`** (global file):
+   - Locate task in relevant chapter (e.g., "## 阶段 B" section)
+   - Change marker: `[ ]` → `[x]`
+   - Fill completion date if column exists
 
-2. **Re-sync**: 
+2. **Update schedule file**:
+   - Open `.github/skills/auto-coder/specs/06-schedule.md`
+   - Find task row in progress table
+   - Update: 状态 `[ ]` → `[x]`, 完成日期 `2026-02-22` (or current date)
+   - Update stage progress: 已完成任务数 +1, 重新计算百分比
+
+3. **Re-sync for verification**: 
 ```powershell
 python .github/skills/auto-coder/scripts/sync_spec.py --force
 ```
 
-3. **🚨 MANDATORY: 使用 ask_followup_question 工具暂停并询问用户**
+4. **🚨 MANDATORY: 使用 ask_followup_question 工具暂停并询问用户**
 
 **✅ CHECKPOINT - 必须执行以下操作：**
 
