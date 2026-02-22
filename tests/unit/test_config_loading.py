@@ -190,7 +190,7 @@ class TestFileErrors:
 
     def test_missing_yaml_file_raises(self) -> None:
         """不存在的配置文件应报错。"""
-        with pytest.raises(SettingsError, match="不存在"):
+        with pytest.raises(SettingsError, match="not found"):
             load_settings("/nonexistent/path/settings.yaml")
 
     def test_invalid_yaml_raises(self, tmp_path: Path) -> None:
@@ -206,7 +206,7 @@ class TestFileErrors:
         p = tmp_path / "list.yaml"
         p.write_text("- item1\n- item2\n", encoding="utf-8")
 
-        with pytest.raises(SettingsError, match="映射"):
+        with pytest.raises(SettingsError, match="not a valid YAML mapping"):
             load_settings(str(p))
 
 
