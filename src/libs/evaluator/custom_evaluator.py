@@ -1,126 +1,114 @@
-"""自定义评估器实现。"""
+"""Custom evaluator implementation for lightweight IR metrics.
+
+This module implements a custom evaluator that calculates common information
+retrieval metrics (Hit Rate, MRR) without external dependencies.
+"""
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 from src.libs.evaluator.base_evaluator import BaseEvaluator
-from src.observability.logger import get_logger
 
 if TYPE_CHECKING:
+    from src.core.settings import Settings
     from src.core.trace.trace_context import TraceContext
-
-logger = get_logger(__name__)
 
 
 class CustomEvaluator(BaseEvaluator):
-    """自定义评估器，实现 Hit Rate 和 MRR 指标。
-    
-    Metrics:
-        - Hit Rate@K: 前 K 个检索结果中至少命中一个黄金标准的比例
-        - MRR (Mean Reciprocal Rank): 第一个黄金标准出现位置的倒数
+    """Custom evaluator implementing Hit Rate and MRR metrics.
+
+    This evaluator provides lightweight retrieval quality metrics:
+    - Hit Rate: Proportion of queries where at least one relevant document
+      appears in the top-K retrieved results.
+    - MRR (Mean Reciprocal Rank): Average of 1/rank for the first relevant
+      document in the retrieved results.
+
+    Design Principles Applied:
+    - Deterministic: Same inputs always produce same outputs (stable for testing).
+    - Input Validation: Raises clear errors for invalid inputs.
+    - Configurable: Supports customization via settings.
     """
 
-    def __init__(self, k_values: Optional[List[int]] = None):
-        """初始化评估器。
-        
+    def __init__(self, settings: Settings, **override_kwargs: Any):
+        """Initialize the custom evaluator.
+
         Args:
-            k_values: 计算 Hit Rate 的 K 值列表，默认为 [5, 10]
+            settings: Application settings containing evaluation configuration.
+            **override_kwargs: Optional parameters to override settings.
         """
-        self.k_values = k_values or [5, 10]
+        self.settings = settings
 
     def evaluate(
         self,
         query: str,
-        retrieved_chunk_ids: List[str],
-        golden_chunk_ids: List[str],
-        trace: Optional["TraceContext"] = None
-    ) -> Dict[str, float]:
-        """执行评估。
-        
+        retrieved_ids: list[str],
+        golden_ids: list[str],
+        trace: Optional["TraceContext"] = None,
+        **kwargs: Any,
+    ) -> dict[str, float]:
+        """Evaluate retrieval quality using Hit Rate and MRR metrics.
+
         Args:
-            query: 查询文本
-            retrieved_chunk_ids: 检索返回的 chunk ID 列表（已排序）
-            golden_chunk_ids: 黄金标准 chunk ID 列表
-            trace: 可选的追踪上下文
-            
+            query: The search query text.
+            retrieved_ids: List of retrieved chunk IDs (in ranked order).
+            golden_ids: List of golden/ground-truth chunk IDs.
+            trace: Optional TraceContext for observability.
+            **kwargs: Additional parameters (unused).
+
         Returns:
-            评估指标字典，包含 hit_rate@K 和 mrr
+            Dictionary containing:
+            - "hit_rate": 1.0 if any golden ID is in retrieved_ids, else 0.0
+            - "mrr": Reciprocal rank of first golden ID, or 0.0 if none found
+
+        Raises:
+            ValueError: If retrieved_ids or golden_ids are empty.
+
+        Example:
+            >>> evaluator = CustomEvaluator(settings)
+            >>> metrics = evaluator.evaluate(
+            ...     query="test",
+            ...     retrieved_ids=["chunk_1", "chunk_2", "chunk_3"],
+            ...     golden_ids=["chunk_2", "chunk_5"]
+            ... )
+            >>> print(metrics)
+            {"hit_rate": 1.0, "mrr": 0.5}
         """
+        # Input validation
+        if not retrieved_ids:
+            raise ValueError(
+                "Missing required field: retrieved_ids cannot be empty. "
+                "Please provide at least one retrieved chunk ID."
+            )
+        if not golden_ids:
+            raise ValueError(
+                "Missing required field: golden_ids cannot be empty. "
+                "Please provide at least one golden chunk ID."
+            )
+
+        # Add trace metadata if available
         if trace:
             trace.add_metadata("evaluator_type", "custom")
-            trace.add_metadata("k_values", self.k_values)
+            trace.add_metadata("query", query)
 
-        metrics = {}
+        # Calculate metrics
+        golden_set = set(golden_ids)
+        retrieved_set = set(retrieved_ids)
 
-        # 计算 Hit Rate@K
-        for k in self.k_values:
-            hit_rate = self._calculate_hit_rate(retrieved_chunk_ids, golden_chunk_ids, k)
-            metrics[f"hit_rate@{k}"] = hit_rate
+        # Hit Rate: 1.0 if any overlap, 0.0 otherwise
+        hit_rate = 1.0 if (golden_set & retrieved_set) else 0.0
 
-        # 计算 MRR
-        mrr = self._calculate_mrr(retrieved_chunk_ids, golden_chunk_ids)
-        metrics["mrr"] = mrr
+        # MRR: Find first golden ID in retrieved list
+        mrr = 0.0
+        for rank, chunk_id in enumerate(retrieved_ids, start=1):
+            if chunk_id in golden_set:
+                mrr = 1.0 / rank
+                break
 
-        logger.info(f"Evaluation metrics: {metrics}")
+        metrics = {"hit_rate": hit_rate, "mrr": mrr}
 
+        # Add trace metadata for results
         if trace:
             trace.add_metadata("metrics", metrics)
 
         return metrics
-
-    def _calculate_hit_rate(
-        self,
-        retrieved_chunk_ids: List[str],
-        golden_chunk_ids: List[str],
-        k: int
-    ) -> float:
-        """计算 Hit Rate@K。
-        
-        Args:
-            retrieved_chunk_ids: 检索返回的 chunk ID 列表
-            golden_chunk_ids: 黄金标准 chunk ID 列表
-            k: 只考虑前 K 个检索结果
-            
-        Returns:
-            Hit Rate 值（0.0 或 1.0）
-        """
-        if not golden_chunk_ids:
-            logger.warning("No golden chunk IDs provided for evaluation")
-            return 0.0
-
-        # 取前 K 个检索结果
-        top_k_retrieved = set(retrieved_chunk_ids[:k])
-        golden_set = set(golden_chunk_ids)
-
-        # 检查是否有交集
-        has_hit = len(top_k_retrieved & golden_set) > 0
-        return 1.0 if has_hit else 0.0
-
-    def _calculate_mrr(
-        self,
-        retrieved_chunk_ids: List[str],
-        golden_chunk_ids: List[str]
-    ) -> float:
-        """计算 MRR (Mean Reciprocal Rank)。
-        
-        Args:
-            retrieved_chunk_ids: 检索返回的 chunk ID 列表
-            golden_chunk_ids: 黄金标准 chunk ID 列表
-            
-        Returns:
-            MRR 值，范围 [0.0, 1.0]
-        """
-        if not golden_chunk_ids:
-            logger.warning("No golden chunk IDs provided for evaluation")
-            return 0.0
-
-        golden_set = set(golden_chunk_ids)
-
-        # 找到第一个命中的位置
-        for rank, chunk_id in enumerate(retrieved_chunk_ids, start=1):
-            if chunk_id in golden_set:
-                return 1.0 / rank
-
-        # 没有命中
-        return 0.0

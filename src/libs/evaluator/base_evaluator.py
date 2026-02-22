@@ -1,42 +1,70 @@
-"""Evaluator 抽象基类。"""
+"""Abstract base class for evaluator providers.
+
+This module defines the pluggable interface for evaluation backends,
+enabling seamless switching between different evaluation methods (custom metrics,
+Ragas, DeepEval, etc.) through configuration-driven instantiation.
+"""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from src.core.trace.trace_context import TraceContext
 
 
 class BaseEvaluator(ABC):
-    """评估器抽象基类。
-    
-    评估器用于评估检索质量，通过比较检索结果与黄金标准答案，计算各种评估指标。
+    """Abstract base class for evaluator providers.
+
+    All evaluator implementations must inherit from this class and implement
+    the evaluate() method. This ensures consistent interface across different
+    evaluation backends (custom metrics, Ragas, DeepEval, etc.).
+
+    Design Principles Applied:
+    - Pluggable: Subclasses can be swapped without changing upstream code.
+    - Observable: Accepts optional TraceContext for observability integration.
+    - Config-Driven: Instances are created via factory based on settings.
     """
 
     @abstractmethod
     def evaluate(
         self,
         query: str,
-        retrieved_chunk_ids: List[str],
-        golden_chunk_ids: List[str],
-        trace: Optional["TraceContext"] = None
-    ) -> Dict[str, float]:
-        """执行评估。
-        
+        retrieved_ids: list[str],
+        golden_ids: list[str],
+        trace: Optional["TraceContext"] = None,
+        **kwargs: Any,
+    ) -> dict[str, float]:
+        """Evaluate retrieval quality by comparing retrieved results with golden set.
+
         Args:
-            query: 查询文本
-            retrieved_chunk_ids: 检索返回的 chunk ID 列表（已排序）
-            golden_chunk_ids: 黄金标准 chunk ID 列表
-            trace: 可选的追踪上下文
-            
+            query: The search query text.
+            retrieved_ids: List of retrieved chunk IDs (in ranked order).
+            golden_ids: List of golden/ground-truth chunk IDs.
+            trace: Optional TraceContext for observability (reserved for Stage F).
+            **kwargs: Provider-specific parameters.
+
         Returns:
-            评估指标字典，例如：
+            Dictionary of evaluation metrics, e.g.:
             {
-                "hit_rate@5": 0.8,
-                "hit_rate@10": 0.9,
-                "mrr": 0.75
+                "hit_rate": 0.8,
+                "mrr": 0.75,
+                "ndcg@10": 0.85
             }
+
+        Raises:
+            ValueError: If retrieved_ids or golden_ids are empty or invalid.
+            RuntimeError: If the evaluation process fails.
+
+        Example:
+            >>> evaluator = CustomEvaluator()
+            >>> metrics = evaluator.evaluate(
+            ...     query="test",
+            ...     retrieved_ids=["chunk_1", "chunk_2"],
+            ...     golden_ids=["chunk_2"]
+            ... )
+            >>> print(metrics["hit_rate"])
+            1.0
         """
         pass

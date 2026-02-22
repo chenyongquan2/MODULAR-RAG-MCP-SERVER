@@ -1,183 +1,187 @@
-"""CustomEvaluator 单元测试。"""
+"""Unit tests for CustomEvaluator."""
 
 import pytest
 
 from src.libs.evaluator.custom_evaluator import CustomEvaluator
+from src.core.settings import Settings, EvaluationSettings
+
+
+@pytest.fixture
+def mock_settings():
+    """Create a minimal Settings object for testing."""
+    settings = Settings(
+        llm=None,  # Not needed for evaluator tests
+        embedding=None,
+        vision_llm=None,
+        vector_store=None,
+        evaluation=EvaluationSettings(backends=["custom"]),
+    )
+    return settings
 
 
 class TestCustomEvaluator:
-    """CustomEvaluator 测试套件。"""
+    """Test suite for CustomEvaluator."""
 
-    def test_hit_rate_at_5_with_hit(self):
-        """测试 Hit Rate@5 - 命中情况。"""
-        evaluator = CustomEvaluator(k_values=[5])
-        
-        retrieved = ["chunk1", "chunk2", "chunk3", "chunk4", "chunk5"]
-        golden = ["chunk3", "chunk10"]
-        
+    def test_hit_rate_perfect_match(self, mock_settings):
+        """Test hit_rate when all golden IDs are in retrieved set."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_1", "chunk_2", "chunk_3"]
+        golden = ["chunk_2"]
+
         metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        assert "hit_rate@5" in metrics
-        assert metrics["hit_rate@5"] == 1.0
 
-    def test_hit_rate_at_5_no_hit(self):
-        """测试 Hit Rate@5 - 未命中情况。"""
-        evaluator = CustomEvaluator(k_values=[5])
-        
-        retrieved = ["chunk1", "chunk2", "chunk3", "chunk4", "chunk5"]
-        golden = ["chunk10", "chunk20"]
-        
+        assert "hit_rate" in metrics
+        assert metrics["hit_rate"] == 1.0
+
+    def test_hit_rate_no_match(self, mock_settings):
+        """Test hit_rate when no golden IDs are in retrieved set."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_1", "chunk_2", "chunk_3"]
+        golden = ["chunk_10", "chunk_20"]
+
         metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        assert "hit_rate@5" in metrics
-        assert metrics["hit_rate@5"] == 0.0
 
-    def test_hit_rate_at_10_with_hit_beyond_5(self):
-        """测试 Hit Rate@10 - 在第 6-10 位命中。"""
-        evaluator = CustomEvaluator(k_values=[5, 10])
-        
-        retrieved = ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10"]
-        golden = ["c7"]
-        
+        assert "hit_rate" in metrics
+        assert metrics["hit_rate"] == 0.0
+
+    def test_hit_rate_partial_match(self, mock_settings):
+        """Test hit_rate when some golden IDs are in retrieved set."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_1", "chunk_2", "chunk_3"]
+        golden = ["chunk_2", "chunk_10"]  # Only chunk_2 is present
+
         metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        # 前5个没命中
-        assert metrics["hit_rate@5"] == 0.0
-        # 前10个命中了
-        assert metrics["hit_rate@10"] == 1.0
 
-    def test_mrr_first_position(self):
-        """测试 MRR - 第一个位置命中。"""
-        evaluator = CustomEvaluator()
-        
-        retrieved = ["chunk_gold", "chunk2", "chunk3"]
+        # Hit rate is binary: 1.0 if ANY match exists
+        assert metrics["hit_rate"] == 1.0
+
+    def test_mrr_first_position(self, mock_settings):
+        """Test MRR when first retrieved item is golden."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_gold", "chunk_2", "chunk_3"]
         golden = ["chunk_gold"]
-        
+
         metrics = evaluator.evaluate("test query", retrieved, golden)
-        
+
         assert "mrr" in metrics
         assert metrics["mrr"] == 1.0
 
-    def test_mrr_second_position(self):
-        """测试 MRR - 第二个位置命中。"""
-        evaluator = CustomEvaluator()
-        
-        retrieved = ["chunk1", "chunk_gold", "chunk3"]
+    def test_mrr_second_position(self, mock_settings):
+        """Test MRR when second retrieved item is golden."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_1", "chunk_gold", "chunk_3"]
         golden = ["chunk_gold"]
-        
+
         metrics = evaluator.evaluate("test query", retrieved, golden)
-        
+
         assert metrics["mrr"] == 0.5
 
-    def test_mrr_third_position(self):
-        """测试 MRR - 第三个位置命中。"""
-        evaluator = CustomEvaluator()
-        
-        retrieved = ["chunk1", "chunk2", "chunk_gold"]
-        golden = ["chunk_gold"]
-        
-        metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        assert abs(metrics["mrr"] - 1.0/3) < 1e-6
+    def test_mrr_third_position(self, mock_settings):
+        """Test MRR when third retrieved item is golden."""
+        evaluator = CustomEvaluator(settings=mock_settings)
 
-    def test_mrr_no_hit(self):
-        """测试 MRR - 完全未命中。"""
-        evaluator = CustomEvaluator()
-        
-        retrieved = ["chunk1", "chunk2", "chunk3"]
+        retrieved = ["chunk_1", "chunk_2", "chunk_gold"]
         golden = ["chunk_gold"]
-        
+
         metrics = evaluator.evaluate("test query", retrieved, golden)
-        
+
+        assert abs(metrics["mrr"] - 1.0 / 3) < 1e-6
+
+    def test_mrr_no_hit(self, mock_settings):
+        """Test MRR when no golden IDs are retrieved."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_1", "chunk_2", "chunk_3"]
+        golden = ["chunk_gold"]
+
+        metrics = evaluator.evaluate("test query", retrieved, golden)
+
         assert metrics["mrr"] == 0.0
 
-    def test_multiple_golden_chunks_first_hit_counts(self):
-        """测试多个黄金标准，MRR 取第一个命中的位置。"""
-        evaluator = CustomEvaluator()
-        
-        retrieved = ["chunk1", "chunk2", "gold2", "chunk4", "gold1"]
-        golden = ["gold1", "gold2"]
-        
-        metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        # gold2 在第3位最先命中
-        assert abs(metrics["mrr"] - 1.0/3) < 1e-6
+    def test_mrr_multiple_golden_first_hit_counts(self, mock_settings):
+        """Test MRR with multiple golden IDs - first hit determines rank."""
+        evaluator = CustomEvaluator(settings=mock_settings)
 
-    def test_empty_golden_chunks(self):
-        """测试空的黄金标准列表。"""
-        evaluator = CustomEvaluator(k_values=[5])
-        
-        retrieved = ["chunk1", "chunk2", "chunk3"]
+        retrieved = ["chunk_1", "chunk_2", "gold_2", "chunk_4", "gold_1"]
+        golden = ["gold_1", "gold_2"]
+
+        metrics = evaluator.evaluate("test query", retrieved, golden)
+
+        # gold_2 appears first at position 3
+        assert abs(metrics["mrr"] - 1.0 / 3) < 1e-6
+
+    def test_empty_golden_ids_raises_error(self, mock_settings):
+        """Test that empty golden_ids raises ValueError."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_1", "chunk_2", "chunk_3"]
         golden = []
-        
-        metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        assert metrics["hit_rate@5"] == 0.0
-        assert metrics["mrr"] == 0.0
 
-    def test_empty_retrieved_chunks(self):
-        """测试空的检索结果列表。"""
-        evaluator = CustomEvaluator(k_values=[5])
-        
+        with pytest.raises(ValueError) as exc_info:
+            evaluator.evaluate("test query", retrieved, golden)
+
+        assert "golden_ids cannot be empty" in str(exc_info.value)
+
+    def test_empty_retrieved_ids_raises_error(self, mock_settings):
+        """Test that empty retrieved_ids raises ValueError."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
         retrieved = []
-        golden = ["chunk1"]
-        
-        metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        assert metrics["hit_rate@5"] == 0.0
-        assert metrics["mrr"] == 0.0
+        golden = ["chunk_1"]
 
-    def test_custom_k_values(self):
-        """测试自定义 K 值列表。"""
-        evaluator = CustomEvaluator(k_values=[3, 7, 15])
-        
-        retrieved = ["c1", "c2", "c3", "c4", "gold", "c6", "c7"]
-        golden = ["gold"]
-        
-        metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        # 检查所有自定义的 K 值
-        assert "hit_rate@3" in metrics
-        assert "hit_rate@7" in metrics
-        assert "hit_rate@15" in metrics
-        
-        # gold 在第5位
-        assert metrics["hit_rate@3"] == 0.0  # 前3个没有
-        assert metrics["hit_rate@7"] == 1.0  # 前7个有
-        assert metrics["hit_rate@15"] == 1.0  # 前15个有（实际只有7个）
+        with pytest.raises(ValueError) as exc_info:
+            evaluator.evaluate("test query", retrieved, golden)
 
-    def test_default_k_values(self):
-        """测试默认 K 值为 [5, 10]。"""
-        evaluator = CustomEvaluator()
-        
-        retrieved = ["c1", "c2", "c3", "c4", "c5"]
-        golden = ["c3"]
-        
+        assert "retrieved_ids cannot be empty" in str(exc_info.value)
+
+    def test_duplicate_ids_handled_gracefully(self, mock_settings):
+        """Test that duplicate IDs in inputs are handled correctly."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        # Duplicates in retrieved list
+        retrieved = ["chunk_1", "chunk_2", "chunk_2", "chunk_3"]
+        golden = ["chunk_2"]
+
         metrics = evaluator.evaluate("test query", retrieved, golden)
-        
-        assert "hit_rate@5" in metrics
-        assert "hit_rate@10" in metrics
-        assert metrics["hit_rate@5"] == 1.0
-        assert metrics["hit_rate@10"] == 1.0
+
+        # Should still calculate correctly (set deduplication)
+        assert metrics["hit_rate"] == 1.0
+        assert metrics["mrr"] == 0.5  # First occurrence at position 2
+
+    def test_deterministic_output(self, mock_settings):
+        """Test that same inputs always produce same outputs."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        retrieved = ["chunk_1", "chunk_2", "chunk_3"]
+        golden = ["chunk_2"]
+
+        metrics_1 = evaluator.evaluate("test", retrieved, golden)
+        metrics_2 = evaluator.evaluate("test", retrieved, golden)
+
+        assert metrics_1 == metrics_2
 
     @pytest.mark.skip(reason="TraceContext not yet implemented (Stage G)")
-    def test_trace_context_integration(self):
-        """测试追踪上下文集成（可选）。"""
+    def test_trace_context_integration(self, mock_settings):
+        """Test trace context integration (reserved for Stage F)."""
         from src.core.trace.trace_context import TraceContext
-        
-        evaluator = CustomEvaluator(k_values=[5])
+
+        evaluator = CustomEvaluator(settings=mock_settings)
         trace = TraceContext(operation="test_evaluation")
-        
-        retrieved = ["chunk1", "chunk2", "chunk3"]
-        golden = ["chunk2"]
-        
+
+        retrieved = ["chunk_1", "chunk_2", "chunk_3"]
+        golden = ["chunk_2"]
+
         metrics = evaluator.evaluate("test query", retrieved, golden, trace=trace)
-        
-        # 验证指标正常返回
-        assert metrics["hit_rate@5"] == 1.0
+
+        # Verify metrics are returned normally
+        assert metrics["hit_rate"] == 1.0
         assert metrics["mrr"] == 0.5
-        
-        # 验证追踪上下文记录了元数据
+
+        # Verify trace context recorded metadata
         assert trace.metadata.get("evaluator_type") == "custom"
-        assert trace.metadata.get("k_values") == [5]
         assert "metrics" in trace.metadata
