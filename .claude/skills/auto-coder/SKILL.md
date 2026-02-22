@@ -162,25 +162,123 @@ Round 3 still failing → STOP, show failure report to user
 
 ### 5. Persist
 
-**执行步骤：**
+**📚 Understanding File Relationships**
 
-1. **Update `DEV_SPEC.md`** (global file):
-   - Locate task in relevant chapter (e.g., "## 阶段 B" section)
-   - Change marker: `[ ]` → `[x]`
-   - Fill completion date if column exists
+本项目使用双文件系统管理任务进度：
 
-2. **Update schedule file**:
-   - Open `.github/skills/auto-coder/specs/06-schedule.md`
-   - Find task row in progress table
-   - Update: 状态 `[ ]` → `[x]`, 完成日期 `2026-02-22` (or current date)
-   - Update stage progress: 已完成任务数 +1, 重新计算百分比
+1. **DEV_SPEC.md** (Source of Truth)
+   - 📍 位置: 项目根目录
+   - ✏️ 手动维护，包含完整项目规范 + 进度表
+   - 🎯 这是唯一需要手动编辑的文件
 
-3. **Re-sync for verification**: 
-```powershell
-python .github/skills/auto-coder/scripts/sync_spec.py --force
+2. **specs/06-schedule.md** (Auto-Generated)
+   - 📍 位置: `.github/skills/auto-coder/specs/`
+   - 🤖 由 `sync_spec.py` 从 DEV_SPEC.md 自动生成
+   - ⚠️ **不要手动编辑**此文件，每次 sync 会被覆盖
+
+**正确工作流 (Correct Flow):**
+```
+DEV_SPEC.md (手动编辑)
+    ↓
+sync_spec.py --force (自动同步)
+    ↓
+specs/06-schedule.md (自动更新)
+    ↓
+verify_sync.py (验证一致性)
 ```
 
-4. **🚨 MANDATORY: 使用 ask_followup_question 工具暂停并询问用户**
+**❌ 错误工作流 (Incorrect Flow):**
+```
+只编辑 specs/06-schedule.md
+    ↓
+下次运行 sync_spec.py
+    ↓
+你的修改被 DEV_SPEC.md 覆盖 (数据丢失!)
+```
+
+---
+
+**🚨 CRITICAL: 以下步骤 1-4 必须按顺序完成，不可跳过**
+
+**执行步骤:**
+
+**1. ⚠️ FIRST: Update `DEV_SPEC.md` (source of truth)**
+
+   - Locate task in progress table (e.g., "#### 阶段 B：Libs 可插拔层")
+   - Find the task row by ID (e.g., B6, B7.1)
+   - Change status marker: `[ ]` → `[x]`
+   - Fill completion date: `2026-02-22` (use current date)
+
+   **WHY this step is critical:**
+   - DEV_SPEC.md is the authoritative source
+   - sync_spec.py reads FROM this file TO generate schedule
+   - If you skip this, schedule will not be updated correctly
+
+   **Example:**
+   ```diff
+   - | B6 | Evaluator 抽象接口与工厂 | [ ] | - |  |
+   + | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-02-22 |  |
+   ```
+
+**2. 🔄 Run sync to auto-update schedule file**
+
+   ```bash
+   python .github/skills/auto-coder/scripts/sync_spec.py --force
+   ```
+
+   **What this does:**
+   - Reads DEV_SPEC.md as source
+   - Regenerates ALL spec files in `specs/` directory
+   - Overwrites `06-schedule.md` with updated progress from DEV_SPEC
+
+   **Expected output:**
+   ```
+   synced 7 chapters
+   ```
+
+   ⚠️ If you see different output, something went wrong. STOP and investigate.
+
+**3. ✅ VERIFY: Run automated consistency check**
+
+   ```bash
+   python .github/skills/auto-coder/scripts/verify_sync.py
+   ```
+
+   **What this does:**
+   - Parses task status from BOTH files
+   - Compares DEV_SPEC.md vs specs/06-schedule.md
+   - Exits with code 0 if match, code 1 if mismatch
+
+   **Expected output:**
+   ```
+   ✅ Sync verification passed - DEV_SPEC.md and schedule are consistent
+   ```
+
+   **If verification FAILS:**
+   ```
+   ❌ SYNC VERIFICATION FAILED
+   ...
+   B6: DEV_SPEC=[x] vs schedule=[ ]
+   ```
+
+   **🚨 CRITICAL: If script exits with error (code 1):**
+   - ❌ STOP IMMEDIATELY - Do NOT proceed to step 4
+   - Check which file you forgot to update
+   - Fix the issue and re-run steps 1-3
+   - Only proceed when verify_sync.py shows ✅
+
+**🔍 VALIDATION CHECKLIST**
+
+Before proceeding to step 4, verify ALL checkboxes:
+- [ ] DEV_SPEC.md shows task as `[x]` with completion date
+- [ ] `sync_spec.py --force` ran successfully
+- [ ] `verify_sync.py` reports "✅ Sync verification passed"
+
+⚠️ If ANY checkbox is unchecked, STOP and fix it NOW.
+
+---
+
+**4. 🚨 MANDATORY: 使用 ask_followup_question 工具暂停并询问用户**
 
 **✅ CHECKPOINT - 必须执行以下操作：**
 
@@ -344,6 +442,36 @@ scope = detect_scope_from_paths(modified_files)  # 返回主要模块或 "core"
 
 ---
 
+### 5.2 Example: Updating Task B6
+
+**Before (DEV_SPEC.md, line ~1978):**
+```markdown
+| B6 | Evaluator 抽象接口与工厂 | [ ] | - |  |
+```
+
+**After editing (DEV_SPEC.md, line ~1978):**
+```markdown
+| B6 | Evaluator 抽象接口与工厂 | [x] | 2026-02-22 |  |
+```
+
+**Commands to run:**
+```bash
+# Step 2: Sync
+python .github/skills/auto-coder/scripts/sync_spec.py --force
+# Output: synced 7 chapters
+
+# Step 3: Verify
+python .github/skills/auto-coder/scripts/verify_sync.py
+# Output: ✅ Sync verification passed - DEV_SPEC.md and schedule are consistent
+```
+
+**Result in schedule file (auto-generated):**
+```markdown
+| B6 | Evaluator 抽象接口与工厂 | [x] | 2026-02-22 |  |
+```
+
+---
+
 ## Guardrails & Prohibited Actions
 
 ### ✅ 必须遵守的规则
@@ -363,6 +491,9 @@ scope = detect_scope_from_paths(modified_files)  # 返回主要模块或 "core"
 5. **在步骤 5 不使用 ask_followup_question** 而直接使用 `attempt_completion` 结束
 6. **自动执行 git commit** 而不询问用户
 7. **跳过任何 CHECKPOINT** 直接进入下一步
+8. **手动编辑 specs/06-schedule.md** (应该编辑 DEV_SPEC.md 并运行 sync)
+9. **verify_sync.py 验证失败后仍继续执行** (必须先修复再继续)
+10. **跳过 verify_sync.py 验证** 就进入步骤 5.4 (ask_followup_question)
 
 ### ✅ 正确的任务结束方式
 
