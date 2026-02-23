@@ -62,11 +62,13 @@ Step 1 → [✓ CHECKPOINT] → Step 2 → [✓ CHECKPOINT] → Step 3
 
 2. Run sync script:
 ```powershell
-python .github/skills/auto-coder/scripts/sync_spec.py
+python .github/skills/auto-coder/scripts/sync_all_skills.py
 ```
 
+This syncs DEV_SPEC.md to all three skill directories (.claude, .cline, .github).
+
 3. Read the schedule file:
-- Read `.github/skills/auto-coder/specs/06-schedule.md`
+- Read `.github/skills/auto-coder/specs/06-schedule.md` (or `.claude/skills/auto-coder/specs/06-schedule.md`)
 
 **Task markers:**
 
@@ -78,7 +80,7 @@ python .github/skills/auto-coder/scripts/sync_spec.py
 
 **✅ CHECKPOINT - 必须完成：**
 - [ ] Venv 已激活（确认 python 路径指向 `.venv`）
-- [ ] Spec 同步成功（sync_spec.py 运行无错误）
+- [ ] Spec 同步成功（sync_all_skills.py 运行无错误，显示 "SUCCESS"）
 - [ ] Schedule 文件已读取（知道总任务数和当前进度）
 
 **⚠️ 未完成此 CHECKPOINT 不得进入步骤 2**
