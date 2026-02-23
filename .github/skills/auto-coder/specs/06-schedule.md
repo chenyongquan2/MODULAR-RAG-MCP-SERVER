@@ -66,9 +66,9 @@
 | B4 | VectorStore 抽象接口与工厂 | [x] | 2026-02-22 |  |
 | B5 | Reranker 抽象接口与工厂（含 None 回退） | [x] | 2026-02-22 |  |
 | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-02-22 |  |
-| B7.1 | OpenAI-Compatible LLM 实现 | [ ] | - |  |
-| B7.2 | Ollama LLM 实现 | [ ] | - |  |
-| B7.3 | OpenAI & Azure Embedding 实现 | [ ] | - |  |
+| B7.1 | OpenAI-Compatible LLM 实现 | [x] | 2026-02-22 |  |
+| B7.2 | Ollama LLM 实现 | [x] | 2026-02-22 |  |
+| B7.3 | OpenAI & Azure Embedding 实现 | [x] | 2026-02-22 |  |
 | B7.4 | Ollama Embedding 实现 | [x] | 2026-02-22 |  |
 | B7.5 | Recursive Splitter 默认实现 | [ ] | - |  |
 | B7.6 | ChromaStore 默认实现 | [ ] | - |  |
