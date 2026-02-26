@@ -174,81 +174,152 @@ Round 3 still failing → STOP, show failure report to user
    - 🎯 这是唯一需要手动编辑的文件
 
 2. **specs/06-schedule.md** (Auto-Generated)
-   - 📍 位置: `.github/skills/auto-coder/specs/`
-   - 🤖 由 `sync_spec.py` 从 DEV_SPEC.md 自动生成
-   - ⚠️ **不要手动编辑**此文件，每次 sync 会被覆盖
+   - 📍 位置: `.github/skills/auto-coder/specs/` (以及 `.claude/` 和 `.cline/`)
+   - 🤖 由 `sync_all_skills.py` 从 DEV_SPEC.md 自动生成
+   - 🚨 **绝对禁止手动编辑**此文件，每次 sync 会被覆盖
 
 **正确工作流 (Correct Flow):**
 ```
 DEV_SPEC.md (手动编辑)
     ↓
-sync_spec.py --force (自动同步)
+sync_all_skills.py --force (自动同步到三个目录)
     ↓
-specs/06-schedule.md (自动更新)
+specs/06-schedule.md (自动更新 .github/.claude/.cline/)
     ↓
 verify_sync.py (验证一致性)
 ```
 
 **❌ 错误工作流 (Incorrect Flow):**
 ```
-只编辑 specs/06-schedule.md
+只编辑 specs/06-schedule.md  ← 禁止！
     ↓
-下次运行 sync_spec.py
+下次运行 sync_all_skills.py
     ↓
 你的修改被 DEV_SPEC.md 覆盖 (数据丢失!)
 ```
 
 ---
 
-**🚨 CRITICAL: 以下步骤 1-4 必须按顺序完成，不可跳过**
+**🚨 AI AGENT 强制自查清单（步骤 5 执行前必读）**
+
+在开始步骤 5 之前，AI 必须逐项确认以下检查清单，**所有项目必须为 NO 或 YES（按要求）**：
+
+<details>
+<summary><b>🔍 点击展开完整检查清单</b></summary>
+
+**🚫 禁止行为检查（必须全部为 NO）：**
+
+- [ ] 我是否**手动编辑了任何 `specs/06-schedule.md` 文件**？
+      ```bash
+      # 检查这些路径是否被你手动编辑：
+      .github/skills/auto-coder/specs/06-schedule.md
+      .claude/skills/auto-coder/specs/06-schedule.md
+      .cline/skills/auto-coder/specs/06-schedule.md
+      ```
+      → 如果 **YES**，这是**严重错误**！
+      → 立即 STOP，执行以下修复：
+      ```bash
+      # 1. 丢弃手动修改
+      git restore .github/.claude/.cline/skills/auto-coder/specs/06-schedule.md
+
+      # 2. 正确更新 DEV_SPEC.md（源文件）
+      # 3. 重新运行 sync_all_skills.py
+      ```
+
+- [ ] 我是否**使用 `cp` / `copy` 命令手动复制了 schedule 文件**？
+      → 如果 **YES**，这违反了自动同步原则！
+      → 立即 STOP，丢弃手动复制，使用 `sync_all_skills.py`
+
+- [ ] 我是否**跳过了 `sync_all_skills.py` 直接读取了 schedule**？
+      → 如果 **YES**，数据可能是过期的！
+      → 立即 STOP，先运行 `sync_all_skills.py`
+
+**✅ 必需行为检查（必须全部为 YES）：**
+
+- [ ] 我是否**已更新 DEV_SPEC.md 中的任务状态**？
+      → 检查任务行是否已标记为 `[x]` 并填写完成日期
+      → 如果 **NO**，立即 STOP，先更新 DEV_SPEC.md
+
+- [ ] 我是否**已运行 `sync_all_skills.py`**？
+      → 检查是否看到输出：
+      ```
+      OK .github/skills/auto-coder - synced 7 chapters
+      OK .claude/skills/auto-coder - synced 7 chapters
+      OK .cline/skills/auto-coder - synced 7 chapters
+      ```
+      → 如果 **NO**，立即 STOP，运行脚本
+
+- [ ] 我是否**已运行 `verify_sync.py` 且看到 ✅**？
+      → 检查是否看到输出：`✅ Sync verification passed`
+      → 如果 **NO** 或看到 `❌`，立即 STOP，修复问题
+
+**⚠️ 所有检查通过后，才能继续到步骤 5.1（更新 DEV_SPEC）**
+
+</details>
+
+---
+
+**🚨 CRITICAL: 以下步骤 5.1-5.4 必须按顺序完成，不可跳过**
 
 **执行步骤:**
 
-**1. ⚠️ FIRST: Update `DEV_SPEC.md` (source of truth)**
+**5.1. ⚠️ FIRST: Update `DEV_SPEC.md` (source of truth)**
 
    - Locate task in progress table (e.g., "#### 阶段 B：Libs 可插拔层")
    - Find the task row by ID (e.g., B6, B7.1)
    - Change status marker: `[ ]` → `[x]`
-   - Fill completion date: `2026-02-22` (use current date)
+   - Fill completion date: `2026-02-24` (use current date)
 
    **WHY this step is critical:**
    - DEV_SPEC.md is the authoritative source
-   - sync_spec.py reads FROM this file TO generate schedule
+   - sync_all_skills.py reads FROM this file TO generate schedule
    - If you skip this, schedule will not be updated correctly
 
    **Example:**
    ```diff
    - | B6 | Evaluator 抽象接口与工厂 | [ ] | - |  |
-   + | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-02-22 |  |
+   + | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-02-24 |  |
    ```
 
-**2. 🔄 Run sync to auto-update schedule file**
+**5.2. 🔄 Run sync to auto-update schedule file**
 
    ```bash
-   python .github/skills/auto-coder/scripts/sync_spec.py --force
+   python .github/skills/auto-coder/scripts/sync_all_skills.py --force
    ```
 
    **What this does:**
    - Reads DEV_SPEC.md as source
-   - Regenerates ALL spec files in `specs/` directory
+   - Regenerates ALL spec files in `specs/` directory for ALL three locations:
+     - `.github/skills/auto-coder/specs/`
+     - `.claude/skills/auto-coder/specs/`
+     - `.cline/skills/auto-coder/specs/`
    - Overwrites `06-schedule.md` with updated progress from DEV_SPEC
 
    **Expected output:**
    ```
-   synced 7 chapters
+   Syncing DEV_SPEC.md to all skill directories...
+   OK .github/skills/auto-coder - synced 7 chapters
+   OK .claude/skills/auto-coder - synced 7 chapters
+   OK .cline/skills/auto-coder - synced 7 chapters
+
+   SUCCESS: All 3 location(s) synced successfully
    ```
 
-   ⚠️ If you see different output, something went wrong. STOP and investigate.
+   **🚨 If you see different output:**
+   - Check for error messages
+   - Verify DEV_SPEC.md format is correct
+   - STOP and investigate before continuing
 
-**3. ✅ VERIFY: Run automated consistency check**
+**5.3. ✅ VERIFY: Run automated consistency check**
 
    ```bash
    python .github/skills/auto-coder/scripts/verify_sync.py
    ```
 
    **What this does:**
-   - Parses task status from BOTH files
-   - Compares DEV_SPEC.md vs specs/06-schedule.md
+   - Parses task status from DEV_SPEC.md
+   - Parses task status from specs/06-schedule.md (in .github directory)
+   - Compares every task status marker (`[ ]`, `[~]`, `[x]`)
    - Exits with code 0 if match, code 1 if mismatch
 
    **Expected output:**
@@ -259,28 +330,33 @@ verify_sync.py (验证一致性)
    **If verification FAILS:**
    ```
    ❌ SYNC VERIFICATION FAILED
-   ...
+   Mismatches found:
    B6: DEV_SPEC=[x] vs schedule=[ ]
    ```
 
    **🚨 CRITICAL: If script exits with error (code 1):**
-   - ❌ STOP IMMEDIATELY - Do NOT proceed to step 4
+   - ❌ **STOP IMMEDIATELY** - Do NOT proceed to step 5.4
    - Check which file you forgot to update
-   - Fix the issue and re-run steps 1-3
+   - Most common causes:
+     1. Forgot to update DEV_SPEC.md
+     2. Forgot to run sync_all_skills.py
+     3. Manually edited schedule file (禁止行为！)
+   - Fix the issue and re-run steps 5.1-5.3
    - Only proceed when verify_sync.py shows ✅
 
 **🔍 VALIDATION CHECKLIST**
 
-Before proceeding to step 4, verify ALL checkboxes:
+Before proceeding to step 5.4, verify ALL checkboxes:
 - [ ] DEV_SPEC.md shows task as `[x]` with completion date
-- [ ] `sync_spec.py --force` ran successfully
+- [ ] `sync_all_skills.py --force` ran successfully (saw "SUCCESS" for all 3 locations)
 - [ ] `verify_sync.py` reports "✅ Sync verification passed"
+- [ ] **我没有手动编辑任何 specs/ 目录下的文件**
 
 ⚠️ If ANY checkbox is unchecked, STOP and fix it NOW.
 
 ---
 
-**4. 🚨 MANDATORY: 使用 ask_followup_question 工具暂停并询问用户**
+**5.4. 🚨 MANDATORY: 使用 ask_followup_question 工具暂停并询问用户**
 
 **✅ CHECKPOINT - 必须执行以下操作：**
 
@@ -322,18 +398,172 @@ ask_followup_question(
 
 **根据用户选择执行：**
 
-- **"commit"**: 
+- **"commit"**:
   ```powershell
   git add .
   git commit -m "<type>(<scope>): [<TaskID>] <description>"
   ```
   然后使用 `attempt_completion` 展示结果
 
-- **"skip"**: 
+- **"skip"**:
   直接使用 `attempt_completion` 展示结果（不提交）
 
-- **"next"**: 
+- **"next"**:
   先执行 commit，然后循环回到步骤 1 开始下一个任务
+
+---
+
+### 5.5 Common Mistakes & Corrections (AI 必读)
+
+<details>
+<summary><b>❌ 常见错误案例库 - 点击展开学习</b></summary>
+
+#### 案例 1：手动编辑 schedule 文件（严重错误！）
+
+**错误操作记录：**
+```bash
+# AI 错误地做了这些操作：
+1. Edit .github/skills/auto-coder/specs/06-schedule.md  # ❌ 禁止！
+2. Edit .claude/skills/auto-coder/specs/06-schedule.md  # ❌ 禁止！
+3. git add .github/.claude/skills/auto-coder/specs/06-schedule.md
+4. git commit -m "docs(progress): update B7.5"
+```
+
+**为什么这是错误的：**
+- 违反了"DEV_SPEC.md 是唯一真相源"原则
+- specs/06-schedule.md 是自动生成文件，不应手动编辑
+- 下次运行 sync_all_skills.py 时，手动修改会被覆盖
+- verify_sync.py 会检测到不一致并报错
+
+**正确做法：**
+```bash
+# 1. 只编辑源文件（唯一正确的编辑点）
+Edit DEV_SPEC.md
+# 修改任务行：| B7.5 | ... | [ ] | - | → | B7.5 | ... | [x] | 2026-02-24 |
+
+# 2. 运行同步脚本（自动更新三个目录）
+python .github/skills/auto-coder/scripts/sync_all_skills.py --force
+# 看到：SUCCESS: All 3 location(s) synced successfully
+
+# 3. 验证一致性
+python .github/skills/auto-coder/scripts/verify_sync.py
+# 必须看到：✅ Sync verification passed
+
+# 4. 提交时包含源文件和所有三个目录
+git add DEV_SPEC.md .github/.claude/.cline/
+git commit -m "docs(progress): update B7.5 completion status"
+```
+
+---
+
+#### 案例 2：使用 `cp` 命令手动复制 schedule 文件（错误！）
+
+**错误操作记录：**
+```bash
+# AI 错误地做了：
+cp .github/skills/auto-coder/specs/06-schedule.md .claude/skills/auto-coder/specs/
+cp .github/skills/auto-coder/specs/06-schedule.md .cline/skills/auto-coder/specs/
+```
+
+**为什么这是错误的：**
+- 绕过了自动同步机制
+- 可能导致三个目录内容不一致（如果源文件有差异）
+- 无法通过 .spec_hash 追踪同步状态
+
+**正确做法：**
+```bash
+# 使用自动同步脚本，而不是手动复制
+python .github/skills/auto-coder/scripts/sync_all_skills.py --force
+```
+
+---
+
+#### 案例 3：跳过 verify_sync.py 验证（高风险！）
+
+**错误操作记录：**
+```bash
+# AI 做了这些步骤：
+1. Edit DEV_SPEC.md  # ✅ 正确
+2. Run sync_all_skills.py  # ✅ 正确
+3. ❌ 跳过 verify_sync.py
+4. 直接 ask_followup_question  # ❌ 不安全
+```
+
+**为什么这是错误的：**
+- sync_all_skills.py 可能运行失败但没有被发现
+- 手动编辑可能遗漏某些文件
+- 没有最后一道安全检查
+
+**正确做法：**
+```bash
+# 总是运行验证脚本，确保数据一致性
+python .github/skills/auto-coder/scripts/verify_sync.py
+
+# 只有看到 ✅ 才能继续
+# 如果看到 ❌，必须先修复问题
+```
+
+---
+
+#### 案例 4：verify_sync.py 报错后仍继续（严重违规！）
+
+**错误操作记录：**
+```bash
+# 运行验证
+python .github/skills/auto-coder/scripts/verify_sync.py
+# 输出：❌ SYNC VERIFICATION FAILED
+# B7.5: DEV_SPEC=[x] vs schedule=[ ]
+
+# AI 错误地忽略错误，继续执行：
+ask_followup_question(...)  # ❌ 禁止！必须先修复
+```
+
+**为什么这是严重违规：**
+- 进度表不一致，会导致状态混乱
+- 可能重复执行已完成的任务
+- 违反了 CHECKPOINT 机制
+
+**正确做法：**
+```bash
+# 看到 ❌ 立即 STOP
+
+# 分析错误原因：
+# "B7.5: DEV_SPEC=[x] vs schedule=[ ]"
+# → DEV_SPEC 中是 [x]，但 schedule 中是 [ ]
+# → 说明 sync_all_skills.py 没有正确运行
+
+# 修复步骤：
+1. 检查 DEV_SPEC.md 格式是否正确
+2. 重新运行 sync_all_skills.py --force
+3. 再次运行 verify_sync.py
+4. 只有看到 ✅ 才能继续
+```
+
+---
+
+#### 案例 5：在步骤 5 未运行任何同步脚本（完全违规！）
+
+**错误操作记录：**
+```bash
+# AI 直接跳到 ask_followup_question，没有运行任何同步步骤
+ask_followup_question(...)  # ❌ 严重违规！
+```
+
+**为什么这是完全违规：**
+- 跳过了整个进度更新流程
+- DEV_SPEC.md 和 schedule 完全不同步
+- 无法追踪任务完成状态
+
+**正确做法：**
+```bash
+# 必须按顺序执行步骤 5.1-5.4，不可跳过：
+# 5.1: Edit DEV_SPEC.md
+# 5.2: Run sync_all_skills.py --force
+# 5.3: Run verify_sync.py (必须看到 ✅)
+# 5.4: ask_followup_question
+```
+
+</details>
 
 ---
 
@@ -479,37 +709,65 @@ python .github/skills/auto-coder/scripts/verify_sync.py
 ### ✅ 必须遵守的规则
 
 - One task per cycle, atomic commits
-- Spec is single source of truth
+- **DEV_SPEC.md is the single source of truth** — never edit schedule files directly
 - 3-round test fix limit
 - Match existing codebase style
 - **MUST activate `.venv` before ANY `python`/`pytest` command** — no exceptions. If unsure whether venv is active, run `.\.venv\Scripts\Activate.ps1` again (idempotent)
+- **MUST run sync_all_skills.py after updating DEV_SPEC.md** — do not skip or replace with manual copy
+- **MUST run verify_sync.py before ask_followup_question** — exit(1) means STOP
 
-### ❌ 绝对禁止的行为
+### ❌ 绝对禁止的行为（Tier 1: 严重违规）
 
-1. **跳过 venv 激活**就运行 Python 命令
-2. **跳过 sync_spec.py** 就读取 schedule 文件
-3. **未完成自我审查**就运行测试
-4. **测试未通过**就标记任务完成
-5. **在步骤 5 不使用 ask_followup_question** 而直接使用 `attempt_completion` 结束
-6. **自动执行 git commit** 而不询问用户
-7. **跳过任何 CHECKPOINT** 直接进入下一步
-8. **手动编辑 specs/06-schedule.md** (应该编辑 DEV_SPEC.md 并运行 sync)
-9. **verify_sync.py 验证失败后仍继续执行** (必须先修复再继续)
-10. **跳过 verify_sync.py 验证** 就进入步骤 5.4 (ask_followup_question)
+这些行为会导致数据丢失或进度混乱，**绝对禁止**：
 
-### ✅ 正确的任务结束方式
+| # | 禁止行为 | 后果 | 检测方式 |
+|---|---------|------|----------|
+| 1 | **手动编辑 specs/06-schedule.md**（任何目录） | 下次 sync 被覆盖 | verify_sync.py exit(1) |
+| 2 | **使用 `cp` / `copy` 手动复制 schedule 文件** | 绕过同步机制，数据不一致 | .spec_hash 不匹配 |
+| 3 | **verify_sync.py 返回 exit(1) 后仍继续** | 进度表混乱，重复任务 | 脚本强制 exit(1) |
+| 4 | **跳过 verify_sync.py 验证** | 无法发现同步失败 | 无自动检测 |
+| 5 | **只更新部分目录的 schedule 文件** | 三个目录不一致 | verify_sync.py exit(1) |
 
-**唯一正确的流程：**
+**🚨 如果发现自己做了上述任何行为，必须立即 STOP 并执行修复流程（见案例库）**
 
-```
-步骤 5 → 使用 ask_followup_question 询问用户
-        ↓
-    用户选择 commit/skip/next
-        ↓
-    执行相应操作（commit/不commit/commit+继续）
-        ↓
-    使用 attempt_completion 展示最终结果
-```
+---
+
+### ❌ 绝对禁止的行为（Tier 2: 流程违规）
+
+这些行为违反流程规范，影响代码质量：
+
+| # | 禁止行为 | 后果 | 修复方法 |
+|---|---------|------|----------|
+| 6 | 跳过 venv 激活运行 Python | 污染系统环境 | 运行前检查 `which python` |
+| 7 | 跳过 sync_all_skills.py 读取 schedule | 读取过期数据 | 先运行 sync 再读取 |
+| 8 | 未完成自我审查就运行测试 | 浪费测试轮次 | 先完成 CHECKPOINT |
+| 9 | 测试未通过就标记任务完成 | 代码有 Bug | verify_sync 会发现 |
+| 10 | 不使用 ask_followup_question 直接结束 | 用户失去控制权 | 必须使用 |
+| 11 | 自动执行 git commit 不询问用户 | 用户无法审查 | 必须询问 |
+| 12 | 跳过任何 CHECKPOINT | 流程不完整 | 逐项检查 |
+
+---
+
+### 🔍 AI Agent 执行前自检表（强制）
+
+在执行每个步骤前，AI 必须在脑海中快速检查：
+
+**步骤 1（Sync Spec）前：**
+- [ ] 我是否已激活 venv？（检查 python 路径）
+- [ ] 我是否准备好运行 sync_all_skills.py？
+
+**步骤 5.2（Run sync）前：**
+- [ ] 我是否已更新 DEV_SPEC.md？
+- [ ] 我是否**没有**手动编辑任何 schedule 文件？
+- [ ] 我是否准备好运行 sync_all_skills.py（不是手动复制）？
+
+**步骤 5.3（Verify）前：**
+- [ ] 我是否已运行 sync_all_skills.py？
+- [ ] 我是否准备好检查 verify_sync.py 的返回码？
+
+**步骤 5.4（ask_followup_question）前：**
+- [ ] verify_sync.py 是否返回了 ✅？
+- [ ] 如果是 ❌，我是否已 STOP 并修复？
 
 ---
 
