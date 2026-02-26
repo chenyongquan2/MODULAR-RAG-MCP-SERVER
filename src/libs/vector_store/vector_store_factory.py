@@ -118,12 +118,9 @@ class VectorStoreFactory:
 # Auto-register providers on module import
 def _register_builtin_providers() -> None:
     """Register built-in VectorStore backends with the factory."""
-    try:
-        from src.libs.vector_store.chroma_store import ChromaStore
+    from src.libs.vector_store.chroma_store import ChromaStore
 
-        VectorStoreFactory.register_provider("chroma", ChromaStore)
-    except ImportError:
-        pass  # Chroma backend not available yet
+    VectorStoreFactory.register_provider("chroma", ChromaStore)
 
 
 # Register providers when module is imported

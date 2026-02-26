@@ -10,7 +10,8 @@
       "Bash(cd /c/workspace/MODULAR-RAG-MCP-SERVER && .venv/Scripts/python -m pytest tests/unit/test_reranker_factory.py -v 2>&1)",
       "Bash(cd /c/workspace/MODULAR-RAG-MCP-SERVER && .venv/Scripts/python -m pytest -q 2>&1)",
       "Bash(.\\\\.venv\\\\Scripts\\\\Activate.ps1:*)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(.venv/Scripts/python.exe:*)"
     ]
   }
 }
