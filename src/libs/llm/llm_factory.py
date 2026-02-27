@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from src.libs.llm.base_llm import BaseLLM
+from src.libs.llm.base_vision_llm import BaseVisionLLM
 
 if TYPE_CHECKING:
     from src.core.settings import Settings
@@ -31,6 +32,9 @@ class LLMFactory:
     # Registry of supported providers
     _PROVIDERS: dict[str, type[BaseLLM]] = {}
 
+    # Registry of supported Vision LLM providers
+    _VISION_PROVIDERS: dict[str, type[BaseVisionLLM]] = {}
+
     @classmethod
     def register_provider(cls, name: str, provider_class: type[BaseLLM]) -> None:
         """Register a new LLM provider implementation.
@@ -50,6 +54,28 @@ class LLMFactory:
                 f"Provider class {provider_class.__name__} must inherit from BaseLLM"
             )
         cls._PROVIDERS[name.lower()] = provider_class
+
+    @classmethod
+    def register_vision_provider(
+        cls, name: str, provider_class: type[BaseVisionLLM]
+    ) -> None:
+        """Register a new Vision LLM provider implementation.
+
+        This method allows Vision LLM provider implementations to register themselves
+        with the factory, supporting extensibility.
+
+        Args:
+            name: The provider identifier (e.g., 'azure', 'openai').
+            provider_class: The BaseVisionLLM subclass implementing the provider.
+
+        Raises:
+            ValueError: If provider_class doesn't inherit from BaseVisionLLM.
+        """
+        if not issubclass(provider_class, BaseVisionLLM):
+            raise ValueError(
+                f"Provider class {provider_class.__name__} must inherit from BaseVisionLLM"
+            )
+        cls._VISION_PROVIDERS[name.lower()] = provider_class
 
     @classmethod
     def create(cls, settings: Settings, **override_kwargs: Any) -> BaseLLM:
@@ -110,6 +136,71 @@ class LLMFactory:
             Sorted list of available provider identifiers.
         """
         return sorted(cls._PROVIDERS.keys())
+
+    @classmethod
+    def create_vision_llm(
+        cls, settings: Settings, **override_kwargs: Any
+    ) -> BaseVisionLLM:
+        """Create a Vision LLM instance based on configuration.
+
+        Args:
+            settings: The application settings containing Vision LLM configuration.
+            **override_kwargs: Optional parameters to override config values.
+
+        Returns:
+            An instance of the configured Vision LLM provider.
+
+        Raises:
+            ValueError: If the configured provider is not supported.
+            AttributeError: If required configuration fields are missing.
+
+        Example:
+            >>> settings = Settings.load('config/settings.yaml')
+            >>> vision_llm = LLMFactory.create_vision_llm(settings)
+            >>> caption = vision_llm.chat_with_image(
+            ...     text="Describe this image",
+            ...     image="data/images/chart.png"
+            ... )
+        """
+        # Extract provider name from settings (same as regular LLM for now)
+        try:
+            provider_name = settings.llm.provider.lower()
+        except AttributeError as e:
+            raise ValueError(
+                "Missing required configuration: settings.llm.provider. "
+                "Please ensure 'llm.provider' is specified in settings.yaml"
+            ) from e
+
+        # Look up provider class in Vision registry
+        provider_class = cls._VISION_PROVIDERS.get(provider_name)
+
+        if provider_class is None:
+            available = (
+                ", ".join(sorted(cls._VISION_PROVIDERS.keys()))
+                if cls._VISION_PROVIDERS
+                else "none"
+            )
+            raise ValueError(
+                f"Unsupported Vision LLM provider: '{provider_name}'. "
+                f"Available Vision providers: {available}"
+            )
+
+        # Instantiate the provider
+        try:
+            return provider_class(settings=settings, **override_kwargs)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to instantiate Vision LLM provider '{provider_name}': {e}"
+            ) from e
+
+    @classmethod
+    def list_vision_providers(cls) -> list[str]:
+        """List all registered Vision LLM provider names.
+
+        Returns:
+            Sorted list of available Vision provider identifiers.
+        """
+        return sorted(cls._VISION_PROVIDERS.keys())
 
 
 # Auto-register providers on module import
