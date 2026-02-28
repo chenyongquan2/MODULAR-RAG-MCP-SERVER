@@ -235,5 +235,16 @@ def _register_builtin_providers() -> None:
         pass  # DeepSeek provider not available
 
 
+def _register_builtin_vision_providers() -> None:
+    """Register built-in Vision LLM providers with the factory."""
+    try:
+        from src.libs.llm.azure_vision_llm import AzureVisionLLM
+
+        LLMFactory.register_vision_provider("azure", AzureVisionLLM)
+    except ImportError:
+        pass  # Azure Vision provider not available
+
+
 # Register providers when module is imported
 _register_builtin_providers()
+_register_builtin_vision_providers()
