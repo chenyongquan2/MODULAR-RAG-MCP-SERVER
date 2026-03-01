@@ -1,0 +1,42 @@
+{
+    "typical_noise_scenario": {
+        "description": "综合噪声场景（页眉/页脚/多余空白）",
+        "input": "Header: Document Title\n\n\n\nThis is the main content.\n\n\n\nPage 1 of 1\n\nFooter Text",
+        "expected_pattern": "去除页眉页脚和多余空白，保留主内容"
+    },
+    "ocr_errors": {
+        "description": "OCR 识别错误",
+        "input": "Th1s 1s an 1mportant t3xt w1th OCR 3rr0rs.",
+        "expected_pattern": "纠正明显 OCR 错误"
+    },
+    "page_header_footer": {
+        "description": "页眉页脚模式",
+        "input": "CONFIDENTIAL - Page 5\n\n\n# Important Section\n\nThis is the main content that should be retained.\n\n\n--- Document ID: ABC123 ---",
+        "expected_pattern": "去除 CONFIDENTIAL、页码、分隔线"
+    },
+    "excessive_whitespace": {
+        "description": "多余空白字符",
+        "input": "Line one.\n    \n    \n    \nLine two.\n\n\n\n\nLine three.",
+        "expected_pattern": "规范空白为单个换行"
+    },
+    "format_markers": {
+        "description": "HTML/Markdown 格式标记",
+        "input": "<p>This is <b>bold</b> and <i>italic</i> text.</p>\n\n<!-- This is a comment -->\n\n[//]: # (This is also a comment)\n\n***\n\n---\n\n**Bold** and *italic* should be kept.",
+        "expected_pattern": "去除 HTML 标签和注释，保留 Markdown 格式"
+    },
+    "clean_text": {
+        "description": "干净文本（验证不过度清理）",
+        "input": "# Heading\n\nThis is a normal paragraph with **bold** and *italic* text.\n\n```python\ndef hello():\n    print(\"world\")\n```",
+        "expected_pattern": "保持 Markdown 结构和代码块不变"
+    },
+    "code_blocks": {
+        "description": "代码块（验证保留内部格式）",
+        "input": "Here is some code:\n\n```python\ndef calculate(a, b):\n    result = a + b\n    return result\n```\n\nAnd some text after.",
+        "expected_pattern": "代码块内部格式完全保留"
+    },
+    "mixed_noise": {
+        "description": "真实混合场景",
+        "input": "Company Logo\n\n\n\n\n# Quarterly Report Q4 2024\n\n\nExecutive Summary\n-----------------\n\nThis   is   the   executive   summary   with   irregular   spacing.\n\n<div class='footer'>Copyright 2024</div>\n\n### Key Findings\n\n1. Revenue increased by 15%\n2. Costs were reduced\n\n<!-- End of document -->",
+        "expected_pattern": "综合处理：去除 HTML、分隔线、规范空白"
+    }
+}
