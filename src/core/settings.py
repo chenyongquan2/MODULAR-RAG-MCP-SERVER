@@ -82,6 +82,15 @@ class SplitterSettings:
 
 
 @dataclass
+class LoaderSettings:
+    """文档加载配置。"""
+
+    provider: str = "pdf"  # pdf | markdown
+    extract_images: bool = True
+    max_image_size: int = 2048
+
+
+@dataclass
 class ChunkRefinerSettings:
     """Chunk 精炼配置。"""
 
