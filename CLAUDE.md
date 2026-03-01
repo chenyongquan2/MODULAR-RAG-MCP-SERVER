@@ -280,4 +280,20 @@ DEV_SPEC.md contains the complete technical specification organized as:
 
 When implementing features, reference the corresponding section in DEV_SPEC.md for detailed requirements.
 
+## OpenCode Plugins
+
+This project includes OpenCode plugins for enhanced development experience:
+
+### Notification Plugin
+- **Location**: `.opencode/plugins/notifications.js`
+- **Features**:
+  - Desktop notifications on task completion (`session.idle` event)
+  - Custom `notify` tool for sending notifications manually
+- **Usage**:
+  ```javascript
+  // In OpenCode, use the notify tool:
+  // notify title="Task Complete" message="C4 implementation done" priority="High"
+  ```
+- **Hooks**: `.opencode/hooks/windows-notification-enhanced.ps1` (Windows Toast/Balloon/Popup)
+
 - 用中文回答问题

@@ -360,6 +360,20 @@ Before proceeding to step 5.4, verify ALL checkboxes:
 
 **✅ CHECKPOINT - 必须执行以下操作：**
 
+**第一步：发送桌面通知提醒用户**
+
+在调用 `ask_followup_question` 之前，先发送桌面通知提醒用户有任务需要确认：
+
+```python
+notify(
+    title="OpenCode 任务完成",
+    message="任务 [任务ID] 已完成，需要您的确认",
+    priority="High"
+)
+```
+
+**第二步：使用 ask_followup_question 工具暂停并询问用户**
+
 使用 `ask_followup_question` 工具，格式如下：
 
 ```python
