@@ -98,11 +98,21 @@ class ChunkRefinerSettings:
 
 
 @dataclass
+class MetadataEnricherSettings:
+    """元数据增强配置。"""
+
+    use_llm: bool = False
+
+
+@dataclass
 class IngestionSettings:
     """摄取管道配置。"""
 
     chunk_refiner: ChunkRefinerSettings = field(
         default_factory=ChunkRefinerSettings
+    )
+    metadata_enricher: MetadataEnricherSettings = field(
+        default_factory=MetadataEnricherSettings
     )
 
 
