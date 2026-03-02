@@ -105,6 +105,14 @@ class MetadataEnricherSettings:
 
 
 @dataclass
+class ImageCaptionerSettings:
+    """图片描述生成配置。"""
+
+    enabled: bool = False
+    use_fallback: bool = True
+
+
+@dataclass
 class IngestionSettings:
     """摄取管道配置。"""
 
@@ -113,6 +121,9 @@ class IngestionSettings:
     )
     metadata_enricher: MetadataEnricherSettings = field(
         default_factory=MetadataEnricherSettings
+    )
+    image_captioner: ImageCaptionerSettings = field(
+        default_factory=ImageCaptionerSettings
     )
 
 
@@ -251,9 +262,17 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     # 构建子 settings（处理 ingestion 内嵌结构）
     ingestion_raw = raw.get("ingestion") or {}
     chunk_refiner_raw = ingestion_raw.get("chunk_refiner") or {}
+    metadata_enricher_raw = ingestion_raw.get("metadata_enricher") or {}
+    image_captioner_raw = ingestion_raw.get("image_captioner") or {}
     ingestion_settings = IngestionSettings(
         chunk_refiner=_build_sub_settings(
             chunk_refiner_raw, ChunkRefinerSettings, "ingestion.chunk_refiner"
+        ),
+        metadata_enricher=_build_sub_settings(
+            metadata_enricher_raw, MetadataEnricherSettings, "ingestion.metadata_enricher"
+        ),
+        image_captioner=_build_sub_settings(
+            image_captioner_raw, ImageCaptionerSettings, "ingestion.image_captioner"
         ),
     )
 
