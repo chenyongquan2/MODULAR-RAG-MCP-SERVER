@@ -54,3 +54,11 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# AI Agent - 本地用户配置
+.claude/settings.local.json
+
+# 临时文件
+*.bak
+*.tmp
+=*
