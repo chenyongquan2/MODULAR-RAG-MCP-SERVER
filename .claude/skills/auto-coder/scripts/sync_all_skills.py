@@ -6,7 +6,7 @@ This script ensures consistency across all AI coding tool integrations by updati
 specs in all locations from a single execution.
 
 Usage:
-    python .github/skills/auto-coder/scripts/sync_all_skills.py [--force]
+    python scripts/sync_all_skills.py [--force]
 
 Arguments:
     --force    Force sync even if hash matches

@@ -62,7 +62,7 @@ Step 1 → [✓ CHECKPOINT] → Step 2 → [✓ CHECKPOINT] → Step 3
 
 2. Run sync script:
 ```powershell
-python .github/skills/auto-coder/scripts/sync_all_skills.py
+python scripts/sync_all_skills.py
 ```
 
 This syncs DEV_SPEC.md to all three skill directories (.claude, .cline, .github).
@@ -284,7 +284,7 @@ verify_sync.py (验证一致性)
 **5.2. 🔄 Run sync to auto-update schedule file**
 
    ```bash
-   python .github/skills/auto-coder/scripts/sync_all_skills.py --force
+   python scripts/sync_all_skills.py --force
    ```
 
    **What this does:**
@@ -456,7 +456,7 @@ Edit DEV_SPEC.md
 # 修改任务行：| B7.5 | ... | [ ] | - | → | B7.5 | ... | [x] | 2026-02-24 |
 
 # 2. 运行同步脚本（自动更新三个目录）
-python .github/skills/auto-coder/scripts/sync_all_skills.py --force
+python scripts/sync_all_skills.py --force
 # 看到：SUCCESS: All 3 location(s) synced successfully
 
 # 3. 验证一致性
@@ -487,7 +487,7 @@ cp .github/skills/auto-coder/specs/06-schedule.md .cline/skills/auto-coder/specs
 **正确做法：**
 ```bash
 # 使用自动同步脚本，而不是手动复制
-python .github/skills/auto-coder/scripts/sync_all_skills.py --force
+python scripts/sync_all_skills.py --force
 ```
 
 ---
