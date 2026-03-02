@@ -17,7 +17,7 @@ export const NotificationPlugin = async ({ $, directory }) => {
           const priority = args.priority || "Normal";
 
           try {
-            await $`powershell -ExecutionPolicy Bypass -File "${directory}/.opencode/hooks/windows-notification-enhanced.ps1" -Title "${title}" -Message "${message}" -Priority "${priority}"`;
+            await $`powershell -ExecutionPolicy Bypass -File "${directory}/.opencode/hooks/simple-notification.ps1" -Title "${title}" -Message "${message}" -Priority "${priority}"`;
             return `Notification sent: ${title} - ${message}`;
           } catch (e) {
             return `Failed to send notification: ${e}`;
@@ -28,7 +28,7 @@ export const NotificationPlugin = async ({ $, directory }) => {
     "session.idle": async (input) => {
       const { session } = input;
       if (session && session.summary) {
-        await $`powershell -ExecutionPolicy Bypass -File "${directory}/.opencode/hooks/windows-notification-enhanced.ps1" -Title "OpenCode 任务完成" -Message "任务已完成，请查看终端" -Priority "Normal"`;
+        await $`powershell -ExecutionPolicy Bypass -File "${directory}/.opencode/hooks/simple-notification.ps1" -Title "OpenCode 任务完成" -Message "任务已完成，请查看终端" -Priority "Normal"`;
       }
     },
   };
