@@ -88,8 +88,8 @@
 | C5 | Transform 基类 + ChunkRefiner | [x] | 2026-03-01 |  |
 | C6 | MetadataEnricher | [x] | 2026-03-02 |  |
 | C7 | ImageCaptioner | [x] | 2026-03-02 |  |
-| C8 | DenseEncoder | [ ] | - |  |
-| C9 | SparseEncoder | [ ] | - |  |
+| C8 | DenseEncoder | [x] | 2026-03-02 |  |
+| C9 | SparseEncoder | [x] | 2026-03-02 |  |
 | C10 | BatchProcessor | [ ] | - |  |
 | C11 | BM25Indexer（倒排索引+IDF计算） | [ ] | - |  |
 | C12 | VectorUpserter（幂等upsert） | [ ] | - |  |
