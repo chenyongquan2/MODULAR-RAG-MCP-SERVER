@@ -5,7 +5,7 @@ from pathlib import Path
 
 from markitdown import MarkItDown
 
-from core.types import Document
+from src.core.types import Document
 from .base_loader import BaseLoader
 
 

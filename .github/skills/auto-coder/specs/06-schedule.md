@@ -94,8 +94,8 @@
 | C11 | BM25Indexer（倒排索引+IDF计算） | [x] | 2026-03-02 |  |
 | C12 | VectorUpserter（幂等upsert） | [x] | 2026-03-02 |  |
 | C13 | ImageStorage（图片存储+SQLite索引） | [x] | 2026-03-03 |  |
-| C14 | Pipeline 编排（MVP 串起来） | [ ] | - |  |
-| C15 | 脚本入口 ingest.py | [ ] | - |  |
+| C14 | Pipeline 编排（MVP 串起来） | [x] | 2026-03-03 |  |
+| C15 | 脚本入口 ingest.py | [x] | 2026-03-03 |  |
 
 #### 阶段 D：Retrieval MVP
 
