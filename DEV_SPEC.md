@@ -2011,7 +2011,7 @@ dashboard:
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| D1 | QueryProcessor（关键词提取 + filters） | [ ] | - |  |
+| D1 | QueryProcessor（关键词提取 + filters） | [x] | 2026-03-04 |  |
 | D2 | DenseRetriever（调用 VectorStore.query） | [ ] | - |  |
 | D3 | SparseRetriever（BM25 查询） | [ ] | - |  |
 | D4 | RRF Fusion | [ ] | - |  |
