@@ -157,3 +157,42 @@ class BaseVectorStore(ABC):
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement get_backend_name() method"
         )
+
+    @abstractmethod
+    def get_by_ids(
+        self,
+        ids: List[str],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve records by their IDs.
+
+        This method is required for sparse retrieval (BM25) to fetch
+        text and metadata for chunks identified by BM25 query results.
+
+        Args:
+            ids: List of chunk IDs to retrieve.
+            trace: Optional TraceContext for observability (reserved for Stage F).
+            **kwargs: Backend-specific parameters.
+
+        Returns:
+            A list of result dicts, each containing:
+            - 'id': str — record identifier
+            - 'text': str — the stored text content
+            - 'metadata': Dict[str, Any] — stored metadata
+
+            Records are returned in the same order as the input IDs.
+            Missing IDs are omitted from the results.
+
+        Raises:
+            ValueError: If ids list is empty.
+            RuntimeError: If the retrieval operation fails.
+
+        Example:
+            >>> results = store.get_by_ids(["chunk_001", "chunk_002"])
+            >>> results[0]["id"]
+            'chunk_001'
+            >>> results[0]["text"]
+            'Hello world'
+        """
+        pass

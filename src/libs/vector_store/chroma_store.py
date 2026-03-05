@@ -254,3 +254,50 @@ class ChromaStore(BaseVectorStore):
             return [col.name for col in collections]
         except Exception as e:
             raise RuntimeError(f"Failed to list collections: {e}") from e
+
+    def get_by_ids(
+        self,
+        ids: List[str],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve records by their IDs.
+
+        Args:
+            ids: List of chunk IDs to retrieve.
+            trace: Optional TraceContext for observability (reserved for Stage F).
+            **kwargs: Backend-specific parameters.
+
+        Returns:
+            List of result dicts with 'id', 'text', 'metadata'.
+            Records are returned in the same order as the input IDs.
+            Missing IDs are omitted from the results.
+
+        Raises:
+            ValueError: If ids list is empty.
+            RuntimeError: If retrieval operation fails.
+        """
+        if not ids:
+            raise ValueError("ids list cannot be empty")
+
+        try:
+            results = self._collection.get(ids=ids)
+
+            output: List[Dict[str, Any]] = []
+            id_to_index = {id_: idx for idx, id_ in enumerate(ids)}
+
+            if not results["ids"]:
+                return []
+
+            for i, chunk_id in enumerate(results["ids"]):
+                result_dict = {
+                    "id": chunk_id,
+                    "text": results["documents"][i] if results["documents"] else "",
+                    "metadata": results["metadatas"][i] if results["metadatas"] else {},
+                }
+                output.append(result_dict)
+
+            return output
+
+        except Exception as e:
+            raise RuntimeError(f"ChromaDB get_by_ids failed: {e}") from e
