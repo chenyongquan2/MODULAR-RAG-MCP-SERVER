@@ -108,9 +108,18 @@ class IngestionPipeline:
 
     @property
     def loader(self) -> BaseLoader:
-        if self._loader is None:
-            self._loader = PdfLoader(collection=self._collection)
         return self._loader
+
+    def _get_loader(self, file_path: str) -> BaseLoader:
+        """Get appropriate loader based on file extension."""
+        suffix = Path(file_path).suffix.lower()
+        if suffix == ".pdf":
+            return PdfLoader(collection=self._collection)
+        elif suffix in [".md", ".markdown"]:
+            from src.libs.loader.markdown_loader import MarkdownLoader
+            return MarkdownLoader(collection=self._collection)
+        else:
+            raise ValueError(f"Unsupported file type: {suffix}")
 
     @property
     def chunker(self) -> DocumentChunker:
@@ -300,7 +309,8 @@ class IngestionPipeline:
         """
         logger.debug(f"Stage 2: Loading document from {file_path}")
 
-        document = self.loader.load(file_path)
+        loader = self._get_loader(file_path)
+        document = loader.load(file_path)
         document.metadata["collection"] = self._collection
 
         result["stages"]["load"] = {
