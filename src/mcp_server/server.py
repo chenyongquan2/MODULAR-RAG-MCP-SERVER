@@ -17,6 +17,8 @@ from src.core.settings import load_settings, SettingsError
 from src.core.query_engine.fusion import HybridSearch
 from src.core.response.response_builder import ResponseBuilder
 from src.mcp_server.tools.query_knowledge_hub import QueryKnowledgeHubTool
+from src.mcp_server.tools.list_collections import ListCollectionsTool
+from src.mcp_server.tools.get_document_summary import GetDocumentSummaryTool
 from observability.logger import get_logger
 
 logger = get_logger(__name__)
@@ -32,6 +34,8 @@ class MCPServer:
             version="0.1.0",
         )
         self._query_tool: QueryKnowledgeHubTool | None = None
+        self._list_collections_tool: ListCollectionsTool | None = None
+        self._get_document_summary_tool: GetDocumentSummaryTool | None = None
 
     def _setup_handlers(self) -> None:
         """设置 MCP 协议处理器。"""
@@ -56,6 +60,28 @@ class MCPServer:
             hybrid_search = HybridSearch(settings=settings)
             response_builder = ResponseBuilder(settings=settings)
             self._query_tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
+
+            # Initialize list_collections tool
+            try:
+                self._list_collections_tool = ListCollectionsTool(settings)
+                list_tool_def = ListCollectionsTool.get_tool_definition()
+                list_tool = Tool(**list_tool_def)
+                self.server.add_tool(list_tool)
+                self.server._tool_handlers[list_tool.name] = self._list_collections_tool.execute
+                logger.info("Registered tool: %s", list_tool.name)
+            except Exception as e:
+                logger.warning("Failed to initialize list_collections tool: %s", e)
+
+            # Initialize get_document_summary tool
+            try:
+                self._get_document_summary_tool = GetDocumentSummaryTool(settings)
+                summary_tool_def = GetDocumentSummaryTool.get_tool_definition()
+                summary_tool = Tool(**summary_tool_def)
+                self.server.add_tool(summary_tool)
+                self.server._tool_handlers[summary_tool.name] = self._get_document_summary_tool.execute
+                logger.info("Registered tool: %s", summary_tool.name)
+            except Exception as e:
+                logger.warning("Failed to initialize get_document_summary tool: %s", e)
 
             # Register query_knowledge_hub tool
             tool_def = QueryKnowledgeHubTool.get_tool_definition()
