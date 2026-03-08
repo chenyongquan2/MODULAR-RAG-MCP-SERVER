@@ -17,7 +17,10 @@ Examples:
 """
 
 import argparse
+import io
 import sys
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from src.core.settings import load_settings
 from src.core.query_engine.fusion import HybridSearch
