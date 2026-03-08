@@ -3,13 +3,13 @@
 # LLM 配置
 llm:
   provider: glm             # glm | azure | openai | ollama | deepseek
-  model: glm-4
+  model: 	GLM-4.6
   api_key: 7c16c4e2e47d4549a4be243f7aee1bb2.8esyaqPmtiVmqbeb
 
 # Embedding 配置 (使用相同的 API key)
 embedding:
   provider: glm             # glm | openai | azure | ollama
-  model: embedding-2
+  model: embedding-3-pro
   api_key: 7c16c4e2e47d4549a4be243f7aee1bb2.8esyaqPmtiVmqbeb
 
 # Vision LLM 配置
