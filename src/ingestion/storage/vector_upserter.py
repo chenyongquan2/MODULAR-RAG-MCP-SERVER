@@ -87,14 +87,16 @@ class VectorUpserter:
         store_records = []
         for record in records:
             stable_id = self._generate_stable_id(record)
+            metadata = record.metadata.copy()
+            metadata.pop("sparse_vector", None)
+            if "tags" in metadata and (not metadata["tags"] or metadata["tags"] == []):
+                metadata.pop("tags", None)
             store_record = {
                 "id": stable_id,
                 "vector": record.dense_vector,
                 "text": record.text,
-                "metadata": record.metadata.copy(),
+                "metadata": metadata,
             }
-            if record.sparse_vector is not None:
-                store_record["metadata"]["sparse_vector"] = record.sparse_vector
             store_records.append(store_record)
 
         self.vector_store.upsert(store_records, trace=trace)
