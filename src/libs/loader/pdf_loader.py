@@ -1,9 +1,9 @@
-"""PDF Loader (MarkItDown)。"""
+"""PDF Loader (pdfplumber)。"""
 
 import hashlib
 from pathlib import Path
 
-from markitdown import MarkItDown
+import pdfplumber
 
 from src.core.types import Document
 from .base_loader import BaseLoader
@@ -12,8 +12,8 @@ from .base_loader import BaseLoader
 class PdfLoader(BaseLoader):
     """PDF 文档加载器。
 
-    使用 MarkItDown 库将 PDF 转换为 Markdown 格式，
-    保留文档结构（标题、列表、代码块等）。
+    使用 pdfplumber 库提取 PDF 文本内容，
+    对中文支持更好。
 
     Attributes:
         collection: 文档所属集合名称
@@ -26,7 +26,6 @@ class PdfLoader(BaseLoader):
             collection: 文档所属集合名称
         """
         super().__init__(collection)
-        self._converter = MarkItDown()
 
     def load(self, path: str | Path) -> Document:
         """加载 PDF 文档。
@@ -46,8 +45,17 @@ class PdfLoader(BaseLoader):
         if path.suffix.lower() != ".pdf":
             raise ValueError(f"Unsupported file format: {path.suffix}. Expected .pdf")
 
-        result = self._converter.convert(str(path))
-        text = result.text_content
+        text_parts = []
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    text_parts.append(page_text)
+
+        text = "\n\n".join(text_parts)
+
+        if not text.strip():
+            raise ValueError(f"Failed to extract text from PDF: {path}")
 
         doc_hash = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
 
@@ -58,5 +66,6 @@ class PdfLoader(BaseLoader):
                 "source_path": str(path),
                 "collection": self.collection,
                 "doc_type": "pdf",
+                "page_count": len(text_parts),
             }
         )
