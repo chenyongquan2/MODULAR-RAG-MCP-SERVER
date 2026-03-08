@@ -234,6 +234,13 @@ def _register_builtin_providers() -> None:
     except ImportError:
         pass  # DeepSeek provider not available
 
+    try:
+        from src.libs.llm.glm_llm import GLMLLM
+
+        LLMFactory.register_provider("glm", GLMLLM)
+    except ImportError:
+        pass  # GLM provider not available
+
 
 def _register_builtin_vision_providers() -> None:
     """Register built-in Vision LLM providers with the factory."""
