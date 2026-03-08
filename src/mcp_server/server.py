@@ -11,14 +11,12 @@ from mcp.server.stdio import stdio_server
 from mcp.types import (
     Tool,
     TextContent,
-    GetPromptResult,
-    PromptMessage,
-    Prompt,
-    Resource,
-    ResourceTemplate,
 )
 
-from core.settings import load_settings, SettingsError
+from src.core.settings import load_settings, SettingsError
+from src.core.query_engine.fusion import HybridSearch
+from src.core.response.response_builder import ResponseBuilder
+from src.mcp_server.tools.query_knowledge_hub import QueryKnowledgeHubTool
 from observability.logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +31,7 @@ class MCPServer:
             name="modular-rag-mcp-server",
             version="0.1.0",
         )
-        self._setup_handlers()
+        self._query_tool: QueryKnowledgeHubTool | None = None
 
     def _setup_handlers(self) -> None:
         """设置 MCP 协议处理器。"""
@@ -42,6 +40,35 @@ class MCPServer:
     async def run(self) -> None:
         """运行 MCP Server。"""
         logger.info("Starting MCP Server on stdio transport...")
+
+        # Initialize RAG components
+        try:
+            settings = load_settings()
+            logger.info(
+                "Initializing RAG components: llm=%s/%s, embedding=%s/%s, vector_store=%s",
+                settings.llm.provider,
+                settings.llm.model,
+                settings.embedding.provider,
+                settings.embedding.model,
+                settings.vector_store.backend,
+            )
+
+            hybrid_search = HybridSearch(settings=settings)
+            response_builder = ResponseBuilder(settings=settings)
+            self._query_tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
+
+            # Register query_knowledge_hub tool
+            tool_def = QueryKnowledgeHubTool.get_tool_definition()
+            tool = Tool(**tool_def)
+            self.server.add_tool(tool)
+
+            # Set up custom handler for query_knowledge_hub
+            self.server._tool_handlers[tool.name] = self._query_tool.execute
+            logger.info("Registered tool: %s", tool.name)
+
+        except Exception as e:
+            logger.error("Failed to initialize RAG components: %s", e, exc_info=True)
+            # Continue without RAG tools for graceful degradation
 
         async def handle_initialize(params: Any) -> dict[str, Any]:
             logger.info("MCP Server initializing...")
