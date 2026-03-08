@@ -4,14 +4,16 @@
 """
 
 import sys
+import asyncio
 
 from core.settings import SettingsError, load_settings
+from mcp_server.server import MCPServer
 from observability.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-def main() -> None:
+async def main() -> None:
     """MCP Server 主入口函数。"""
     try:
         settings = load_settings()
@@ -27,8 +29,11 @@ def main() -> None:
         settings.embedding.model,
         settings.vector_store.backend,
     )
-    logger.info("Modular RAG MCP Server - Starting...")
+    logger.info("Modular RAG MCP Server - Starting on stdio transport...")
+
+    server = MCPServer()
+    await server.run()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
