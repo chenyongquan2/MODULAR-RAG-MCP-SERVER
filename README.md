@@ -36,6 +36,19 @@
 
 ---
 
+## 如何运行
+
+### Ingest阶段
+```
+python scripts/ingest.py --path ./asset/rag_test_doc.md --force
+python scripts/ingest.py --path ./asset/rag_test_doc.md
+```
+### 查询阶段
+```
+python scripts/query.py --query "北极星’到底是什么？"
+```
+---
+
 ## 📄 License
 
 MIT
