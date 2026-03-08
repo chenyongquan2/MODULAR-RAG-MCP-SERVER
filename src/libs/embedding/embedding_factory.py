@@ -142,6 +142,13 @@ def _register_builtin_providers() -> None:
     except ImportError:
         pass  # Ollama provider not available
 
+    try:
+        from src.libs.embedding.glm_embedding import GLMEmbedding
+
+        EmbeddingFactory.register_provider("glm", GLMEmbedding)
+    except ImportError:
+        pass  # GLM provider not available
+
 
 # Register providers when module is imported
 _register_builtin_providers()

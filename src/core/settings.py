@@ -32,8 +32,9 @@ class LLMSettings:
 class EmbeddingSettings:
     """Embedding 配置。"""
 
-    provider: str  # openai | azure | ollama
+    provider: str  # openai | azure | ollama | glm
     model: str
+    api_key: str = ""
 
 
 @dataclass
