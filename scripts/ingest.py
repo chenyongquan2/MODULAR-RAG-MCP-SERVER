@@ -57,27 +57,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def get_pdf_files(path: str) -> list[Path]:
-    """Get all PDF files from a path.
+def get_document_files(path: str) -> list[Path]:
+    """Get all document files (PDF/Markdown) from a path.
 
     Args:
         path: File or directory path
 
     Returns:
-        list[Path]: List of PDF file paths
+        list[Path]: List of document file paths
     """
     p = Path(path)
     if p.is_file():
-        if p.suffix.lower() == ".pdf":
+        if p.suffix.lower() in [".pdf", ".md", ".markdown"]:
             return [p]
         else:
-            logger.warning(f"Skipping non-PDF file: {p}")
+            logger.warning(f"Skipping unsupported file: {p}")
             return []
     elif p.is_dir():
-        pdf_files = sorted(p.rglob("*.pdf"))
-        if not pdf_files:
-            logger.warning(f"No PDF files found in directory: {p}")
-        return pdf_files
+        doc_files = sorted(list(p.rglob("*.pdf")) + list(p.rglob("*.md")) + list(p.rglob("*.markdown")))
+        if not doc_files:
+            logger.warning(f"No document files found in directory: {p}")
+        return doc_files
     else:
         logger.error(f"Path does not exist: {p}")
         return []
@@ -102,12 +102,12 @@ def main() -> int:
         logger.error(f"Failed to load settings: {e}")
         return 1
 
-    pdf_files = get_pdf_files(args.path)
-    if not pdf_files:
-        logger.error("No PDF files to process")
+    doc_files = get_document_files(args.path)
+    if not doc_files:
+        logger.error("No document files to process")
         return 1
 
-    logger.info(f"Found {len(pdf_files)} PDF file(s) to process")
+    logger.info(f"Found {len(doc_files)} document file(s) to process")
 
     pipeline = IngestionPipeline(settings, collection=args.collection)
 
@@ -115,33 +115,33 @@ def main() -> int:
     skip_count = 0
     fail_count = 0
 
-    for pdf_file in pdf_files:
+    for doc_file in doc_files:
         try:
-            logger.info(f"Processing: {pdf_file}")
-            result = pipeline.run(str(pdf_file), force=args.force)
+            logger.info(f"Processing: {doc_file}")
+            result = pipeline.run(str(doc_file), force=args.force)
 
             if result.get("status") == "skipped":
                 skip_count += 1
-                logger.info(f"Skipped (already processed): {pdf_file}")
+                logger.info(f"Skipped (already processed): {doc_file}")
             elif result.get("status") == "success":
                 success_count += 1
                 chunk_count = result.get("stages", {}).get("store", {}).get("chunk_count", 0)
-                logger.info(f"Successfully ingested: {pdf_file} -> {chunk_count} chunks")
+                logger.info(f"Successfully ingested: {doc_file} -> {chunk_count} chunks")
             else:
                 fail_count += 1
                 error = result.get("error", "Unknown error")
-                logger.error(f"Failed to ingest {pdf_file}: {error}")
+                logger.error(f"Failed to ingest {doc_file}: {error}")
 
         except RuntimeError as e:
             if "SKIP" in str(e):
                 skip_count += 1
-                logger.info(f"Skipped (already processed): {pdf_file}")
+                logger.info(f"Skipped (already processed): {doc_file}")
             else:
                 fail_count += 1
-                logger.error(f"Failed to ingest {pdf_file}: {e}")
+                logger.error(f"Failed to ingest {doc_file}: {e}")
         except Exception as e:
             fail_count += 1
-            logger.error(f"Unexpected error processing {pdf_file}: {e}")
+            logger.error(f"Unexpected error processing {doc_file}: {e}")
 
     logger.info(f"Ingestion complete: {success_count} succeeded, {skip_count} skipped, {fail_count} failed")
 
