@@ -2,15 +2,15 @@
 
 # LLM 配置
 llm:
-  provider: azure           # azure | openai | ollama | deepseek
-  model: gpt-4o
-  azure_endpoint: ""
-  api_key: ""
+  provider: glm             # glm | azure | openai | ollama | deepseek
+  model: glm-4
+  api_key: 7c16c4e2e47d4549a4be243f7aee1bb2.8esyaqPmtiVmqbeb
 
-# Embedding 配置
+# Embedding 配置 (使用相同的 API key)
 embedding:
-  provider: openai          # openai | azure | ollama
-  model: text-embedding-3-small
+  provider: glm             # glm | openai | azure | ollama
+  model: embedding-2
+  api_key: 7c16c4e2e47d4549a4be243f7aee1bb2.8esyaqPmtiVmqbeb
 
 # Vision LLM 配置
 vision_llm:
@@ -25,22 +25,22 @@ vector_store:
 # 文本切分配置
 splitter:
   strategy: recursive       # recursive | semantic | fixed
-  chunk_size: 1000
-  chunk_overlap: 200
+  chunk_size: 500         # 减小 chunk 大小，提高召回精度
+  chunk_overlap: 150      # 增加 overlap，减少跨 chunk 丢失
 
 # 检索配置
 retrieval:
-  sparse_backend: bm25      # bm25
-  fusion_algorithm: rrf     # rrf
-  top_k_dense: 20
-  top_k_sparse: 20
+  sparse_backend: bm25    # 启用 BM25 稀疏检索
+  fusion_algorithm: rrf  # rrf
+  top_k_dense: 30        # 增加 dense 召回数量
+  top_k_sparse: 30       # 增加 sparse 召回数量
   top_k_final: 10
 
 # 重排配置
 rerank:
-  backend: none             # none | cross_encoder | llm
+  backend: none           # none | cross_encoder | llm
   model: ""
-  top_m: 30
+  top_m: 50              # 增加重排候选数量
 
 # 摄取管道配置
 ingestion:
