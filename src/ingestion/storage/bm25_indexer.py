@@ -64,19 +64,51 @@ class BM25Indexer:
 
     def _calculate_idf(self, document_frequency: int) -> float:
         """计算 IDF (Inverse Document Frequency)。
+        Note:这里是DF(Document Frequency),而非词频
+        【IDF 的作用】
+        衡量一个词的"区分度"——越稀有的词，IDF 值越大，搜索权重越高。
+        IDF 的直觉：
+            如果一个词在所有文档中都出现（如"的"、"是"），它的区分度很低，IDF 值小
+            如果一个词只在少数文档中出现（如"量子计算"），它的区分度高，IDF 值大
 
-        Formula: IDF(term) = log((N - df + 0.5) / (df + 0.5))
+        【公式】
+            IDF(term) = log((N - df + 0.5) / (df + 0.5))
+
+            其中：
+            - N  = self._total_documents（文档总数）
+            - df = document_frequency（包含该词的文档数）
+
+        【边界情况处理】
+        1. df <= 0 或 N <= 0：词不存在或无文档，返回 0
+        2. df >= N：词出现在所有文档中，无区分度，返回 0
+           （这是 BM25 对原始 IDF 的改进，避免常见词有负 IDF）
+
+        【数值示例】
+        假设 N = 100：
+        - df = 1  → IDF = log(99.5/1.5) ≈ 4.19  （稀有词，高权重）
+        - df = 10 → IDF = log(90.5/10.5) ≈ 2.16
+        - df = 50 → IDF = log(50.5/50.5) = 0    （中等频率）
+        - df = 100 → 返回 0（常见词，无区分度）
 
         Args:
-            document_frequency: 包含该词项的文档数
+            document_frequency: 包含该词项的文档数 (df)
 
         Returns:
-            IDF 值
+            IDF 值（非负数）
         """
+        # 边界情况 1：词不存在或无文档
         if document_frequency <= 0 or self._total_documents <= 0:
             return 0.0
+
+        # 边界情况 2：词出现在所有文档中，无区分度
+        # 此时 (N - df + 0.5) / (df + 0.5) = 0.5 / (N + 0.5) < 1
+        # log 结果为负，但 BM25 认为这种词无区分度，直接返回 0
         if document_frequency >= self._total_documents:
             return 0.0
+
+        # 正常情况：计算 IDF
+        # 公式：log((N - df + 0.5) / (df + 0.5))
+        # 加 0.5 是为了平滑，避免极端情况
         return math.log((self._total_documents - document_frequency + 0.5) / (document_frequency + 0.5))
 
     def _compute_bm25_score(
@@ -88,23 +120,65 @@ class BM25Indexer:
     ) -> float:
         """计算单个词项的 BM25 得分。
 
-        Formula: IDF * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (dl / avg_dl)))
+        【BM25 公式】
+            score = IDF × (tf × (k1 + 1)) / (tf + k1 × (1 - b + b × (dl / avg_dl)))
+
+        【公式分解】
+        1. IDF 部分：词的区分度（已在 _calculate_idf 中计算）
+        2. TF 部分：词频饱和函数
+           - 分子：tf × (k1 + 1) —— tf 越大，分子越大
+           - 分母：tf + k1 × (1 - b + b × (dl / avg_dl)) —— 包含文档长度归一化
+
+        【参数说明】
+        - k1（词频饱和参数，默认 1.5）：
+          控制 tf 对得分的影响速度。k1 越大，tf 的影响越大。
+          典型值范围：1.2 ~ 2.0
+
+          示例（假设 k1=1.5, b=0.75, dl=avg_dl）：
+          - tf=1 → TF部分 = 1×2.5/(1+1.5×1) = 2.5/2.5 = 1.0
+          - tf=2 → TF部分 = 2×2.5/(2+1.5×1) = 5.0/3.5 ≈ 1.43
+          - tf=5 → TF部分 = 5×2.5/(5+1.5×1) = 12.5/6.5 ≈ 1.92
+          - tf=10 → TF部分 = 10×2.5/(10+1.5×1) = 25/11.5 ≈ 2.17
+
+          结论：tf 增长到一定程度后，得分增长变慢（饱和效应）
+
+        - b（文档长度归一化参数，默认 0.75）：
+          控制文档长度对得分的影响。
+          - b=1：完全归一化，长文档被惩罚
+          - b=0：不归一化，文档长度不影响得分
+
+          示例（假设 k1=1.5, tf=2, avg_dl=100）：
+          - dl=50（短文档） → 分母 = 2 + 1.5×(1-0.75+0.75×0.5) = 2.94
+          - dl=100（平均） → 分母 = 2 + 1.5×(1-0.75+0.75×1) = 3.5
+          - dl=200（长文档） → 分母 = 2 + 1.5×(1-0.75+0.75×2) = 4.625
+
+          结论：长文档的分母更大，得分更低（因为长文档更容易匹配到词）
 
         Args:
-            term: 词项
-            term_frequency: 词频 (TF)
-            doc_length: 文档长度
-            idf: IDF 值
+            term: 词项（用于日志，实际计算中未使用）
+            term_frequency: 词频 (TF)，词在文档中出现的次数
+            doc_length: 文档长度 (dl)，文档的字符数或词数
+            idf: IDF 值（已预计算）
 
         Returns:
-            BM25 得分
+            BM25 得分（IDF × TF部分）
         """
+        # 边界情况：词频为 0 或文档长度为 0，得分为 0
         if term_frequency == 0 or doc_length == 0:
             return 0.0
 
+        # 计算分子：tf × (k1 + 1)
+        # tf 越大，分子越大，但增长速度受 k1 控制
         numerator = term_frequency * (self._k1 + 1)
-        denominator = term_frequency + self._k1 * (1 - self._b + self._b * (doc_length / max(self._avg_doc_length, 1)))
 
+        # 计算分母：tf + k1 × (1 - b + b × (dl / avg_dl))
+        # 包含文档长度归一化：长文档的分母更大，得分更低
+        # max(self._avg_doc_length, 1) 防止除零
+        length_ratio = doc_length / max(self._avg_doc_length, 1)
+        denominator = term_frequency + self._k1 * (1 - self._b + self._b * length_ratio)
+
+        # 最终得分：IDF × (分子 / 分母)
+        # IDF 决定词的区分度，TF部分决定词在文档中的重要性
         return idf * (numerator / denominator)
 
     def build(
@@ -114,12 +188,38 @@ class BM25Indexer:
     ) -> None:
         """构建 BM25 倒排索引。
 
+        【构建流程】
+        该方法分两遍扫描文档：
+        1. 第一遍：统计每个词的文档频率 (df)，计算 IDF
+        2. 第二遍：构建倒排列表 (postings)，记录每个文档中词的 tf 和 doc_length
+
+        【为什么需要两遍扫描？】
+        - IDF 的计算需要知道每个词出现在多少个文档中（文档频率 df）
+        - 必须先统计完所有文档，才能计算准确的 IDF
+        - 所以第一遍统计 df，第二遍构建 postings
+
+        【数据结构】
+        构建后的 inverted_index 结构：
+        {
+            "hello": {
+                "idf": 2.34,           # 预计算的 IDF 值
+                "postings": [          # 倒排列表（包含该词的所有文档）
+                    {"chunk_id": "doc1", "tf": 3, "doc_length": 150},
+                    {"chunk_id": "doc3", "tf": 1, "doc_length": 80},
+                ]
+            },
+            ...
+        }
+
         Args:
             records: 带有稀疏向量的 ChunkRecord 列表
+            sparse_vector 是一个字典 {"词": 词频}
             collection: 集合名称（用于索引文件命名）
         """
+        # 过滤出有 sparse_vector 的有效记录
         valid_records = [r for r in records if r.sparse_vector]
 
+        # 边界情况：无有效记录，清空索引
         if not valid_records:
             self._index = {}
             self._doc_lengths = {}
@@ -127,8 +227,11 @@ class BM25Indexer:
             self._avg_doc_length = 0.0
             return
 
+        # 记录文档总数 N（用于 IDF 计算）
         self._total_documents = len(valid_records)
 
+        # ========== 第一遍扫描：统计文档频率 (df) ==========
+        # term_document_freq 记录每个词出现在多少个文档中
         term_document_freq: Dict[str, int] = defaultdict(int)
         doc_lengths: Dict[str, int] = {}
         inverted_index: InvertedIndex = {}
@@ -137,34 +240,48 @@ class BM25Indexer:
             if not record.sparse_vector:
                 continue
 
+            # 记录文档长度（用于 BM25 的文档长度归一化）
             doc_length = len(record.text)
             doc_lengths[record.id] = doc_length
 
+            # 【关键】使用 set() 去重！
+            # 因为这是IDF统计一个词在所有文档中出现的次数，在一个文档出现多词，也应该当作1次来看待，
+            # 注意和词频的区别
+            # 例如：文档中 "hello" 出现 5 次，df 只 +1
             unique_terms = set(record.sparse_vector.keys())
             for term in unique_terms:
                 term_document_freq[term] += 1
 
+        # ========== 计算 IDF 并初始化倒排索引 ==========
         for term, df in term_document_freq.items():
+            # 调用 _calculate_idf 计算 IDF 值
             idf = self._calculate_idf(df)
+            # 初始化该词的索引条目
             inverted_index[term] = {"idf": idf, "postings": []}
 
+        # ========== 第二遍扫描：构建倒排列表 ==========
         for record in valid_records:
             if not record.sparse_vector:
                 continue
 
             doc_length = doc_lengths.get(record.id, len(record.text))
 
+            # 遍历该文档中的每个词及其词频
             for term, tf in record.sparse_vector.items():
                 if term in inverted_index:
+                    # 创建 posting 记录
                     posting: Dict[str, Any] = {
-                        "chunk_id": record.id,
-                        "tf": tf,
-                        "doc_length": doc_length,
+                        "chunk_id": record.id,   # 文档 ID
+                        "tf": tf,                 # 词频 (Term Frequency)
+                        "doc_length": doc_length, # 文档长度
                     }
+                    # 添加到该词的倒排列表
                     inverted_index[term]["postings"].append(posting)
 
+        # 保存构建结果
         self._index = inverted_index
         self._doc_lengths = doc_lengths
+        # 计算平均文档长度（用于 BM25 的长度归一化）
         self._avg_doc_length = sum(doc_lengths.values()) / len(doc_lengths) if doc_lengths else 0.0
 
     def query(
@@ -173,6 +290,25 @@ class BM25Indexer:
         top_k: int = 10,
     ) -> List[Dict[str, Any]]:
         """查询 BM25 索引。
+
+        【查询流程】
+        1. 对每个查询词，从倒排索引中获取 IDF 和 postings
+        2. 对每个 posting，计算 BM25 得分
+        3. 累加所有查询词的得分
+        4. 按得分排序，返回 top_k 结果
+
+        【得分累加】
+        如果查询是 "hello world"，则：
+        - 查找 "hello" 的所有文档，计算 BM25 得分
+        - 查找 "world" 的所有文档，计算 BM25 得分
+        - 同一文档的得分累加
+
+        【示例】
+        假设查询 ["hello", "world"]：
+        - doc1 包含 "hello"(tf=3) 和 "world"(tf=2)
+          → score = BM25("hello", doc1) + BM25("world", doc1)
+        - doc2 只包含 "hello"(tf=1)
+          → score = BM25("hello", doc2)
 
         Args:
             keywords: 查询关键词列表
@@ -184,26 +320,38 @@ class BM25Indexer:
         if not keywords or top_k <= 0:
             return []
 
+        # 用于累加每个文档的得分
         scores: Dict[str, float] = defaultdict(float)
 
+        # 遍历每个查询词
         for keyword in keywords:
+            # 转小写（索引中的词都是小写）
             term = keyword.lower()
+
+            # 如果词不在索引中，跳过
             if term not in self._index:
                 continue
 
+            # 获取该词的索引数据
             term_data = self._index[term]
-            idf = term_data["idf"]
-            postings = term_data["postings"]
+            idf = term_data["idf"]      # 预计算的 IDF 值
+            postings = term_data["postings"]  # 倒排列表
 
+            # 遍历所有包含该词的文档
             for posting in postings:
                 chunk_id = posting["chunk_id"]
-                tf = posting["tf"]
-                doc_length = posting["doc_length"]
+                tf = posting["tf"]           # 词频
+                doc_length = posting["doc_length"]  # 文档长度
 
+                # 计算 BM25 得分
                 score = self._compute_bm25_score(term, tf, doc_length, idf)
+                # 累加到该文档的总得分
                 scores[chunk_id] += score
 
+        # 按得分降序排序
         sorted_results = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+        # 返回 top_k 结果
         return [
             {"chunk_id": chunk_id, "score": score}
             for chunk_id, score in sorted_results[:top_k]
