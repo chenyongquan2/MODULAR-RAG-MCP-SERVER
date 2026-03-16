@@ -32,26 +32,45 @@ pytest -m integration                # Integration tests (requires external serv
 pytest -m e2e                        # End-to-end pipeline tests
 pytest --cov=src                     # With coverage report
 pytest -v --tb=short                 # Verbose with short tracebacks
+pytest tests/unit/test_llm_factory.py -v   # Run single test file
+pytest tests/unit/test_llm_factory.py::test_factory_creation -v  # Run single test
 ```
 
 ### Running the System
 ```bash
 python main.py                       # Start MCP server (stdio transport)
-python scripts/ingest.py             # Offline document ingestion
-python scripts/query.py              # Standalone query testing
+python scripts/ingest.py --path <file_or_dir> [--collection <name>] [--force]  # Offline document ingestion
+python scripts/query.py --query <text> [--top-k <n>] [--collection <name>]     # Standalone query testing
 python scripts/evaluate.py           # Run evaluation suite
 python scripts/start_dashboard.py   # Launch Streamlit dashboard
 ```
 
+**Ingest Examples**:
+```bash
+# Ingest a single file
+python scripts/ingest.py --path ./asset/rag_test_doc.md --force
+
+# Ingest all documents in a directory
+python scripts/ingest.py --path ./tests/fixtures/sample_documents/ --collection my_docs
+```
+
+**Query Examples**:
+```bash
+python scripts/query.py --query "北极星到底是什么？"
+python scripts/query.py --query "How to configure LLM?" --top-k 10
+```
+
 ### Configuration
 All configuration is in `config/settings.yaml`. Change any provider by modifying the corresponding section:
-- `llm.provider` - azure | openai | ollama | deepseek
-- `embedding.provider` - openai | azure | ollama
+- `llm.provider` - glm | azure | openai | ollama | deepseek
+- `embedding.provider` - bge | openai | azure | ollama | glm
 - `splitter.strategy` - recursive | semantic | fixed
 - `rerank.backend` - none | cross_encoder | llm
 - `evaluation.backends` - ragas | custom
 
 No code changes needed - factories auto-load the new implementation on restart.
+
+**Environment Variables**: Use `${VAR_NAME}` syntax in settings.yaml to reference environment variables (e.g., `${OPENAI_API_KEY}`).
 
 ## Architecture
 
@@ -226,15 +245,25 @@ def test_openai_embedding(): ...
 5. **Structured Logging**: Use `observability.logger.get_logger()` - logs to stderr to avoid MCP stdout pollution
 6. **Type Safety**: Shared types in `src/core/types.py` (Document, Chunk, SearchResult, etc.)
 
+## Code Conventions
+
+- **Imports**: Use absolute imports from `src/` root (e.g., `from core.settings import load_settings`)
+- **Type Hints**: All public functions should have type hints
+- **Docstrings**: Use Google-style docstrings for public APIs
+- **Error Handling**: Raise `ValueError` for validation errors, `RuntimeError` for operational errors
+- **Settings Access**: Always use `settings = load_settings()` to get configuration; never read YAML directly
+
 ## MCP Server Details
 
 The MCP server runs on stdio transport and exposes three tools:
 
-- `query_knowledge_hub`: Main RAG query endpoint
+- `query_knowledge_hub`: Main RAG query endpoint (hybrid search + rerank + response generation with citations)
 - `list_collections`: List available document collections
 - `get_document_summary`: Get metadata for specific documents
 
 MCP clients (GitHub Copilot, Claude Desktop, etc.) connect via stdio and can call these tools to retrieve knowledge context.
+
+**MCP Client Configuration**: The `.claude/mcp.json` file configures the MCP server connection for Claude Code. Update paths in this file if the project is moved to a different location.
 
 ## Streamlit Dashboard
 
@@ -253,9 +282,11 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 
 - **Settings Loading**: `core.settings.load_settings()` loads from `config/settings.yaml` with env var overrides (e.g., `${OPENAI_API_KEY}`)
 - **Logger Usage**: Always import `from observability.logger import get_logger` and call `logger = get_logger(__name__)`
-- **PDF Loading**: Currently only PDF format supported via `src/libs/loader/pdf_loader.py` (uses MarkItDown for PDF → Markdown conversion)
+- **PDF Loading**: Currently only PDF and Markdown formats supported via `src/libs/loader/` (uses MarkItDown for PDF → Markdown conversion)
 - **Vector Store**: ChromaDB is the only implemented backend currently
 - **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately
+- **Current LLM Provider**: Default is GLM (智谱) via API proxy; change in settings.yaml to use other providers
+- **Current Embedding Provider**: Default is BGE-M3 via API proxy; supports 1024 dimensions
 
 ## Evaluation System
 
