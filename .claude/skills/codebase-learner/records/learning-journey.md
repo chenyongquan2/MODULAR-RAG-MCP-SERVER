@@ -5357,9 +5357,149 @@ BM25(D, Q) = Σ IDF(qi) × (tf × (k1 + 1)) / (tf + k1 × (1 - b + b × (dl / av
 | Phase 16 | 不指定 --collection 时的行为与智能分类设计 | ✅ 已完成 (2026-03-14) |
 | Phase 17 | Collection 是否真的必要？（深度设计分析） | ✅ 已完成 (2026-03-14) |
 | Phase 18 | IDF (Inverse Document Frequency) 详解 | ✅ 已完成 (2026-03-16) |
+| Phase 18.1 | IDF 代码注释补充 | ✅ 已完成 (2026-03-16) |
 
 ### 下一步建议
 
-1. **TF (Term Frequency) 学习**：理解词频在 BM25 中的作用
-2. **RRF (Reciprocal Rank Fusion) 学习**：理解 Dense + Sparse 结果融合
-3. **实践练习**：手动计算几个文档的 IDF 值，验证代码结果
+1. **RRF (Reciprocal Rank Fusion)** - 理解 Dense + Sparse 结果融合
+2. **实践练习** - 运行一次完整的 Ingest 流程，观察 BM25 索引构建
+3. **ImageStorage 集成** - 补全 Pipeline 中缺失的图片存储功能
+
+---
+
+## Phase 18.1: IDF 代码注释补充 (2026-03-16)
+
+> 学习目标：为 IDF 相关代码添加详细注释，加深理解
+
+### 18.1.1 已添加注释的文件
+
+| 文件 | 注释内容 |
+|------|----------|
+| `src/ingestion/storage/bm25_indexer.py` | IDF 公式、边界处理、数值示例 |
+| `src/ingestion/storage/bm25_indexer.py` | BM25 完整公式、参数说明、示例计算 |
+| `src/ingestion/storage/bm25_indexer.py` | build() 两遍扫描流程、数据结构 |
+| `src/ingestion/storage/bm25_indexer.py` | query() 查询流程、得分累加 |
+| `src/ingestion/embedding/sparse_encoder.py` | 稀疏向量概念、与 BM25 关系 |
+| `src/ingestion/embedding/sparse_encoder.py` | 词频 (TF) 计算、编码流程 |
+
+### 18.1.2 关键注释摘要
+
+**IDF 公式注释**：
+```python
+# IDF(term) = log((N - df + 0.5) / (df + 0.5))
+# 边界情况：
+# - df <= 0 或 N <= 0：返回 0
+# - df >= N：词出现在所有文档中，无区分度，返回 0
+```
+
+**BM25 公式注释**：
+```python
+# BM25 = IDF × (tf × (k1 + 1)) / (tf + k1 × (1 - b + b × (dl / avg_dl)))
+# 参数：
+# - k1=1.5：词频饱和参数，控制 tf 增长速度
+# - b=0.75：文档长度归一化参数
+```
+
+**build() 两遍扫描**：
+```python
+# 第一遍：统计文档频率 (df)，计算 IDF
+# 第二遍：构建倒排列表 (postings)，记录 tf 和 doc_length
+# 关键：使用 set() 去重，每个词在每个文档只计数一次
+```
+
+### 18.1.3 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| 代码注释 | 通过写注释加深了对 IDF/BM25 公式的理解 |
+| 两遍扫描 | build() 需要两遍扫描：先统计 df，再构建 postings |
+| TF vs DF | TF 是文档级别，DF 是集合级别，分开计算 |
+| 稀疏向量 | 只存储非零值，维度等于词表大小 |
+
+### 18.1.4 DF vs TF 去重区别（深入理解）
+
+**核心概念**：
+
+| 概念 | 问题 | 是否去重 | 存储位置 |
+|------|------|----------|----------|
+| **DF** (Document Frequency) | 这个词在多少个文档中出现？ | ✅ 去重 | 倒排索引 `idf` 字段 |
+| **TF** (Term Frequency) | 这个词在当前文档出现多少次？ | ❌ 不去重 | 倒排列表 `tf` 字段 |
+
+**具体例子**：
+
+假设有 3 个文档：
+```
+文档1: "量子计算是未来，量子计算很强大"
+文档2: "量子力学很复杂，量子计算更复杂"
+文档3: "人工智能发展迅速"
+```
+
+**"量子" 的统计**：
+
+| 文档 | TF（出现次数） | 是否计入 DF |
+|------|----------------|-------------|
+| 文档1 | 2 | ✅ +1（只计一次） |
+| 文档2 | 2 | ✅ +1（只计一次） |
+| 文档3 | 0 | ❌ |
+
+**结果**：
+- DF("量子") = **2**（出现在 2 个文档中）
+- TF("量子", 文档1) = **2**（在文档1中出现 2 次）
+- TF("量子", 文档2) = **2**（在文档2中出现 2 次）
+
+**为什么 DF 要去重？**
+
+IDF 衡量的是"这个词能区分多少文档"：
+- 一个文档中出现 100 次"量子"，和出现 1 次，对"区分度"的贡献是一样的
+- 所以 DF 只关心"是否出现"，不关心"出现几次"
+
+**为什么 TF 不去重？**
+
+TF 衡量的是"这个词在这个文档中有多重要"：
+- 出现 100 次的词，显然比出现 1 次的词更重要
+- 所以 TF 要统计实际出现次数
+
+**代码体现**：
+
+```python
+# 第一遍：计算 DF（去重！）
+unique_terms = set(record.sparse_vector.keys())  # 关键：set() 去重
+for term in unique_terms:
+    term_document_freq[term] += 1  # DF +1
+
+# 第二遍：记录 TF（不去重！）
+for term, tf in record.sparse_vector.items():
+    posting = {"tf": tf}  # TF 是实际出现次数
+```
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 7 | Ingest 阶段详解 | ✅ 已完成 (2026-03-14) |
+| Phase 7.3 | Split 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4 | Transform 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4.1 | Transform 阶段 RAG 专家视角 | ✅ 已完成 (2026-03-14) |
+| Phase 7.5 | Encode 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 7.6 | Store 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+| Phase 15 | list_collections 应该返回什么？（设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 16 | 不指定 --collection 时的行为与智能分类设计 | ✅ 已完成 (2026-03-14) |
+| Phase 17 | Collection 是否真的必要？（深度设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 18 | IDF (Inverse Document Frequency) 详解 | ✅ 已完成 (2026-03-16) |
+| Phase 18.1 | IDF 代码注释补充 | ✅ 已完成 (2026-03-16) |
+
+### 下一步建议
+
+1. **RRF (Reciprocal Rank Fusion)** - 理解 Dense + Sparse 结果融合
+2. **实践练习** - 运行一次完整的 Ingest 流程，观察 BM25 索引构建
+3. **ImageStorage 集成** - 补全 Pipeline 中缺失的图片存储功能
