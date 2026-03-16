@@ -3,8 +3,9 @@
 遵循标准：stdout 只输出 MCP 消息，日志到 stderr。
 """
 
+from __future__ import annotations
+
 import sys
-from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -36,10 +37,7 @@ class MCPServer:
         self._query_tool: QueryKnowledgeHubTool | None = None
         self._list_collections_tool: ListCollectionsTool | None = None
         self._get_document_summary_tool: GetDocumentSummaryTool | None = None
-
-    def _setup_handlers(self) -> None:
-        """设置 MCP 协议处理器。"""
-        self.server.request_handlers.clear()
+        self._tools: list[Tool] = []
 
     async def run(self) -> None:
         """运行 MCP Server。"""
@@ -65,10 +63,8 @@ class MCPServer:
             try:
                 self._list_collections_tool = ListCollectionsTool(settings)
                 list_tool_def = ListCollectionsTool.get_tool_definition()
-                list_tool = Tool(**list_tool_def)
-                self.server.add_tool(list_tool)
-                self.server._tool_handlers[list_tool.name] = self._list_collections_tool.execute
-                logger.info("Registered tool: %s", list_tool.name)
+                self._tools.append(Tool(**list_tool_def))
+                logger.info("Prepared tool: list_collections")
             except Exception as e:
                 logger.warning("Failed to initialize list_collections tool: %s", e)
 
@@ -76,75 +72,67 @@ class MCPServer:
             try:
                 self._get_document_summary_tool = GetDocumentSummaryTool(settings)
                 summary_tool_def = GetDocumentSummaryTool.get_tool_definition()
-                summary_tool = Tool(**summary_tool_def)
-                self.server.add_tool(summary_tool)
-                self.server._tool_handlers[summary_tool.name] = self._get_document_summary_tool.execute
-                logger.info("Registered tool: %s", summary_tool.name)
+                self._tools.append(Tool(**summary_tool_def))
+                logger.info("Prepared tool: get_document_summary")
             except Exception as e:
                 logger.warning("Failed to initialize get_document_summary tool: %s", e)
 
             # Register query_knowledge_hub tool
-            tool_def = QueryKnowledgeHubTool.get_tool_definition()
-            tool = Tool(**tool_def)
-            self.server.add_tool(tool)
-
-            # Set up custom handler for query_knowledge_hub
-            self.server._tool_handlers[tool.name] = self._query_tool.execute
-            logger.info("Registered tool: %s", tool.name)
+            query_tool_def = QueryKnowledgeHubTool.get_tool_definition()
+            self._tools.append(Tool(**query_tool_def))
+            logger.info("Prepared tool: query_knowledge_hub")
 
         except Exception as e:
             logger.error("Failed to initialize RAG components: %s", e, exc_info=True)
             # Continue without RAG tools for graceful degradation
 
-        async def handle_initialize(params: Any) -> dict[str, Any]:
-            logger.info("MCP Server initializing...")
-            return {
-                "protocolVersion": "2024-11-05",
-                "serverInfo": {
-                    "name": "modular-rag-mcp-server",
-                    "version": "0.1.0",
-                },
-                "capabilities": {
-                    "tools": {},
-                    "resources": {"subscribe": True},
-                    "prompts": {},
-                },
-                "clientInfo": params.get("clientInfo", {}),
-            }
+        # Register handlers using decorators (MCP SDK 1.26+ pattern)
+        @self.server.list_tools()
+        async def handle_list_tools() -> list[Tool]:
+            """返回可用工具列表。"""
+            logger.info("Listing available tools: %s", [t.name for t in self._tools])
+            return self._tools
 
-        async def handle_tools_list() -> dict[str, Any]:
-            logger.info("Listing available tools...")
-            return {"tools": []}
+        @self.server.call_tool()
+        async def handle_call_tool(
+            name: str, arguments: dict
+        ) -> list[TextContent | dict]:
+            """处理工具调用。"""
+            logger.info("Calling tool: %s with arguments: %s", name, arguments)
 
-        async def handle_tools_call(
-            name: str,
-            arguments: Any,
-        ) -> list[TextContent]:
-            logger.info("Calling tool: %s", name)
-            return [TextContent(type="text", text=f"Tool '{name}' is not implemented yet")]
+            try:
+                if name == "query_knowledge_hub" and self._query_tool:
+                    return await self._query_tool.execute(arguments or {})
 
-        async def handle_prompts_list() -> dict[str, Any]:
-            return {"prompts": []}
+                elif name == "list_collections" and self._list_collections_tool:
+                    return await self._list_collections_tool.execute(arguments or {})
 
-        async def handle_resources_list() -> dict[str, Any]:
-            return {"resources": [], "resourceTemplates": []}
+                elif name == "get_document_summary" and self._get_document_summary_tool:
+                    return await self._get_document_summary_tool.execute(arguments or {})
 
-        self.server.request_handlers[
-            self.server._protocol.initialize
-        ] = handle_initialize
-        self.server.request_handlers[
-            self.server._protocol.tools_list
-        ] = handle_tools_list
-        self.server.request_handlers[
-            self.server._protocol.tools_call
-        ] = handle_tools_call
-        self.server.request_handlers[
-            self.server._protocol.prompts_list
-        ] = handle_prompts_list
-        self.server.request_handlers[
-            self.server._protocol.resources_list
-        ] = handle_resources_list
+                else:
+                    logger.warning("Unknown tool requested: %s", name)
+                    return [
+                        TextContent(
+                            type="text",
+                            text=f"Unknown tool: {name}. Available tools: {[t.name for t in self._tools]}",
+                        )
+                    ]
 
+            except ValueError as e:
+                logger.error("Validation error in tool %s: %s", name, e)
+                return [TextContent(type="text", text=f"参数错误: {str(e)}")]
+
+            except Exception as e:
+                logger.error("Error executing tool %s: %s", name, e, exc_info=True)
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"工具执行错误: {str(e)}",
+                    )
+                ]
+
+        # Run the server
         async with stdio_server() as (read_stream, write_stream):
             await self.server.run(
                 read_stream,
