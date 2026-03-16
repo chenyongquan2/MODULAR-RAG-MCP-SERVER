@@ -149,6 +149,13 @@ def _register_builtin_providers() -> None:
     except ImportError:
         pass  # GLM provider not available
 
+    try:
+        from src.libs.embedding.bge_embedding import BGEEmbedding
+
+        EmbeddingFactory.register_provider("bge", BGEEmbedding)
+    except ImportError:
+        pass  # BGE provider not available
+
 
 # Register providers when module is imported
 _register_builtin_providers()
