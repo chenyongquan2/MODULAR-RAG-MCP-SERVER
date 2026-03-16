@@ -6,9 +6,9 @@
 import sys
 import asyncio
 
-from core.settings import SettingsError, load_settings
-from mcp_server.server import MCPServer
-from observability.logger import get_logger
+from src.core.settings import SettingsError, load_settings
+from src.mcp_server.server import MCPServer
+from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 
