@@ -1,16 +1,21 @@
 # Modular RAG MCP Server - 主配置文件
+#
+# 敏感信息通过环境变量注入，格式: ${ENV_VAR_NAME}
+# 首次使用请复制 .env.example 为 .env 并填入真实值
 
 # LLM 配置
 llm:
   provider: glm             # glm | azure | openai | ollama | deepseek
-  model: 	GLM-4.6
-  api_key: 7c16c4e2e47d4549a4be243f7aee1bb2.8esyaqPmtiVmqbeb
+  model: GLM-4.7
+  api_key: ${GLM_API_KEY}
+  base_url: ${GLM_BASE_URL}
 
-# Embedding 配置 (使用相同的 API key)
+# Embedding 配置
 embedding:
-  provider: glm             # glm | openai | azure | ollama
-  model: embedding-3-pro
-  api_key: 7c16c4e2e47d4549a4be243f7aee1bb2.8esyaqPmtiVmqbeb
+  provider: bge             # bge | openai | azure | ollama | glm
+  model: BAAI/bge-m3        # BAAI/bge-m3 (1024 dimensions)
+  api_key: ${GLM_API_KEY}
+  base_url: ${GLM_BASE_URL}
 
 # Vision LLM 配置
 vision_llm:
@@ -21,26 +26,27 @@ vision_llm:
 vector_store:
   backend: chroma           # chroma
   persist_path: ./data/db/chroma
+  collection_name: default
 
 # 文本切分配置
 splitter:
   strategy: recursive       # recursive | semantic | fixed
-  chunk_size: 500         # 减小 chunk 大小，提高召回精度
-  chunk_overlap: 150      # 增加 overlap，减少跨 chunk 丢失
+  chunk_size: 500           # chunk 大小
+  chunk_overlap: 150        # overlap 大小
 
 # 检索配置
 retrieval:
-  sparse_backend: bm25    # 启用 BM25 稀疏检索
-  fusion_algorithm: rrf  # rrf
-  top_k_dense: 30        # 增加 dense 召回数量
-  top_k_sparse: 30       # 增加 sparse 召回数量
-  top_k_final: 10
+  sparse_backend: bm25      # 启用 BM25 稀疏检索
+  fusion_algorithm: rrf     # rrf
+  top_k_dense: 20           # dense 召回数量
+  top_k_sparse: 20          # sparse 召回数量
+  top_k_final: 10           # 最终返回数量
 
 # 重排配置
 rerank:
-  backend: none           # none | cross_encoder | llm
+  backend: none             # none | cross_encoder | llm
   model: ""
-  top_m: 50              # 增加重排候选数量
+  top_m: 50
 
 # 摄取管道配置
 ingestion:

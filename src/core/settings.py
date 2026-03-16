@@ -1,16 +1,33 @@
 """配置加载与校验 (Settings)。
 
 读取 config/settings.yaml，解析为 Settings 数据结构，并在启动时校验关键字段存在。
+
+支持环境变量注入：
+- 自动加载 .env 文件
+- 支持 ${ENV_VAR} 格式的环境变量引用
+- 优先级：环境变量 > .env 文件 > settings.yaml
 """
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+# 尝试加载 .env 文件
+try:
+    from dotenv import load_dotenv
+    # 从项目根目录加载 .env 文件
+    _project_root = Path(__file__).parent.parent.parent
+    _env_file = _project_root / ".env"
+    if _env_file.exists():
+        load_dotenv(_env_file)
+except ImportError:
+    pass  # python-dotenv 未安装，跳过
 
 
 # ---------------------------------------------------------------------------
@@ -22,19 +39,21 @@ import yaml
 class LLMSettings:
     """LLM 配置。"""
 
-    provider: str  # azure | openai | ollama | deepseek
+    provider: str  # azure | openai | ollama | deepseek | glm
     model: str
     azure_endpoint: str = ""
     api_key: str = ""
+    base_url: str = ""
 
 
 @dataclass
 class EmbeddingSettings:
     """Embedding 配置。"""
 
-    provider: str  # openai | azure | ollama | glm
+    provider: str  # openai | azure | ollama | glm | bge
     model: str
     api_key: str = ""
+    base_url: str = ""
 
 
 @dataclass
@@ -51,6 +70,7 @@ class VectorStoreSettings:
 
     backend: str  # chroma
     persist_path: str = "./data/db/chroma"
+    collection_name: str = "default"  # 集合名称，默认 "default"
 
 
 @dataclass
@@ -188,6 +208,45 @@ class SettingsError(Exception):
 # 内部辅助
 # ---------------------------------------------------------------------------
 
+# 环境变量引用模式: ${VAR_NAME} 或 ${VAR_NAME:-default_value}
+_ENV_VAR_PATTERN = re.compile(r"\$\{([^}:]+)(?::-([^}]*))?\}")
+
+
+def _resolve_env_vars(value: Any) -> Any:
+    """递归解析配置值中的环境变量引用。
+
+    支持格式：
+    - ${VAR_NAME} - 引用环境变量
+    - ${VAR_NAME:-default} - 带默认值的环境变量引用
+
+    Args:
+        value: 配置值（可以是字符串、字典、列表等）
+
+    Returns:
+        解析后的值，环境变量引用被替换为实际值
+    """
+    if isinstance(value, str):
+        def replace_env_var(match: re.Match) -> str:
+            var_name = match.group(1)
+            default_value = match.group(2)  # 可能为 None
+            env_value = os.environ.get(var_name)
+            if env_value is not None:
+                return env_value
+            if default_value is not None:
+                return default_value
+            # 环境变量不存在且无默认值，返回原字符串
+            return match.group(0)
+
+        return _ENV_VAR_PATTERN.sub(replace_env_var, value)
+
+    elif isinstance(value, dict):
+        return {k: _resolve_env_vars(v) for k, v in value.items()}
+
+    elif isinstance(value, list):
+        return [_resolve_env_vars(item) for item in value]
+
+    return value
+
 
 def _get_nested(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
     """按 key 路径从嵌套字典取值，取不到返回 ``None``。"""
@@ -255,10 +314,8 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     if not isinstance(raw, dict):
         raise SettingsError("Config file content is not a valid YAML mapping")
 
-    # 环境变量覆盖 api_key（优先级：环境变量 > yaml）
-    llm_raw: dict[str, Any] = raw.get("llm") or {}
-    if not llm_raw.get("api_key") and os.environ.get("LLM_API_KEY"):
-        llm_raw["api_key"] = os.environ["LLM_API_KEY"]
+    # 解析配置中的环境变量引用 ${VAR_NAME}
+    raw = _resolve_env_vars(raw)
 
     # 构建子 settings（处理 ingestion 内嵌结构）
     ingestion_raw = raw.get("ingestion") or {}
@@ -278,7 +335,7 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     )
 
     settings = Settings(
-        llm=_build_sub_settings(llm_raw, LLMSettings, "llm"),
+        llm=_build_sub_settings(raw.get("llm"), LLMSettings, "llm"),
         embedding=_build_sub_settings(
             raw.get("embedding"), EmbeddingSettings, "embedding"
         ),
