@@ -462,9 +462,12 @@ class IngestionPipeline:
         self.vector_upserter.upsert(records, trace=trace)
 
         self.bm25_indexer.build(records, collection=self._collection)
+        index_path = self.bm25_indexer.save(collection=self._collection)
+        logger.debug(f"BM25 index saved to: {index_path}")
 
         result["stages"]["store"] = {
             "chunk_count": len(records),
+            "bm25_index_path": str(index_path),
         }
 
     def _mark_success(self, file_path: str, result: Dict[str, Any]) -> None:
