@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional, Dict, Any
 
 from src.core.settings import Settings
-from src.core.types import Document, Chunk, ChunkRecord
+from src.core.types import Document, Chunk, ChunkRecord, ImageReference
 from src.libs.loader.file_integrity import SQLiteIntegrityChecker
 from src.libs.loader.base_loader import BaseLoader
 from src.libs.loader.pdf_loader import PdfLoader
@@ -313,9 +313,31 @@ class IngestionPipeline:
         document = loader.load(file_path)
         document.metadata["collection"] = self._collection
 
+        # 存储文档中的图片
+        doc_hash = document.id.replace("doc_", "")  # 从 doc_id 提取 hash
+        if document.metadata.get("images"):
+            try:
+                updated_images = self._store_document_images(
+                    document=document,
+                    collection=self._collection,
+                    doc_hash=doc_hash,
+                )
+                document.metadata["images"] = updated_images
+                logger.info(f"Stored {len(updated_images)} images for document {document.id}")
+
+                # 清理临时目录（图片已持久化存储）
+                if hasattr(loader, 'cleanup_temp_dirs'):
+                    loader.cleanup_temp_dirs()
+            except Exception as e:
+                logger.warning(f"Failed to store images: {e}")
+                # 清理临时目录（即使存储失败也要清理）
+                if hasattr(loader, 'cleanup_temp_dirs'):
+                    loader.cleanup_temp_dirs()
+
         result["stages"]["load"] = {
             "doc_id": document.id,
             "text_length": len(document.text),
+            "image_count": len(document.metadata.get("images", [])),
         }
 
         return document
@@ -479,3 +501,76 @@ class IngestionPipeline:
             )
         except Exception as e:
             logger.warning(f"Failed to mark file as failed: {e}")
+
+    def _store_document_images(
+        self,
+        document: Document,
+        collection: str,
+        doc_hash: str,
+    ) -> List[ImageReference]:
+        """存储文档中的图片到 ImageStorage。
+
+        从 document.metadata["images"] 获取图片引用，
+        调用 image_storage.save_image() 存储图片，
+        返回更新后的 ImageReference 列表。
+
+        Args:
+            document: 文档对象
+            collection: 集合名称
+            doc_hash: 文档哈希值
+
+        Returns:
+            List[ImageReference]: 更新后的图片引用列表
+        """
+        images = document.metadata.get("images", [])
+        if not images:
+            return []
+
+        updated_refs = []
+        for img_ref in images:
+            try:
+                # 处理 ImageReference 对象和字典两种格式
+                if isinstance(img_ref, ImageReference):
+                    image_id = img_ref.id
+                    source_path = img_ref.path
+                    page_num = img_ref.page
+                elif isinstance(img_ref, dict):
+                    image_id = img_ref.get("id", "")
+                    source_path = img_ref.get("path", "")
+                    page_num = img_ref.get("page")
+                else:
+                    logger.warning(f"Unknown image reference type: {type(img_ref)}")
+                    continue
+
+                # 检查源文件是否存在
+                if not Path(source_path).exists():
+                    logger.warning(f"Image source file not found: {source_path}")
+                    continue
+
+                # 存储图片
+                stored_path = self.image_storage.save_image(
+                    source_path=source_path,
+                    image_id=image_id,
+                    collection=collection,
+                    doc_hash=doc_hash,
+                    page_num=page_num,
+                )
+
+                # 创建更新后的 ImageReference
+                updated_ref = ImageReference(
+                    id=image_id,
+                    path=stored_path,
+                    text_offset=img_ref.text_offset if isinstance(img_ref, ImageReference) else 0,
+                    text_length=img_ref.text_length if isinstance(img_ref, ImageReference) else 0,
+                    page=page_num,
+                    position=img_ref.position if isinstance(img_ref, ImageReference) else img_ref.get("position"),
+                )
+                updated_refs.append(updated_ref)
+
+                logger.debug(f"Stored image: {image_id} -> {stored_path}")
+
+            except Exception as e:
+                logger.warning(f"Failed to store image {img_ref.id if isinstance(img_ref, ImageReference) else img_ref.get('id', 'unknown')}: {e}")
+                continue
+
+        return updated_refs

@@ -3,8 +3,8 @@
 import pytest
 from pathlib import Path
 
-from libs.loader.pdf_loader import PdfLoader
-from core.types import Document
+from src.libs.loader.pdf_loader import PdfLoader
+from src.core.types import Document
 
 
 @pytest.fixture
