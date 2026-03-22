@@ -303,6 +303,46 @@ def _build_sub_settings(
 # ---------------------------------------------------------------------------
 
 
+# 常用字段的环境变量映射
+_ENV_FIELD_MAPPING: dict[tuple[str, ...], str] = {
+    ("llm", "api_key"): "LLM_API_KEY",
+    ("embedding", "api_key"): "EMBEDDING_API_KEY",
+}
+
+
+def _inject_env_vars(raw: dict[str, Any]) -> dict[str, Any]:
+    """注入常用环境变量到配置。
+
+    如果配置中某个字段为空且对应的环境变量存在，则自动注入。
+
+    Args:
+        raw: 原始配置字典
+
+    Returns:
+        注入环境变量后的配置字典
+    """
+    for field_path, env_var in _ENV_FIELD_MAPPING.items():
+        # 获取当前值
+        current: Any = raw
+        for key in field_path[:-1]:
+            if not isinstance(current, dict):
+                break
+            current = current.get(key)
+            if current is None:
+                break
+
+        if isinstance(current, dict):
+            last_key = field_path[-1]
+            current_value = current.get(last_key)
+            # 如果值为空或不存在，尝试从环境变量注入
+            if current_value is None or (isinstance(current_value, str) and current_value.strip() == ""):
+                env_value = os.environ.get(env_var)
+                if env_value:
+                    current[last_key] = env_value
+
+    return raw
+
+
 def load_settings(path: str = "config/settings.yaml") -> Settings:
     """读取 YAML 配置文件并返回 :class:`Settings` 实例。
 
@@ -330,6 +370,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
 
     # 解析配置中的环境变量引用 ${VAR_NAME}
     raw = _resolve_env_vars(raw)
+
+    # 注入常用环境变量
+    raw = _inject_env_vars(raw)
 
     # 构建子 settings（处理 ingestion 内嵌结构）
     ingestion_raw = raw.get("ingestion") or {}
