@@ -260,7 +260,7 @@ class MultimodalAssembler:
                 break
 
             # 提取 image_id
-            image_id = markdown[pos + 7:end]  # Skip "[IMAGE:"
+            image_id = markdown[pos + 7:end].strip()  # Skip "[IMAGE:" and strip whitespace
             image_positions.append((pos, image_id))
             start = end + 1
 

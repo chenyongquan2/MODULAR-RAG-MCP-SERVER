@@ -16,6 +16,12 @@ class MockSettings:
 class TestReranker:
     """Reranker 类的单元测试。"""
 
+    def setup_method(self):
+        """Ensure providers are registered before each test."""
+        # Re-register providers in case other tests cleared the registry
+        from src.libs.reranker.reranker_factory import _register_builtin_providers
+        _register_builtin_providers()
+
     def test_reranker_with_none_backend(self):
         """测试 None reranker (passthrough)。"""
         settings = MockSettings()

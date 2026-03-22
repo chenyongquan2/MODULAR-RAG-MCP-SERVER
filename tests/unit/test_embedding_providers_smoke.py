@@ -53,6 +53,12 @@ def mock_embedding_response():
 class TestOpenAIEmbedding:
     """Test suite for OpenAI Embedding provider."""
 
+    def setup_method(self):
+        """Ensure providers are registered before each test."""
+        # Re-register providers in case other tests cleared the registry
+        from src.libs.embedding.embedding_factory import _register_builtin_providers
+        _register_builtin_providers()
+
     def test_factory_creates_openai_embedding(self, mock_openai_settings):
         """Test that factory creates OpenAI Embedding instance."""
         with patch("src.libs.embedding.openai_embedding.OpenAI"):
@@ -171,6 +177,12 @@ class TestOpenAIEmbedding:
 class TestAzureEmbedding:
     """Test suite for Azure OpenAI Embedding provider."""
 
+    def setup_method(self):
+        """Ensure providers are registered before each test."""
+        # Re-register providers in case other tests cleared the registry
+        from src.libs.embedding.embedding_factory import _register_builtin_providers
+        _register_builtin_providers()
+
     def test_factory_creates_azure_embedding(self, mock_azure_settings):
         """Test that factory creates Azure Embedding instance."""
         with patch("src.libs.embedding.azure_embedding.AzureOpenAI"):
@@ -262,6 +274,12 @@ class TestAzureEmbedding:
 
 class TestProviderIntegration:
     """Test provider registration and factory integration."""
+
+    def setup_method(self):
+        """Ensure providers are registered before each test."""
+        # Re-register providers in case other tests cleared the registry
+        from src.libs.embedding.embedding_factory import _register_builtin_providers
+        _register_builtin_providers()
 
     def test_openai_provider_registered(self):
         """Test that OpenAI provider is registered in factory."""

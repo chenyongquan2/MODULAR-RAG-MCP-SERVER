@@ -242,6 +242,12 @@ class TestDeepSeekLLM:
 class TestLLMFactoryIntegration:
     """Integration tests for LLM Factory with new providers."""
 
+    def setup_method(self):
+        """Ensure providers are registered before each test."""
+        # Re-register providers in case other tests cleared the registry
+        from src.libs.llm.llm_factory import _register_builtin_providers
+        _register_builtin_providers()
+
     def test_factory_registers_openai(self):
         """Factory should auto-register OpenAI provider."""
         providers = LLMFactory.list_providers()
@@ -256,8 +262,6 @@ class TestLLMFactoryIntegration:
         """Factory should auto-register DeepSeek provider."""
         providers = LLMFactory.list_providers()
         assert "deepseek" in providers
-
-    def test_factory_create_openai(self):
         """Factory should create OpenAI provider from settings."""
         settings = MagicMock()
         settings.llm.provider = "openai"

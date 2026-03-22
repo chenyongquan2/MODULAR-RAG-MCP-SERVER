@@ -183,12 +183,12 @@ class TestVectorUpserterIdempotency:
         assert stored_metadata["title"] == "Test Document"
         assert stored_metadata["custom_field"] == "custom_value"
 
-    def test_sparse_vector_included(
+    def test_sparse_vector_excluded_from_metadata(
         self,
         mock_vector_store,
         settings,
     ):
-        """稀疏向量被包含在元数据中。"""
+        """稀疏向量不应包含在元数据中（由 BM25 索引单独存储）。"""
         upsert = VectorUpserter(settings, vector_store=mock_vector_store)
 
         record = ChunkRecord(
@@ -204,9 +204,11 @@ class TestVectorUpserterIdempotency:
         call_args = mock_vector_store.upsert.call_args_list[0][0][0]
         stored_metadata = call_args[0]["metadata"]
 
-        assert "sparse_vector" in stored_metadata
-        assert stored_metadata["sparse_vector"]["term1"] == 0.5
-        assert stored_metadata["sparse_vector"]["term2"] == 0.3
+        # sparse_vector should NOT be stored in metadata
+        # (it's stored separately in BM25 index)
+        assert "sparse_vector" not in stored_metadata
+        assert stored_metadata["source_path"] == "/test/doc.pdf"
+        assert stored_metadata["chunk_index"] == 0
 
     def test_stable_id_format(self, mock_vector_store, settings):
         """稳定 ID 格式正确。"""

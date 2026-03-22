@@ -106,6 +106,24 @@ class FakeVectorStore(BaseVectorStore):
         """Return configured backend name."""
         return self._backend_name
 
+    def get_by_ids(
+        self,
+        ids: List[str],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve records by their IDs."""
+        results = []
+        for record_id in ids:
+            if record_id in self._store:
+                record = self._store[record_id]
+                results.append({
+                    "id": record["id"],
+                    "text": record.get("text", ""),
+                    "metadata": record.get("metadata", {}),
+                })
+        return results
+
 
 # ===========================================================================
 # Contract Tests: Validate input/output shape
@@ -334,6 +352,9 @@ class TestBaseVectorStoreValidation:
         """BaseVectorStore without override should raise NotImplementedError."""
 
         class IncompleteStore(BaseVectorStore):
+            def get_by_ids(self, ids, trace=None, **kwargs):
+                return []
+
             def upsert(self, records, trace=None, **kwargs):
                 pass
 
@@ -447,6 +468,9 @@ class TestVectorStoreFactory:
         class BrokenStore(BaseVectorStore):
             def __init__(self, settings: Any, **kwargs: Any):
                 raise ValueError("Intentional init error")
+
+            def get_by_ids(self, ids, trace=None, **kwargs):
+                return []
 
             def upsert(self, records, trace=None, **kwargs):
                 pass

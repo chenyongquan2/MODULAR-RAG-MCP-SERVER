@@ -43,6 +43,8 @@ class TestMultimodalAssembler:
         def get_image_path_side_effect(image_id: str) -> str | None:
             if image_id == "test_img_1":
                 return temp_image_file
+            elif image_id == "test_img_2":
+                return temp_image_file  # Reuse same image for both
             return None
 
         storage.get_image_path.side_effect = get_image_path_side_effect
