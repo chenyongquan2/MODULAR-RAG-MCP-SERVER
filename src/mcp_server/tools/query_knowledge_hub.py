@@ -172,7 +172,23 @@ class QueryKnowledgeHubTool:
             "name": "query_knowledge_hub",
             "description": (
                 "基于混合检索（Dense + Sparse + RRF + Rerank）"
-                "查询知识库，并生成包含引用的响应。"
+                "查询知识库，并生成包含引用的响应。\n\n"
+                "## 可用的 metadata 过滤字段\n\n"
+                "你可以根据用户问题的特征，自动推断合适的 filters：\n\n"
+                "| 字段 | 说明 | 示例值 |\n"
+                "|------|------|--------|\n"
+                "| collection | 文档所属集合 | 'docs', 'wiki', 'manual' |\n"
+                "| doc_type | 文档类型 | 'pdf', 'markdown' |\n"
+                "| source_path | 源文件路径 | '/docs/api.pdf' |\n"
+                "| title | 文档标题 | 'API Reference' |\n"
+                "| tags | 标签（数组） | ['API', 'configuration'] |\n"
+                "| author | 作者 | '张三' |\n\n"
+                "## 自动推断示例\n\n"
+                "- 用户问「PDF 文档中关于 API 的内容」→ filters={\"doc_type\": \"pdf\"}\n"
+                "- 用户问「在 wiki 集合中查找配置方法」→ filters={\"collection\": \"wiki\"}\n"
+                "- 用户问「张三写的文档」→ filters={\"author\": \"张三\"}\n"
+                "- 用户无明确限定 → 不传 filters（全库搜索）\n\n"
+                "注意：先调用 list_collections 获取可用集合列表。"
             ),
             "inputSchema": {
                 "type": "object",
@@ -190,7 +206,39 @@ class QueryKnowledgeHubTool:
                     },
                     "filters": {
                         "type": "object",
-                        "description": "元数据过滤条件，如 {'collection': 'docs'}",
+                        "description": (
+                            "元数据过滤条件。根据用户问题自动推断：\n"
+                            "- collection: 集合名称（先调用 list_collections 获取可用值）\n"
+                            "- doc_type: 文档类型，如 'pdf', 'markdown'\n"
+                            "- source_path: 源文件路径\n"
+                            "- title: 文档标题关键词\n"
+                            "- tags: 标签数组\n"
+                            "- author: 作者名称\n"
+                            "示例：{\"collection\": \"docs\", \"doc_type\": \"pdf\"}"
+                        ),
+                        "properties": {
+                            "collection": {
+                                "type": "string",
+                                "description": "文档集合名称，如 'docs', 'wiki'",
+                            },
+                            "doc_type": {
+                                "type": "string",
+                                "description": "文档类型：'pdf' 或 'markdown'",
+                                "enum": ["pdf", "markdown"],
+                            },
+                            "source_path": {
+                                "type": "string",
+                                "description": "源文件路径（部分匹配）",
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "文档标题关键词",
+                            },
+                            "author": {
+                                "type": "string",
+                                "description": "文档作者",
+                            },
+                        },
                         "additionalProperties": {
                             "type": "string",
                         },
