@@ -27,6 +27,7 @@ from src.ingestion.transform.base_transform import BaseTransform
 from src.ingestion.transform.chunk_refiner import ChunkRefiner
 from src.ingestion.transform.metadata_enricher import MetadataEnricher
 from src.ingestion.transform.image_captioner import ImageCaptioner
+from src.ingestion.transform.text_enricher import TextEnricher
 from src.ingestion.embedding.dense_encoder import DenseEncoder
 from src.ingestion.embedding.sparse_encoder import SparseEncoder
 from src.ingestion.embedding.batch_processor import BatchProcessor
@@ -69,6 +70,7 @@ class IngestionPipeline:
         transform: Optional[BaseTransform] = None,
         metadata_enricher: Optional[MetadataEnricher] = None,
         image_captioner: Optional[ImageCaptioner] = None,
+        text_enricher: Optional[TextEnricher] = None,
         dense_encoder: Optional[DenseEncoder] = None,
         sparse_encoder: Optional[SparseEncoder] = None,
         batch_processor: Optional[BatchProcessor] = None,
@@ -92,6 +94,7 @@ class IngestionPipeline:
         self._transform = transform
         self._metadata_enricher = metadata_enricher
         self._image_captioner = image_captioner
+        self._text_enricher = text_enricher
         self._dense_encoder = dense_encoder
         self._sparse_encoder = sparse_encoder
         self._batch_processor = batch_processor
@@ -144,6 +147,12 @@ class IngestionPipeline:
         if self._image_captioner is None:
             self._image_captioner = ImageCaptioner(self._settings)
         return self._image_captioner
+
+    @property
+    def text_enricher(self) -> TextEnricher:
+        if self._text_enricher is None:
+            self._text_enricher = TextEnricher(self._settings)
+        return self._text_enricher
 
     @property
     def dense_encoder(self) -> DenseEncoder:
@@ -375,7 +384,7 @@ class IngestionPipeline:
         result: Dict[str, Any],
         trace: Optional["TraceContext"],
     ) -> List[Chunk]:
-        """Stage 4: Transform (精炼 + 元数据增强 + 图片描述)。
+        """Stage 4: Transform (精炼 + 元数据增强 + 图片描述 + 文本增强)。
 
         Args:
             chunks: chunks 列表
@@ -405,6 +414,12 @@ class IngestionPipeline:
                 transformed_chunks = self.image_captioner.transform(transformed_chunks, trace=trace)
             except Exception as e:
                 logger.warning(f"ImageCaptioner failed, continuing: {e}")
+
+        # 文本增强：将图片描述融合到正文
+        try:
+            transformed_chunks = self.text_enricher.transform(transformed_chunks, trace=trace)
+        except Exception as e:
+            logger.warning(f"TextEnricher failed, continuing: {e}")
 
         result["stages"]["transform"] = {
             "chunk_count": len(transformed_chunks),

@@ -134,6 +134,17 @@ class ImageCaptionerSettings:
 
 
 @dataclass
+class TextEnricherSettings:
+    """文本增强器配置。
+
+    用于控制图片描述融合到正文的行为。
+    """
+
+    enabled: bool = True
+    caption_format: str = "[图片描述: {caption}]"
+
+
+@dataclass
 class IngestionSettings:
     """摄取管道配置。"""
 
@@ -145,6 +156,9 @@ class IngestionSettings:
     )
     image_captioner: ImageCaptionerSettings = field(
         default_factory=ImageCaptionerSettings
+    )
+    text_enricher: TextEnricherSettings = field(
+        default_factory=TextEnricherSettings
     )
 
 
@@ -322,6 +336,7 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     chunk_refiner_raw = ingestion_raw.get("chunk_refiner") or {}
     metadata_enricher_raw = ingestion_raw.get("metadata_enricher") or {}
     image_captioner_raw = ingestion_raw.get("image_captioner") or {}
+    text_enricher_raw = ingestion_raw.get("text_enricher") or {}
     ingestion_settings = IngestionSettings(
         chunk_refiner=_build_sub_settings(
             chunk_refiner_raw, ChunkRefinerSettings, "ingestion.chunk_refiner"
@@ -331,6 +346,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
         ),
         image_captioner=_build_sub_settings(
             image_captioner_raw, ImageCaptionerSettings, "ingestion.image_captioner"
+        ),
+        text_enricher=_build_sub_settings(
+            text_enricher_raw, TextEnricherSettings, "ingestion.text_enricher"
         ),
     )
 
