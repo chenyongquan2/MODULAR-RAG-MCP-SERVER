@@ -135,8 +135,15 @@ class ListCollectionsTool:
         return {
             "name": "list_collections",
             "description": (
-                "列出知识库中所有可用的文档集合。"
-                "集合通常按文档类型或来源进行分组。"
+                "列出知识库中所有可用的文档集合。\n\n"
+                "## 使用场景\n\n"
+                "在调用 query_knowledge_hub 之前，先调用此工具获取可用集合列表，"
+                "以便根据用户问题推断合适的 collection filter。\n\n"
+                "## 示例流程\n\n"
+                "1. 用户问「在技术文档中查找 API 配置」\n"
+                "2. 先调用 list_collections 获取：['tech_docs', 'wiki', 'manual']\n"
+                "3. 推断 'tech_docs' 最相关\n"
+                "4. 调用 query_knowledge_hub(query='API 配置', filters={'collection': 'tech_docs'})"
             ),
             "inputSchema": {
                 "type": "object",
