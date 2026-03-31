@@ -127,13 +127,13 @@ def sync_all(force: bool = False):
 
     # Detect skill directories
     skill_dirs = []
-    for tool_dir in [".claude", ".cline", ".github", ".opencode"]:
+    for tool_dir in [".claude", ".cline", ".github"]:
         skill_path = repo_root / tool_dir / "skills" / "auto-coder"
         if skill_path.exists() and skill_path.is_dir():
             skill_dirs.append(skill_path)
 
     if not skill_dirs:
-        print("ERROR: No skill directories found (.claude/skills/auto-coder, .cline/skills/auto-coder, .github/skills/auto-coder, .opencode/skills/auto-coder)")
+        print("ERROR: No skill directories found (.claude/skills/auto-coder, .cline/skills/auto-coder, .github/skills/auto-coder)")
         sys.exit(1)
 
     # Sync each directory
