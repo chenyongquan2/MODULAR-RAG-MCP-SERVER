@@ -6,13 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a modular RAG (Retrieval-Augmented Generation) server that exposes knowledge retrieval capabilities through the Model Context Protocol (MCP). The project is designed with a pluggable architecture where every component (LLM, embedding, splitter, vector store, reranker, evaluator) can be swapped without code changes.
 
-**Current Status**: Work in progress, expected completion March 2026. The `dev-from-cean-start` branch contains ongoing development with DEV_SPEC task tracking.
+**Current Status**: Work in progress, expected completion March 2026. The `dev-from-clean-start` branch contains ongoing development with DEV_SPEC task tracking.
 
 ## Branch Strategy
 
 - **`main`**: Single commit with latest complete code
 - **`dev`**: Full commit history showing incremental development
 - **`clean-start`**: Skeleton framework for learning from scratch
+- **`dev-from-clean-start`**: Active development branch from clean-start, with DEV_SPEC task tracking
 
 ## Common Commands
 
@@ -31,7 +32,6 @@ pytest -m unit                       # Tests marked as unit
 pytest -m integration                # Integration tests (requires external services)
 pytest -m e2e                        # End-to-end pipeline tests
 pytest --cov=src                     # With coverage report
-pytest -v --tb=short                 # Verbose with short tracebacks
 pytest tests/unit/test_llm_factory.py -v   # Run single test file
 pytest tests/unit/test_llm_factory.py::test_factory_creation -v  # Run single test
 ```
@@ -47,10 +47,7 @@ python scripts/start_dashboard.py   # Launch Streamlit dashboard
 
 **Ingest Examples**:
 ```bash
-# Ingest a single file
 python scripts/ingest.py --path ./asset/rag_test_doc.md --force
-
-# Ingest all documents in a directory
 python scripts/ingest.py --path ./tests/fixtures/sample_documents/ --collection my_docs
 ```
 
@@ -61,65 +58,26 @@ python scripts/query.py --query "How to configure LLM?" --top-k 10
 ```
 
 ### Configuration
+
 All configuration is in `config/settings.yaml`. Change any provider by modifying the corresponding section:
-- `llm.provider` - glm | azure | openai | ollama | deepseek
-- `embedding.provider` - bge | openai | azure | ollama | glm
-- `splitter.strategy` - recursive | semantic | fixed
-- `rerank.backend` - none | cross_encoder | llm
-- `evaluation.backends` - ragas | custom
+
+| Setting | Options |
+|---------|---------|
+| `llm.provider` | glm, azure, openai, ollama, deepseek |
+| `embedding.provider` | bge, openai, azure, ollama, glm |
+| `splitter.strategy` | recursive, semantic, fixed |
+| `rerank.backend` | none, cross_encoder, llm |
+| `evaluation.backends` | ragas, custom |
 
 No code changes needed - factories auto-load the new implementation on restart.
 
-**Environment Variables**: Use `${VAR_NAME}` syntax in settings.yaml to reference environment variables (e.g., `${OPENAI_API_KEY}`).
+**Environment Variables**:
+- Use `${VAR_NAME}` syntax in settings.yaml (e.g., `${GLM_API_KEY}`)
+- Support default values: `${VAR_NAME:-default_value}`
+- Auto-injection: `LLM_API_KEY` and `EMBEDDING_API_KEY` are automatically injected if corresponding fields are empty
+- Copy `.env.example` to `.env` and fill in your API keys
 
 ## Architecture
-
-### Directory Structure
-```
-src/
-├── core/                  # Core business logic
-│   ├── query_engine/     # Hybrid search (dense + sparse + fusion + rerank)
-│   ├── response/         # Response generation, citations, multimodal assembly
-│   ├── trace/            # Tracing infrastructure
-│   ├── settings.py       # Configuration dataclasses & YAML loading
-│   └── types.py          # Shared type definitions (Document, Chunk, etc.)
-├── ingestion/            # Data ingestion pipeline
-│   ├── chunking/         # Document splitting
-│   ├── transform/        # Image captioning, metadata enrichment, chunk refining
-│   ├── embedding/        # Dense + sparse encoding
-│   ├── storage/          # Vector DB upserter, BM25 indexer, image storage
-│   └── document_manager.py
-├── libs/                 # Pluggable provider implementations (40 files)
-│   ├── llm/             # BaseLLM + Azure/OpenAI/Ollama/DeepSeek implementations
-│   ├── embedding/       # BaseEmbedding + providers
-│   ├── splitter/        # BaseSplitter + strategies
-│   ├── vector_store/    # BaseVectorStore + ChromaDB
-│   ├── reranker/        # BaseReranker + CrossEncoder/LLM/None
-│   ├── evaluator/       # BaseEvaluator + Ragas/Custom
-│   └── loader/          # BaseLoader + PDF
-├── mcp_server/          # MCP protocol implementation
-│   ├── server.py        # MCP server (stdio transport)
-│   ├── protocol_handler.py
-│   └── tools/           # query_knowledge_hub, list_collections, get_document_summary
-└── observability/
-    ├── logger.py        # Structured logging (stderr, avoids stdout pollution)
-    ├── dashboard/       # 6-page Streamlit management platform
-    └── evaluation/      # Evaluation framework
-
-config/
-├── settings.yaml        # Main configuration (provider selection, models, API keys)
-└── prompts/            # LLM prompt templates
-
-scripts/                # Entry point scripts
-data/                   # Runtime data (db/, documents/, images/)
-cache/                  # Processing cache
-logs/                   # Trace logs (JSONL)
-tests/
-├── unit/              # Fast, no external deps
-├── integration/       # Requires external services
-├── e2e/              # Full pipeline tests
-└── fixtures/         # sample_documents/, golden_test_set.json
-```
 
 ### Pluggable Architecture Pattern
 
@@ -162,13 +120,10 @@ Query → QueryProcessor → HybridSearch
 
 Two trace types (both JSONL to `logs/traces.jsonl`):
 
-1. **Query Trace** (`trace_type: "query"`)
-   - Stages: query_processing → dense → sparse → fusion → rerank
-   - Captures: latency, scores, provider/method names, candidate counts
-
-2. **Ingestion Trace** (`trace_type: "ingestion"`)
-   - Stages: load → split → transform → embed → upsert
-   - Captures: chunk counts, batch sizes, provider/method names, latency
+| Trace Type | Stages |
+|------------|--------|
+| Query (`trace_type: "query"`) | query_processing → dense → sparse → fusion → rerank |
+| Ingestion (`trace_type: "ingestion"`) | load → split → transform → embed → upsert |
 
 The Streamlit dashboard reads these traces and dynamically renders based on `method`/`provider` fields - no dashboard code changes needed when swapping components.
 
@@ -180,7 +135,7 @@ This project uses DEV_SPEC.md as the single source of truth:
 - All features are defined with detailed technical specs in DEV_SPEC.md
 - Tasks are tracked with progress status directly in DEV_SPEC.md
 - To understand what needs to be built, read the relevant section in DEV_SPEC.md
-- The `auto-coder` skill (in `.claude/skills/auto-coder/`) automates this workflow
+- The `auto-coder` skill automates this workflow
 
 ### Adding a New Provider
 
@@ -220,22 +175,6 @@ llm:
 
 4. Update dataclass in `src/core/settings.py` if new fields needed
 
-### Testing Guidelines
-
-- **Unit tests** (`tests/unit/`): Test isolated logic, mock external dependencies
-- **Integration tests** (`tests/integration/`): Test real provider interactions (requires API keys)
-- **E2E tests** (`tests/e2e/`): Test full pipeline (ingestion → query → evaluation)
-- **Fixtures**: Reusable test data in `tests/fixtures/`
-
-Use markers to control test execution:
-```python
-@pytest.mark.unit
-def test_factory_creation(): ...
-
-@pytest.mark.integration
-def test_openai_embedding(): ...
-```
-
 ## Key Design Principles
 
 1. **Provider-Agnostic**: Never hardcode provider names in business logic - always use abstract interfaces
@@ -257,9 +196,11 @@ def test_openai_embedding(): ...
 
 The MCP server runs on stdio transport and exposes three tools:
 
-- `query_knowledge_hub`: Main RAG query endpoint (hybrid search + rerank + response generation with citations)
-- `list_collections`: List available document collections
-- `get_document_summary`: Get metadata for specific documents
+| Tool | Description |
+|------|-------------|
+| `query_knowledge_hub` | Main RAG query endpoint (hybrid search + rerank + response generation with citations) |
+| `list_collections` | List available document collections |
+| `get_document_summary` | Get metadata for specific documents |
 
 MCP clients (GitHub Copilot, Claude Desktop, etc.) connect via stdio and can call these tools to retrieve knowledge context.
 
@@ -280,13 +221,11 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 
 ## Important Implementation Notes
 
-- **Settings Loading**: `core.settings.load_settings()` loads from `config/settings.yaml` with env var overrides (e.g., `${OPENAI_API_KEY}`)
+- **Settings Loading**: `core.settings.load_settings()` loads from `config/settings.yaml` with env var overrides
 - **Logger Usage**: Always import `from observability.logger import get_logger` and call `logger = get_logger(__name__)`
 - **PDF Loading**: Currently only PDF and Markdown formats supported via `src/libs/loader/` (uses MarkItDown for PDF → Markdown conversion)
 - **Vector Store**: ChromaDB is the only implemented backend currently
 - **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately
-- **Current LLM Provider**: Default is GLM (智谱) via API proxy; change in settings.yaml to use other providers
-- **Current Embedding Provider**: Default is BGE-M3 via API proxy; supports 1024 dimensions
 
 ## Evaluation System
 
@@ -311,20 +250,9 @@ DEV_SPEC.md contains the complete technical specification organized as:
 
 When implementing features, reference the corresponding section in DEV_SPEC.md for detailed requirements.
 
-## OpenCode Plugins
+## Interaction Preferences
 
-This project includes OpenCode plugins for enhanced development experience:
-
-### Notification Plugin
-- **Location**: `.opencode/plugins/notifications.js`
-- **Features**:
-  - Desktop notifications on task completion (`session.idle` event)
-  - Custom `notify` tool for sending notifications manually
-- **Usage**:
-  ```javascript
-  // In OpenCode, use the notify tool:
-  // notify title="Task Complete" message="C4 implementation done" priority="High"
-  ```
-- **Hooks**: `.opencode/hooks/windows-notification-enhanced.ps1` (Windows Toast/Balloon/Popup)
-
-- 用中文回答问题
+- **Language**: 用中文回答问题
+- **Role**: 你是一个具备丰富 RAG 知识的专业高级开发工程师，用户是 RAG 开发经验尚浅的学习者
+- **Code Comments**: 相关代码需要加上必要的中文注释，帮助理解 RAG 概念和实现细节
+- **Testing**: 编写代码后，需要运行单元测试 (`pytest tests/unit -v`)，确保用例通过
