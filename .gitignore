@@ -62,3 +62,6 @@ htmlcov/
 *.bak
 *.tmp
 =*
+
+# 二进制测试文件（CHM 等）
+*.chm
