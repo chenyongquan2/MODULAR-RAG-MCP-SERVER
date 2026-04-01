@@ -121,6 +121,10 @@ class IngestionPipeline:
         elif suffix in [".md", ".markdown"]:
             from src.libs.loader.markdown_loader import MarkdownLoader
             return MarkdownLoader(collection=self._collection)
+        elif suffix == ".chm":
+            # CHM (Compiled HTML Help) 文档加载器
+            from src.libs.loader.chm_loader import ChmLoader
+            return ChmLoader(collection=self._collection)
         else:
             raise ValueError(f"Unsupported file type: {suffix}")
 
@@ -169,7 +173,13 @@ class IngestionPipeline:
     @property
     def batch_processor(self) -> BatchProcessor:
         if self._batch_processor is None:
-            self._batch_processor = BatchProcessor(self._settings)
+            # 从 embedding provider 获取合适的 batch_size
+            # 这样可以避免硬编码模型名称判断，由 provider 自己声明支持的 batch_size
+            from src.libs.embedding.embedding_factory import EmbeddingFactory
+            embedding_client = EmbeddingFactory.create(self._settings)
+            batch_size = embedding_client.get_max_batch_size()
+            logger.info(f"Creating BatchProcessor with batch_size={batch_size} (provider: {embedding_client.get_model_name()})")
+            self._batch_processor = BatchProcessor(self._settings, batch_size=batch_size)
         return self._batch_processor
 
     @property
