@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def get_document_files(path: str) -> list[Path]:
-    """Get all document files (PDF/Markdown) from a path.
+    """Get all document files (PDF/Markdown/CHM) from a path.
 
     Args:
         path: File or directory path
@@ -68,13 +68,16 @@ def get_document_files(path: str) -> list[Path]:
     """
     p = Path(path)
     if p.is_file():
-        if p.suffix.lower() in [".pdf", ".md", ".markdown"]:
+        if p.suffix.lower() in [".pdf", ".md", ".markdown", ".chm"]:
             return [p]
         else:
             logger.warning(f"Skipping unsupported file: {p}")
             return []
     elif p.is_dir():
-        doc_files = sorted(list(p.rglob("*.pdf")) + list(p.rglob("*.md")) + list(p.rglob("*.markdown")))
+        # 支持 PDF、Markdown 和 CHM 文件
+        doc_files = (
+            sorted(list(p.rglob("*.pdf")) + list(p.rglob("*.md")) + list(p.rglob("*.markdown")) + list(p.rglob("*.chm")))
+        )
         if not doc_files:
             logger.warning(f"No document files found in directory: {p}")
         return doc_files
