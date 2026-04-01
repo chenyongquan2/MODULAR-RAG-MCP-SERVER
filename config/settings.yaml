@@ -10,12 +10,12 @@ llm:
   api_key: ${GLM_API_KEY}
   base_url: ${GLM_BASE_URL}
 
-# Embedding 配置
+# Embedding 配置（使用 OpenAI 兼容接口，可接入 Qwen/其他兼容 API）
 embedding:
-  provider: bge             # bge | openai | azure | ollama | glm
-  model: BAAI/bge-m3        # BAAI/bge-m3 (1024 dimensions)
-  api_key: ${GLM_API_KEY}
-  base_url: ${GLM_BASE_URL}
+  provider: openai
+  model: text-embedding-3-small
+  api_key: ${QWEN_EMBEDDING_API_KEY}
+  base_url: ${QWEN_EMBEDDING_BASE_URL}
 
 # Vision LLM 配置
 vision_llm:
