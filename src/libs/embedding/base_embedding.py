@@ -108,3 +108,16 @@ class BaseEmbedding(ABC):
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement get_dimension() method"
         )
+
+    def get_max_batch_size(self) -> int:
+        """Get the maximum batch size supported by this provider.
+
+        Returns:
+            The maximum number of texts that can be embedded in a single API call.
+            Default is 100 if not overridden.
+
+        Note:
+            Subclasses should override this method to return their specific limit.
+            This is useful for BatchProcessor to optimize batch sizing.
+        """
+        return 100
