@@ -47,6 +47,18 @@ python scripts/ingest.py --path ./asset/rag_test_doc.md
 ```
 python scripts/query.py --query "北极星’到底是什么？"
 ```
+
+---
+
+## 🧪 测试文件
+
+部分单元测试需要测试数据文件：
+
+- **CHM 文件**：用于测试 CHM 文档加载器（仅 Windows 平台）
+  - 由于 CHM 文件体积较大且为二进制格式，未包含在仓库中
+  - 如需运行相关测试，请将 CHM 文件放置于 `tests/fixtures/chm/` 目录
+  - 可从官方文档网站获取测试用 CHM 文件
+
 ---
 
 ## 📄 License
