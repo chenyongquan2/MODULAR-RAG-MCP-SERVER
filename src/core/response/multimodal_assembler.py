@@ -24,7 +24,7 @@ from mcp.types import TextContent, ImageContent
 from src.core.types import RetrievalResult
 from src.ingestion.storage.image_storage import BaseImageStorage, SQLiteImageStorage
 
-from observability.logger import get_logger
+from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 

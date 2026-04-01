@@ -10,7 +10,7 @@ from src.core.settings import Settings
 from src.libs.vector_store.base_vector_store import BaseVectorStore
 from src.libs.vector_store.vector_store_factory import VectorStoreFactory
 
-from observability.logger import get_logger
+from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -20,7 +20,7 @@ from src.core.response.response_builder import ResponseBuilder
 from src.mcp_server.tools.query_knowledge_hub import QueryKnowledgeHubTool
 from src.mcp_server.tools.list_collections import ListCollectionsTool
 from src.mcp_server.tools.get_document_summary import GetDocumentSummaryTool
-from observability.logger import get_logger
+from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 

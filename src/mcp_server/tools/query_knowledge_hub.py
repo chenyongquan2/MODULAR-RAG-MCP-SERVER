@@ -11,7 +11,7 @@ from src.core.response.response_builder import ResponseBuilder
 from src.core.response.citation_generator import StructuredContent
 from src.core.types import RetrievalResult
 
-from observability.logger import get_logger
+from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 

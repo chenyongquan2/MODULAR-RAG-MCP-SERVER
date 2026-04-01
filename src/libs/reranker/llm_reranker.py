@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from observability.logger import get_logger
+from src.observability.logger import get_logger
 from src.libs.llm.base_llm import BaseLLM
 from src.libs.llm.llm_factory import LLMFactory
 from src.libs.reranker.base_reranker import BaseReranker

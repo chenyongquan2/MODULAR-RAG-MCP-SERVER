@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from observability.logger import get_logger
+from src.observability.logger import get_logger
 from src.libs.reranker.base_reranker import BaseReranker
 
 if TYPE_CHECKING:
