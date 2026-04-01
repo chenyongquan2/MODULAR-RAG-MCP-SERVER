@@ -1,0 +1,7969 @@
+# Codebase 学习记录
+
+---
+
+## 📊 学习进度追踪
+
+> **学习者**: 初学者
+> **学习目标**: 全面理解架构设计、数据流、扩展组件、测试方法、MCP Server
+> **首次学习**: 2026-03-12
+
+| Phase | 主题 | 状态 | 完成日期 | 学习时长 |
+|-------|------|------|----------|----------|
+| 1 | 项目概览 | ✅ 已完成 | 2026-03-12 | ~30min |
+| 2 | 核心概念 | ✅ 已完成 | 2026-03-12 | ~45min |
+| 3 | 架构设计 | ✅ 已完成 | 2026-03-12 | ~60min |
+| 4 | 数据流 | ✅ 已完成 | 2026-03-12 | ~45min |
+| 5 | 动手实践 | ✅ 已完成 | 2026-03-12 | ~30min |
+| 6 | 测试方法 | ✅ 已完成 | 2026-03-12 | ~30min |
+| 7 | 混合检索系统 | 🔲 待学习 | - | - |
+| 8 | 响应生成系统 | 🔲 待学习 | - | - |
+| 9 | 向量存储系统 | 🔲 待学习 | - | - |
+| 10 | MCP Server 架构概览 | ✅ 已完成 | 2026-03-13 | ~45min |
+| 11 | MCP Server 工具详解 | ✅ 已完成 | 2026-03-14 | ~60min |
+| 12 | 三个工具的协作关系 | ✅ 已完成 | 2026-03-14 | ~30min |
+| 13 | 追踪系统 | 🔲 待学习 | - | - |
+| 14 | 评估系统 | 🔲 待学习 | - | - |
+| 15 | Streamlit Dashboard | 🔲 待学习 | - | - |
+
+**当前进度**: Phase 10-12 已完成，Phase 7-9 为下一步建议
+**下次学习建议**: Phase 7 - 混合检索系统（深入理解 Dense/Sparse 检索原理）
+
+---
+
+## 📝 学习记录详情
+
+---
+
+## Phase 1: 项目概览
+
+### 1.1 这是什么项目？
+
+**简单来说**：这是一个"智能问答系统"的后端服务。
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MODULAR RAG MCP SERVER                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  📥 导入文档                    🔍 查询知识                   │
+│  ┌─────────────┐               ┌─────────────┐              │
+│  │ PDF/MD 文件 │───处理──────▶│  知识库      │              │
+│  └─────────────┘               └─────────────┘              │
+│                                       │                      │
+│                                       ▼                      │
+│                               ┌─────────────┐               │
+│                               │ 用户提问    │               │
+│                               └─────────────┘               │
+│                                       │                      │
+│                                       ▼                      │
+│                               ┌─────────────┐               │
+│                               │ AI 生成回答 │               │
+│                               │ + 引用来源  │               │
+│                               └─────────────┘               │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 目录结构
+
+```
+📂 src/                          # 源代码目录
+│
+├── 📂 core/                     # 核心业务逻辑
+│   ├── 📄 types.py              # 数据类型定义
+│   ├── 📄 settings.py           # 配置加载
+│   ├── 📂 query_engine/         # 查询引擎
+│   ├── 📂 response/             # 响应生成
+│   └── 📂 trace/                # 追踪日志
+│
+├── 📂 libs/                     # 可插拔组件库 ← 重点学习
+│   ├── 📂 llm/                  # 大语言模型
+│   ├── 📂 embedding/            # 嵌入模型
+│   ├── 📂 splitter/             # 文本分割器
+│   ├── 📂 vector_store/         # 向量数据库
+│   ├── 📂 reranker/             # 重排序器
+│   └── 📂 loader/               # 文档加载器
+│
+├── 📂 ingestion/                # 导入管道
+│   ├── 📄 pipeline.py           # 主流程
+│   ├── 📂 chunking/             # 文档切分
+│   ├── 📂 embedding/            # 向量化
+│   └── 📂 storage/              # 存储
+│
+├── 📂 mcp_server/               # MCP 协议服务
+│   └── 📂 tools/                # 工具定义
+│
+└── 📂 observability/            # 可观测性
+    ├── 📄 logger.py             # 日志
+    └── 📂 dashboard/            # 管理面板
+
+📂 config/                       # 配置文件
+└── 📄 settings.yaml             # 主配置 ← 切换组件的地方
+
+📂 scripts/                      # 入口脚本
+├── 📄 ingest.py                 # 导入文档
+└── 📄 query.py                  # 查询测试
+```
+
+---
+
+## Phase 2: 核心概念
+
+### 2.1 什么是 RAG？
+
+**RAG = Retrieval-Augmented Generation（检索增强生成）**
+
+```
+想象你在考试：
+
+❌ 传统 AI（没有 RAG）：
+   你问："公司的年假政策是什么？"
+   AI 答："根据一般情况，年假通常是..."（可能瞎编）
+
+✅ RAG 系统：
+   你问："公司的年假政策是什么？"
+   系统做：
+   1. 📚 检索：在员工手册中搜索"年假"
+   2. 📖 阅读：找到相关段落
+   3. ✍️ 生成：基于找到的内容回答
+   AI 答："根据员工手册第3章，年假政策是..."（有据可查）
+```
+
+### 2.2 核心数据类型
+
+```
+数据流转过程
+============
+
+📄 Document (原始文档)
+│
+│  id: "doc_001"
+│  text: "完整的文档内容..."
+│  metadata: {source_path: "/docs/manual.pdf", ...}
+│
+▼ 切分
+📄 Chunk (文档片段)
+│
+│  id: "doc_001_0001"
+│  text: "文档的一个片段..."
+│  source_ref: "doc_001"  ← 指向父文档
+│
+▼ 向量化
+📄 ChunkRecord (向量记录)
+│
+│  id: "doc_001_0001"
+│  text: "文档的一个片段..."
+│  dense_vector: [0.1, 0.2, ...]  ← 稠密向量（语义搜索用）
+│  sparse_vector: {"年假": 2.5, ...}  ← 稀疏向量（关键词搜索用）
+│
+▼ 检索
+📄 RetrievalResult (检索结果)
+│
+│  chunk_id: "doc_001_0001"
+│  score: 0.95  ← 相关性分数
+│  text: "文档的一个片段..."
+```
+
+### 2.3 什么是 MCP？
+
+**MCP = Model Context Protocol（模型上下文协议）**
+
+简单理解：MCP 是一个"标准插座"，让 AI 助手（如 Claude、GitHub Copilot）能够"插"到你的系统上使用。
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│   Claude Code   │         │  你的 RAG 系统   │
+│  (AI 助手)      │◄───────►│  (MCP Server)   │
+└─────────────────┘  MCP    └─────────────────┘
+                           │
+                           │ 提供的工具：
+                           │ • query_knowledge_hub
+                           │ • list_collections
+                           │ • get_document_summary
+```
+
+---
+
+## Phase 3: 架构设计
+
+### 3.1 可插拔架构
+
+**问题**：你想用 OpenAI 的 GPT-4，但同事想用智谱的 GLM-4，怎么办？
+
+**传统做法**（不好）：
+```python
+# 硬编码，改起来很麻烦
+from openai import OpenAI
+client = OpenAI()
+response = client.chat.completions.create(...)
+```
+
+**本项目做法**（好）：
+```python
+# 通过工厂创建，配置决定用哪个
+llm = LLMFactory.create(settings)
+response = llm.generate("你好")
+```
+
+切换只需改配置文件：
+```yaml
+# 用 OpenAI
+llm:
+  provider: openai
+  model: gpt-4
+
+# 或者用智谱 GLM
+llm:
+  provider: glm
+  model: glm-4
+```
+
+### 3.2 工厂模式详解
+
+```
+工厂模式工作流程
+===============
+
+                    ┌─────────────────────────────────────┐
+                    │           settings.yaml              │
+                    │   llm:                              │
+                    │     provider: glm                   │
+                    │     model: glm-4                    │
+                    └──────────────────┬──────────────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                         LLMFactory                                  │
+│                                                                     │
+│   _PROVIDERS = {                                                    │
+│       "openai": OpenAILLM,      ← 注册表                            │
+│       "azure": AzureLLM,                                            │
+│       "glm": GLMLLM,                                                │
+│       "ollama": OllamaLLM,                                          │
+│       "deepseek": DeepSeekLLM,                                      │
+│   }                                                                 │
+│                                                                     │
+│   create(settings):                                                 │
+│       1. 读取 settings.llm.provider → "glm"                         │
+│       2. 从注册表查找 → GLMLLM 类                                    │
+│       3. 创建实例 → GLMLLM(settings)                                │
+│       4. 返回实例                                                   │
+└────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+                    ┌─────────────────────────────────────┐
+                    │            BaseLLM                  │
+                    │  (抽象基类，定义接口)                 │
+                    │                                     │
+                    │  @abstractmethod                    │
+                    │  chat(messages) → str              │
+                    │  get_model_name() → str            │
+                    └──────────────────┬──────────────────┘
+                                       │ 继承
+                    ┌──────────────────┴──────────────────┐
+                    │                                     │
+                    ▼                                     ▼
+           ┌───────────────┐                   ┌───────────────┐
+           │   GLMLLM      │                   │   OpenAILLM   │
+           │               │                   │               │
+           │ chat():       │                   │ chat():       │
+           │   调用智谱API  │                   │   调用OpenAI  │
+           └───────────────┘                   └───────────────┘
+```
+
+### 3.3 关键代码解读
+
+**基类 (`src/libs/llm/base_llm.py`)**：
+```python
+from abc import ABC, abstractmethod
+
+class BaseLLM(ABC):  # ABC = Abstract Base Class（抽象基类）
+
+    @abstractmethod  # 子类必须实现这个方法
+    def chat(self, messages: List[dict], ...) -> str:
+        """发送消息并返回响应"""
+        pass
+
+    def get_model_name(self) -> str:
+        """获取模型名称"""
+        raise NotImplementedError("子类必须实现此方法")
+```
+
+**工厂 (`src/libs/llm/llm_factory.py`)**：
+```python
+class LLMFactory:
+    _PROVIDERS = {}  # 注册表（字典）
+
+    @classmethod
+    def register_provider(cls, name: str, provider_class):
+        """注册提供者"""
+        cls._PROVIDERS[name] = provider_class
+
+    @classmethod
+    def create(cls, settings) -> BaseLLM:
+        """创建实例"""
+        provider_name = settings.llm.provider  # "glm"
+        provider_class = cls._PROVIDERS[provider_name]  # GLMLLM
+        return provider_class(settings)  # 创建实例
+
+# 自动注册（模块导入时执行）
+def _register_builtin_providers():
+    from src.libs.llm.glm_llm import GLMLLM
+    LLMFactory.register_provider("glm", GLMLLM)
+    # ... 其他提供者
+
+_register_builtin_providers()  # 导入时自动执行
+```
+
+---
+
+## Phase 4: 数据流
+
+### 4.1 导入流程
+
+```
+导入流程
+================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Stage 1: Integrity Check (完整性检查)                                        │
+│  • 计算 SHA256 哈希                                                          │
+│  • 检查是否已处理过                                                           │
+│  • 如果已处理且非 force 模式 → 跳过                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Stage 2: Load (加载文档)                                                     │
+│  PdfLoader / MarkdownLoader                                                  │
+│       │                                                                      │
+│       ▼                                                                      │
+│  Document { id, text, metadata }                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Stage 3: Split (切分文档)                                                    │
+│  DocumentChunker (使用 Splitter)                                             │
+│       │                                                                      │
+│       ▼                                                                      │
+│  [Chunk 1, Chunk 2, Chunk 3, ...]                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Stage 4: Transform (转换增强)                                                │
+│  ChunkRefiner → MetadataEnricher → ImageCaptioner                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Stage 5: Encode (向量化)                                                     │
+│                                                                              │
+│  DenseEncoder: Chunk → [0.1, 0.2, ...] (1024维向量)  ← 语义搜索             │
+│  SparseEncoder: Chunk → {"关键词": 2.5, ...}         ← 关键词搜索           │
+│                                                                              │
+│  结果: ChunkRecord (包含 dense_vector + sparse_vector)                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Stage 6: Store (存储)                                                        │
+│                                                                              │
+│  VectorUpserter → ChromaDB (向量数据库)                                      │
+│  BM25Indexer → BM25 Index (倒排索引)                                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 查询流程
+
+```
+查询流程
+================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 1: QueryProcessor (查询处理)                                            │
+│                                                                              │
+│  输入: "北极星到底是什么？"                                                   │
+│  输出: ProcessedQuery { original_query, keywords, filters }                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    │                               │
+                    ▼                               ▼
+┌───────────────────────────────────┐ ┌───────────────────────────────────┐
+│ Step 2a: DenseRetriever           │ │ Step 2b: SparseRetriever          │
+│ (稠密检索 - 语义搜索)              │ │ (稀疏检索 - 关键词搜索)            │
+│                                   │ │                                   │
+│  1. 查询向量化                     │ │  1. 使用关键词                     │
+│  2. 向量相似度搜索 (ChromaDB)      │ │  2. BM25 搜索                     │
+│  3. 返回语义相关结果               │ │  3. 返回关键词匹配结果             │
+└───────────────────────────────────┘ └───────────────────────────────────┘
+                    │                               │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 3: Fusion (RRF 融合)                                                    │
+│                                                                              │
+│  RRF 公式: RRF(d) = Σ (1 / (k + rank(d)))                                   │
+│                                                                              │
+│  将两个检索结果合并，根据排名计算融合分数                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 4: Reranker (重排序)                                                    │
+│                                                                              │
+│  使用更精确的模型重新计算相关性分数                                           │
+│  (CrossEncoder 或 LLM)                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Step 5: ResponseBuilder (响应生成)                                           │
+│                                                                              │
+│  1. 取 top-k 结果作为上下文                                                  │
+│  2. 构建提示词并调用 LLM 生成回答                                             │
+│  3. 添加引用来源                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Phase 5: 动手实践
+
+### 添加 Mock LLM 提供者
+
+**步骤 1: 创建实现文件** `src/libs/llm/mock_llm.py`
+
+```python
+"""Mock LLM provider for testing purposes."""
+
+from typing import Any, List, Optional
+from src.libs.llm.base_llm import BaseLLM
+
+
+class MockLLM(BaseLLM):
+    """Mock LLM provider that returns predefined responses."""
+
+    def __init__(
+        self,
+        settings: Any,
+        response: str = "Mock response",
+        **kwargs: Any
+    ) -> None:
+        self._response = response
+        self._model_name = "mock-model"
+
+    def chat(
+        self,
+        messages: List[dict[str, str]],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> str:
+        self.validate_messages(messages)
+        return self._response
+
+    def get_model_name(self) -> str:
+        return self._model_name
+```
+
+**步骤 2: 注册到工厂** `src/libs/llm/llm_factory.py`
+
+```python
+def _register_builtin_providers() -> None:
+    # ... 其他提供者 ...
+    try:
+        from src.libs.llm.mock_llm import MockLLM
+        LLMFactory.register_provider("mock", MockLLM)
+    except ImportError:
+        pass
+```
+
+**步骤 3: 更新配置** `config/settings.yaml`
+
+```yaml
+llm:
+  provider: mock
+  model: mock-model
+```
+
+**步骤 4: 测试**
+
+```bash
+python scripts/query.py --query "测试问题"
+# 输出: Mock response
+```
+
+---
+
+## Phase 6: 测试方法
+
+### 6.1 测试组织结构
+
+```
+tests/
+├── unit/              # 单元测试 (快速，无外部依赖)
+├── integration/       # 集成测试 (需要外部服务)
+└── e2e/              # 端到端测试 (完整流程)
+```
+
+### 6.2 测试模式
+
+**模式 1: Arrange-Act-Assert (AAA 模式)**
+
+```python
+def test_chat_single_message(self):
+    # Arrange (准备)
+    llm = FakeLLM()
+
+    # Act (执行)
+    result = llm.chat([{"role": "user", "content": "hello"}])
+
+    # Assert (断言)
+    assert isinstance(result, str)
+    assert "hello" in result
+```
+
+**模式 2: 测试异常**
+
+```python
+def test_validate_messages_empty_list(self):
+    llm = FakeLLM()
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        llm.validate_messages([])
+```
+
+**模式 3: 使用 Mock**
+
+```python
+def test_create_success(self):
+    LLMFactory.register_provider("fake", FakeLLM)
+
+    settings = MagicMock()
+    settings.llm.provider = "fake"
+
+    llm = LLMFactory.create(settings)
+
+    assert isinstance(llm, FakeLLM)
+```
+
+---
+
+## Phase 10: MCP Server 架构概览 (2026-03-13)
+
+### 10.1 MCP Server 架构
+
+```
+MCP Server 架构
+===============
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           MCP Client (Claude Code)                          │
+│                                                                              │
+│  发送 JSON-RPC 请求：                                                        │
+│  • tools/list - 获取可用工具列表                                             │
+│  • tools/call - 调用工具                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ stdio (stdin/stdout)
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MCPServer                                       │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 初始化阶段                                                           │   │
+│  │                                                                      │   │
+│  │  1. load_settings() → 加载配置                                       │   │
+│  │  2. HybridSearch(settings) → 创建混合检索引擎                        │   │
+│  │  3. ResponseBuilder(settings) → 创建响应构建器                       │   │
+│  │  4. 注册工具定义 → [query_knowledge_hub, list_collections, ...]      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ 运行阶段                                                             │   │
+│  │                                                                      │   │
+│  │  @server.list_tools()                                                │   │
+│  │  async def handle_list_tools() → list[Tool]                         │   │
+│  │                                                                      │   │
+│  │  @server.call_tool()                                                 │   │
+│  │  async def handle_call_tool(name, arguments) → list[TextContent]    │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              Tools                                           │
+│                                                                              │
+│  ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐         │
+│  │query_knowledge_hub│ │ list_collections  │ │get_document_summary│         │
+│  │                   │ │                   │ │                   │         │
+│  │ • HybridSearch    │ │ • VectorStore     │ │ • VectorStore     │         │
+│  │ • ResponseBuilder │ │ • 列出集合        │ │ • 获取文档元数据   │         │
+│  └───────────────────┘ └───────────────────┘ └───────────────────┘         │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 10.2 核心文件
+
+| 文件 | 职责 |
+|------|------|
+| `src/mcp_server/server.py` | MCP Server 入口，初始化组件，注册处理器 |
+| `src/mcp_server/protocol_handler.py` | JSON-RPC 协议处理 |
+| `src/mcp_server/tools/query_knowledge_hub.py` | 核心查询工具 |
+| `src/mcp_server/tools/list_collections.py` | 列出集合工具 |
+| `src/mcp_server/tools/get_document_summary.py` | 获取文档摘要工具 |
+
+### 10.3 MCP 协议流程
+
+```
+Client                                    Server
+  │                                         │
+  │  ─────── initialize ──────────────────▶ │
+  │                                         │ 初始化组件
+  │  ◀─────── serverInfo + capabilities ─── │
+  │                                         │
+  │  ─────── tools/list ──────────────────▶ │
+  │                                         │
+  │  ◀─────── [tool1, tool2, ...] ───────── │
+  │                                         │
+  │  ─────── tools/call ──────────────────▶ │
+  │         name: "query_knowledge_hub"     │
+  │         arguments: {query: "..."}       │
+  │                                         │
+  │                        ┌────────────────┤
+  │                        │ HybridSearch   │
+  │                        │ ResponseBuilder│
+  │                        └────────────────┤
+  │                                         │
+  │  ◀─────── [TextContent, citations] ──── │
+  │                                         │
+```
+
+### 10.4 如何添加新工具
+
+**步骤 1**: 创建工具文件 `src/mcp_server/tools/my_tool.py`
+
+```python
+from mcp.types import TextContent
+
+class MyTool:
+    def __init__(self, settings):
+        self._settings = settings
+
+    async def execute(self, arguments: dict):
+        # 实现工具逻辑
+        return [TextContent(type="text", text="结果")]
+
+    @staticmethod
+    def get_tool_definition():
+        return {
+            "name": "my_tool",
+            "description": "工具描述",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "param1": {"type": "string"},
+                },
+                "required": ["param1"],
+            },
+        }
+```
+
+**步骤 2**: 在 `server.py` 中注册
+
+```python
+from src.mcp_server.tools.my_tool import MyTool
+
+# 初始化
+self._my_tool = MyTool(settings)
+self._tools.append(Tool(**MyTool.get_tool_definition()))
+
+# 处理调用
+elif name == "my_tool" and self._my_tool:
+    return await self._my_tool.execute(arguments)
+```
+
+### 10.5 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| MCP 协议 | stdio 传输，JSON-RPC 2.0 格式 |
+| Server 初始化 | 加载配置 → 创建组件 → 注册工具 |
+| 工具定义 | name + description + inputSchema (JSON Schema) |
+| 工具执行 | 验证参数 → 调用组件 → 返回 TextContent |
+
+---
+
+## Phase 11: MCP Server 工具详解 (2026-03-14)
+
+> 学习目标：深入理解 MCP Server 提供的三个工具，掌握每个工具的用途和执行流程
+
+### 11.1 三个工具概览
+
+| 工具名称 | 用途 | 输入 | 输出 |
+|---------|------|------|------|
+| `query_knowledge_hub` | 查询知识库（核心工具） | 问题 + 参数 | 答案 + 引用 |
+| `list_collections` | 列出文档集合 | 无 | 集合列表 |
+| `get_document_summary` | 获取文档摘要 | 文档ID | 文档元数据 |
+
+### 11.2 工具 1: `query_knowledge_hub` (核心工具)
+
+#### 用途
+这是**最重要的工具**，用于回答用户问题。它会：
+1. 在知识库中搜索相关内容
+2. 用 LLM 生成答案
+3. 附上引用来源
+
+#### 执行流程图
+
+```
+用户问题
+    │
+    ▼
+┌─────────────────┐
+│ 1. 参数验证      │  ← 检查 query 是否为空
+│   (line 76-85)  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 2. 混合检索      │  ← HybridSearch.search()
+│   (line 96-101) │
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+┌───────┐ ┌───────┐
+│ Dense │ │Sparse │  ← 两种检索方式并行
+│ 检索  │ │ 检索  │
+└───┬───┘ └───┬───┘
+    │         │
+    └────┬────┘
+         ▼
+┌─────────────────┐
+│ 3. RRF 融合     │  ← 合并两种检索结果
+│   (fusion.py)   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 4. 重排序       │  ← Reranker 提升质量
+│   (line 275)    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 5. 生成响应     │  ← ResponseBuilder
+│   (line 115)    │    LLM 生成 + 引用
+└────────┬────────┘
+         │
+         ▼
+    返回答案
+```
+
+#### 关键代码解读
+
+**步骤 1: 参数验证** (`query_knowledge_hub.py:76-85`)
+```python
+query: str = arguments.get("query", "")
+if not query or not query.strip():
+    raise ValueError("Query parameter is required")
+
+top_k: int = arguments.get("top_k", 10)
+filters: Dict[str, Any] = arguments.get("filters", {})
+```
+
+**步骤 2-4: 混合检索** (`fusion.py:212-280`)
+```python
+def search(self, query: str, top_k: int, filters: dict):
+    # 1. 处理查询（提取关键词）
+    processed_query = self._query_processor.process(query)
+
+    # 2. 并行执行两种检索
+    dense_results = self._dense_retriever.retrieve(query)   # 语义检索
+    sparse_results = self._sparse_retriever.retrieve(keywords)  # 关键词检索
+
+    # 3. RRF 融合
+    fused_results = self._fusion.fuse([dense_results, sparse_results])
+
+    # 4. 重排序
+    reranked_results = self._reranker.rerank(query, fused_results)
+
+    return reranked_results[:top_k]
+```
+
+**步骤 5: 生成响应** (`query_knowledge_hub.py:114-147`)
+```python
+structured_content = self._response_builder.build(
+    query=query,
+    results=results,
+)
+# 返回 Markdown 内容 + 引用列表
+return [
+    TextContent(type="text", text=structured_content.markdown),
+    {"citations": [...]}
+]
+```
+
+#### 使用示例
+
+```json
+// 输入
+{
+  "query": "如何配置 LLM？",
+  "top_k": 5,
+  "filters": {"collection": "docs"}
+}
+
+// 输出
+{
+  "text": "根据文档，配置 LLM 需要...\n\n引用 [1]...",
+  "citations": [
+    {"id": "1", "source": "config.md", "page": 5, "score": 0.95}
+  ]
+}
+```
+
+### 11.3 工具 2: `list_collections`
+
+#### 用途
+列出知识库中所有的文档集合（类似文件夹的概念）。
+
+#### 执行流程图
+
+```
+调用工具
+    │
+    ▼
+┌─────────────────┐
+│ 初始化向量存储   │  ← VectorStoreFactory.create()
+│   (line 53-64)  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 获取集合列表    │  ← vector_store.get_collection_names()
+│   (line 82)     │
+└────────┬────────┘
+         │
+         ▼
+    返回集合名称列表
+```
+
+#### 关键代码 (`list_collections.py:63-111`)
+
+```python
+async def execute(self, arguments: dict):
+    # 1. 初始化向量存储
+    self._init_vector_store()
+
+    # 2. 获取集合列表
+    collections = self._vector_store.get_collection_names()
+
+    # 3. 格式化返回
+    return [TextContent(
+        type="text",
+        text=f"可用的集合（共 {len(collections)} 个）：\n- {col1}\n- {col2}..."
+    )]
+```
+
+### 11.4 工具 3: `get_document_summary`
+
+#### 用途
+获取指定文档的详细信息（标题、摘要、标签、chunk数量等）。
+
+#### 执行流程图
+
+```
+输入文档ID
+    │
+    ▼
+┌─────────────────┐
+│ 验证 doc_id     │  ← line 81-83
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 查询向量存储    │  ← 按 source_ref 过滤
+│   (line 92-97)  │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 提取元数据      │  ← title, summary, tags...
+│   (line 109)    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ 统计 chunk 数量 │  ← line 139-145
+└────────┬────────┘
+         │
+         ▼
+    返回文档摘要
+```
+
+#### 关键代码 (`get_document_summary.py:66-184`)
+
+```python
+async def execute(self, arguments: dict):
+    # 1. 验证参数
+    doc_id = arguments.get("doc_id")
+    if not doc_id:
+        raise ValueError("doc_id is required")
+
+    # 2. 查询文档
+    results = self._vector_store.query(
+        vector=[0.0] * 1536,  # 空向量，只查元数据
+        filters={"source_ref": doc_id}
+    )
+
+    # 3. 提取元数据
+    metadata = results[0].get("metadata", {})
+
+    # 4. 构建摘要
+    summary = f"""
+    文档 ID: {doc_id}
+    标题: {metadata.get("title")}
+    集合: {metadata.get("collection")}
+    文档类型: {metadata.get("doc_type")}
+    摘要: {metadata.get("summary")}
+    标签: {metadata.get("tags")}
+    Chunk 数量: {chunk_count}
+    """
+
+    return [TextContent(type="text", text=summary)]
+```
+
+### 11.5 关键概念解释
+
+#### Dense 检索 vs Sparse 检索
+
+| 类型 | 原理 | 优点 | 缺点 |
+|------|------|------|------|
+| **Dense (稠密)** | 用嵌入向量计算语义相似度 | 理解语义，同义词也能匹配 | 可能遗漏精确关键词 |
+| **Sparse (稀疏)** | 用 BM25 算法匹配关键词 | 精确匹配，速度快 | 不理解语义 |
+
+#### RRF 融合算法
+
+**RRF (Reciprocal Rank Fusion)** 是一种合并多个排序列表的算法：
+
+```
+RRF分数 = Σ (1 / (k + 排名位置))
+```
+
+例如：
+- 文档A 在 Dense 排第1，Sparse 排第3
+- 文档A 的 RRF 分数 = 1/(60+1) + 1/(60+3) = 0.0164 + 0.0159 = 0.0323
+
+#### Reranker (重排序)
+
+在融合后，用更精细的模型重新打分，提升最相关结果的排名。
+
+### 11.6 整体架构图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        MCP Server                            │
+│                      (server.py)                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌────────────┐ │
+│  │query_knowledge_  │  │list_collections  │  │get_document│ │
+│  │     hub          │  │                  │  │  _summary  │ │
+│  └────────┬─────────┘  └────────┬─────────┘  └─────┬──────┘ │
+│           │                     │                   │        │
+│           ▼                     │                   │        │
+│  ┌──────────────────┐           │                   │        │
+│  │   HybridSearch   │           │                   │        │
+│  │  ┌────────────┐  │           │                   │        │
+│  │  │   Dense    │  │           │                   │        │
+│  │  │  Retriever │  │           │                   │        │
+│  │  └────────────┘  │           │                   │        │
+│  │  ┌────────────┐  │           │                   │        │
+│  │  │  Sparse    │  │           │                   │        │
+│  │  │  Retriever │  │           │                   │        │
+│  │  └────────────┘  │           │                   │        │
+│  │  ┌────────────┐  │           │                   │        │
+│  │  │   Fusion   │  │           │                   │        │
+│  │  │   (RRF)    │  │           │                   │        │
+│  │  └────────────┘  │           │                   │        │
+│  │  ┌────────────┐  │           │                   │        │
+│  │  │  Reranker  │  │           │                   │        │
+│  │  └────────────┘  │           │                   │        │
+│  └────────┬─────────┘           │                   │        │
+│           │                     │                   │        │
+│           ▼                     ▼                   ▼        │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              VectorStore (ChromaDB)                   │   │
+│  │              向量存储 + 元数据                         │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 11.7 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| query_knowledge_hub | 混合检索 (Dense+Sparse) → RRF融合 → Rerank → LLM生成 |
+| list_collections | 简单工具，直接调用 VectorStore 获取集合列表 |
+| get_document_summary | 通过 source_ref 过滤查询文档元数据 |
+| Dense vs Sparse | 语义检索 vs 关键词检索，各有优劣 |
+| RRF 融合 | 无参数方法，合并多个排序列表 |
+
+---
+
+## 学习总结
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+
+### 下一步建议
+
+1. **深入混合检索**：学习 DenseRetriever 和 SparseRetriever 的具体实现
+2. **响应生成**：学习 ResponseBuilder 如何用 LLM 生成答案
+3. **向量存储**：学习 ChromaDB 如何存储和查询数据
+4. **动手实践**：尝试添加一个新的 MCP 工具
+
+---
+
+## 参考资源
+
+- **Skill 文件**: `.claude/skills/codebase-learner/SKILL.md`
+- **术语表**: `.claude/skills/codebase-learner/references/glossary.md`
+- **快速参考**: `.claude/skills/codebase-learner/references/cheatsheet.md`
+- **架构决策**: `.claude/skills/codebase-learner/references/architecture-decisions.md`
+- **项目说明**: `CLAUDE.md`
+
+---
+
+## Phase 12: 三个工具的协作关系 (2026-03-14)
+
+> 学习目标：理解三个 MCP 工具如何配合工作，形成完整的知识检索流程
+
+### 12.1 协作架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MCP Client (AI 助手)                            │
+│                                                                              │
+│   用户提问: "帮我查一下项目文档中关于配置的内容"                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ 1. tools/list (获取可用工具)
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MCPServer                                       │
+│                                                                              │
+│   返回: [query_knowledge_hub, list_collections, get_document_summary]       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ 2. AI 决定调用哪些工具
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           工具协作流程                                        │
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ Step 1: list_collections                                             │   │
+│   │                                                                      │   │
+│   │ 目的: 了解知识库有哪些文档集合                                         │   │
+│   │                                                                      │   │
+│   │ 返回: ["docs", "papers", "tutorials"]                                │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ Step 2: query_knowledge_hub                                          │   │
+│   │                                                                      │   │
+│   │ 输入: {                                                              │   │
+│   │   query: "如何配置系统？",                                            │   │
+│   │   filters: {"collection": "docs"},  ← 使用 Step 1 的结果过滤         │   │
+│   │   top_k: 5                                                          │   │
+│   │ }                                                                   │   │
+│   │                                                                      │   │
+│   │ 返回: {                                                              │   │
+│   │   text: "根据文档，配置系统需要...",                                  │   │
+│   │   citations: [{source: "config.md", doc_id: "abc123", ...}]         │   │
+│   │ }                                                                   │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ Step 3: get_document_summary (可选)                                  │   │
+│   │                                                                      │   │
+│   │ 目的: 获取引用文档的详细信息                                           │   │
+│   │                                                                      │   │
+│   │ 输入: {doc_id: "abc123"}  ← 使用 Step 2 返回的 doc_id                │   │
+│   │                                                                      │   │
+│   │ 返回: {                                                              │   │
+│   │   title: "系统配置指南",                                              │   │
+│   │   summary: "本文介绍如何配置...",                                     │   │
+│   │   chunk_count: 15,                                                  │   │
+│   │   tags: ["配置", "入门"]                                             │   │
+│   │ }                                                                   │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 12.2 协作关系总结
+
+```
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│ list_collections │ ──▶ │query_knowledge_  │ ──▶ │get_document_     │
+│                  │     │      hub         │     │    summary       │
+└────────┬─────────┘     └────────┬─────────┘     └────────┬─────────┘
+         │                        │                        │
+         │ 提供集合列表            │ 提供搜索结果            │ 提供文档详情
+         │ 用于过滤               │ 包含 doc_id            │ 用于深入了解
+         │                        │                        │
+         └────────────────────────┴────────────────────────┘
+                                  │
+                                  ▼
+                        ┌─────────────────┐
+                        │   VectorStore   │
+                        │   (ChromaDB)    │
+                        │                 │
+                        │ 共享的数据存储   │
+                        └─────────────────┘
+```
+
+### 12.3 典型使用场景
+
+#### 场景 1: 用户首次查询
+
+```
+用户: "这个知识库里有什么？"
+
+AI 调用流程:
+1. list_collections() → 返回 ["docs", "papers"]
+2. AI 回复: "知识库中有 docs 和 papers 两个集合"
+```
+
+#### 场景 2: 用户查询具体问题
+
+```
+用户: "如何配置 LLM？"
+
+AI 调用流程:
+1. list_collections() → ["docs", "papers"]
+2. query_knowledge_hub({
+     query: "如何配置 LLM？",
+     filters: {collection: "docs"}
+   }) → 返回答案 + 引用
+3. AI 回复: "根据文档，配置 LLM 需要... [引用 config.md]"
+```
+
+#### 场景 3: 用户想深入了解某个文档
+
+```
+用户: "config.md 这个文档讲了什么？"
+
+AI 调用流程:
+1. get_document_summary({doc_id: "abc123"}) → 返回文档详情
+2. AI 回复: "config.md 是系统配置指南，包含 15 个片段，主要讲解..."
+```
+
+### 12.4 代码中的协作体现
+
+从 `server.py` 可以看到三个工具的初始化关系：
+
+```python
+# 三个工具共享同一个 settings（配置）
+settings = load_settings()
+
+# list_collections 和 get_document_summary 共享 VectorStore
+self._list_collections_tool = ListCollectionsTool(settings)
+self._get_document_summary_tool = GetDocumentSummaryTool(settings)
+
+# query_knowledge_hub 依赖更多组件
+hybrid_search = HybridSearch(settings=settings)
+response_builder = ResponseBuilder(settings=settings)
+self._query_tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
+```
+
+### 12.5 数据流向
+
+```
+                    ┌─────────────────────────────────────┐
+                    │           VectorStore               │
+                    │         (ChromaDB)                  │
+                    │                                     │
+                    │  存储内容:                           │
+                    │  • chunks (文档片段)                 │
+                    │  • dense_vector (稠密向量)          │
+                    │  • metadata (元数据)                │
+                    │    - collection (集合名)            │
+                    │    - source_ref (文档ID)            │
+                    │    - title, summary, tags...        │
+                    └──────────────────┬──────────────────┘
+                                       │
+           ┌───────────────────────────┼───────────────────────────┐
+           │                           │                           │
+           ▼                           ▼                           ▼
+┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+│  list_collections   │   │ query_knowledge_hub │   │ get_document_summary│
+│                     │   │                     │   │                     │
+│ 读取: collection    │   │ 读取:               │   │ 读取:               │
+│ 列表                │   │ • 向量 (相似度)     │   │ • metadata          │
+│                     │   │ • metadata (过滤)   │   │ • chunk 数量        │
+└─────────────────────┘   └─────────────────────┘   └─────────────────────┘
+```
+
+### 12.6 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| 工具协作顺序 | list_collections → query_knowledge_hub → get_document_summary |
+| 数据传递 | 集合名用于过滤，doc_id 用于获取详情 |
+| 共享组件 | 三个工具都依赖 VectorStore，共享同一份数据 |
+| 使用场景 | 探索知识库 → 查询问题 → 深入了解文档 |
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+
+### 下一步建议
+
+1. **深入混合检索**：学习 DenseRetriever 和 SparseRetriever 的具体实现
+2. **响应生成**：学习 ResponseBuilder 如何用 LLM 生成答案
+3. **向量存储**：学习 ChromaDB 如何存储和查询数据
+4. **动手实践**：尝试添加一个新的 MCP 工具
+
+---
+
+## Phase 13: list_collections 与 query_knowledge_hub 的关系 (2026-03-14)
+
+> 学习目标：理解 list_collections 的作用，以及它与 query_knowledge_hub 的关系
+
+### 13.1 list_collections 的作用
+
+#### 核心功能
+
+`list_collections` 工具的主要作用是**列出知识库中所有可用的文档集合**。
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     list_collections 工具                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  输入: 无参数                                                     │
+│                                                                  │
+│  执行流程:                                                        │
+│  ┌─────────────────┐                                             │
+│  │ VectorStore     │                                             │
+│  │ Factory.create()│                                             │
+│  └────────┬────────┘                                             │
+│           │                                                      │
+│           ▼                                                      │
+│  ┌─────────────────┐                                             │
+│  │ get_collection_ │                                             │
+│  │     names()     │                                             │
+│  └────────┬────────┘                                             │
+│           │                                                      │
+│           ▼                                                      │
+│  输出: ["docs", "papers", "tutorials"]                           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 关键代码解读
+
+**位置**: `src/mcp_server/tools/list_collections.py:63-111`
+
+```python
+async def execute(self, arguments: Dict[str, Any]) -> list[TextContent]:
+    # 1. 延迟初始化向量存储
+    self._init_vector_store()
+
+    # 2. 获取集合列表
+    collections = self._vector_store.get_collection_names()
+
+    # 3. 格式化返回
+    if not collections:
+        return [TextContent(
+            type="text",
+            text="当前没有可用的集合。请先使用摄取功能导入文档。"
+        )]
+
+    # 4. 构建友好提示
+    response_text = (
+        f"可用的集合（共 {len(collections)} 个）：\n\n"
+        f"{collection_list}\n\n"
+        "提示：使用 query_knowledge_hub 工具时，"
+        "可以通过 filters 参数指定集合名称进行过滤。"
+    )
+    return [TextContent(type="text", text=response_text)]
+```
+
+### 13.2 query_knowledge_hub 是否依赖 list_collections？
+
+#### 答案：不依赖！
+
+两个工具是**完全独立**的，没有代码层面的依赖关系。
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      依赖关系分析                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  list_collections          query_knowledge_hub                   │
+│       │                          │                               │
+│       │                          │                               │
+│       ▼                          ▼                               │
+│  ┌─────────────┐           ┌─────────────┐                      │
+│  │ VectorStore │           │ HybridSearch│                      │
+│  │   (共享)    │           │ ResponseBuilder│                    │
+│  └─────────────┘           └─────────────┘                      │
+│                                                                  │
+│  ❌ 没有直接调用关系                                              │
+│  ❌ 没有数据传递关系                                              │
+│  ✅ 只是共享 VectorStore 作为数据源                               │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 代码证据
+
+**query_knowledge_hub.py** 中没有任何对 `list_collections` 的引用：
+
+```python
+# query_knowledge_hub.py 的导入
+from src.core.query_engine.fusion import HybridSearch
+from src.core.response.response_builder import ResponseBuilder
+from src.core.response.citation_generator import StructuredContent
+from src.core.types import RetrievalResult
+
+# 没有 from src.mcp_server.tools.list_collections import ...
+```
+
+### 13.3 如何知道要查询的问题在哪一个集合？
+
+#### 这是一个"使用流程"问题，不是代码问题
+
+当前设计的典型工作流：
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Step 1: 调用 list_collections 获取可用集合                                  │
+│                                                                              │
+│  调用: list_collections()                                                    │
+│  返回: ["docs", "technical_docs", "user_manuals"]                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Step 2: 根据业务知识或尝试确定目标集合                                       │
+│                                                                              │
+│  决策逻辑:                                                                    │
+│  • 如果查询技术问题 → 可能是 "technical_docs"                                 │
+│  • 如果查询用户指南 → 可能是 "user_manuals"                                   │
+│  • 如果不确定 → 不指定 filters，搜索所有集合                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Step 3: 调用 query_knowledge_hub 并指定 filters                            │
+│                                                                              │
+│  调用: query_knowledge_hub({                                                 │
+│    "query": "如何配置 LLM？",                                                 │
+│    "filters": {"collection": "technical_docs"}                               │
+│  })                                                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### filters 参数的工作原理
+
+**位置**: `src/core/query_engine/fusion.py:282-317`
+
+```python
+def _apply_metadata_filters(
+    self,
+    results: List[RetrievalResult],
+    filters: Dict[str, Any],
+) -> List[RetrievalResult]:
+    """Apply metadata filters to results."""
+    if not filters:
+        return results
+
+    filtered: List[RetrievalResult] = []
+    for result in results:
+        metadata = result.metadata
+        match = True
+        for key, value in filters.items():
+            if key not in metadata:
+                match = False
+                break
+            if isinstance(value, list):
+                # 支持列表值：{"collection": ["docs", "papers"]}
+                if metadata[key] not in value:
+                    match = False
+                    break
+            elif metadata[key] != value:
+                match = False
+                break
+        if match:
+            filtered.append(result)
+
+    return filtered
+```
+
+#### filters 的应用时机
+
+```
+检索流程中 filters 的应用位置
+=============================
+
+Query
+  │
+  ▼
+┌─────────────────┐
+│ DenseRetriever  │  ← filters 在这里传递给向量存储
+│   (line 251)    │     用于预过滤
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ SparseRetriever │  ← 不使用 filters
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  RRF Fusion     │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Metadata Filter │  ← filters 在这里再次应用
+│   (line 271)    │     确保结果符合条件
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Reranker      │
+└────────┬────────┘
+         │
+         ▼
+    Final Results
+```
+
+### 13.4 实际使用示例
+
+#### 示例 1: 不指定 filters（搜索所有集合）
+
+```json
+{
+  "query": "如何配置 LLM？"
+}
+```
+
+结果：搜索所有集合，返回最相关的结果。
+
+#### 示例 2: 指定单个集合
+
+```json
+{
+  "query": "如何配置 LLM？",
+  "filters": {"collection": "docs"}
+}
+```
+
+结果：只搜索 "docs" 集合。
+
+#### 示例 3: 指定多个集合
+
+```json
+{
+  "query": "如何配置 LLM？",
+  "filters": {"collection": ["docs", "technical_docs"]}
+}
+```
+
+结果：搜索 "docs" 和 "technical_docs" 两个集合。
+
+### 13.5 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| list_collections 作用 | 列出可用集合，帮助用户了解知识库结构 |
+| 是否依赖 | 否，两个工具独立运行，只是共享 VectorStore |
+| 如何确定集合 | 先调用 list_collections，再根据业务知识选择，或直接不指定 filters 搜索全部 |
+| filters 应用位置 | DenseRetriever 预过滤 + Fusion 后再次过滤 |
+| filters 支持格式 | 单值 `{"collection": "docs"}` 或列表 `{"collection": ["docs", "papers"]}` |
+
+### 13.6 AI 如何决定查询哪个集合？（深入理解）
+
+#### 核心答案：AI 并不"预先知道"
+
+**AI 并不知道问题属于哪个集合**，它有几种处理策略：
+
+##### 策略 1：不指定 filters，搜索所有集合（最常见）
+
+```
+用户问题: "如何配置 LLM？"
+
+AI 的思考:
+  "我不知道这个问题属于哪个集合，所以我先搜索所有集合"
+
+调用: query_knowledge_hub({
+  "query": "如何配置 LLM？"
+  // 不指定 filters
+})
+
+结果: 返回最相关的答案，无论来自哪个集合
+```
+
+##### 策略 2：根据集合名称语义推断
+
+如果集合名称有意义，AI 可以"猜测"：
+
+```
+list_collections 返回:
+  ["technical_docs", "user_manuals", "meeting_notes", "project_plans"]
+
+用户问题: "API 接口文档在哪里？"
+
+AI 的思考:
+  "API 接口属于技术文档，可能在 technical_docs 里"
+
+调用: query_knowledge_hub({
+  "query": "API 接口文档在哪里？",
+  "filters": {"collection": "technical_docs"}  // AI 根据语义推断
+})
+```
+
+##### 策略 3：先搜索，再根据结果判断
+
+```
+用户问题: "北极星到底是什么？"
+
+AI 的思考:
+  "我不知道这个问题属于哪个集合，先搜索看看"
+
+调用: query_knowledge_hub({
+  "query": "北极星到底是什么？"
+})
+
+返回结果中包含 metadata:
+  {
+    "text": "北极星是...",
+    "metadata": {
+      "collection": "astronomy_docs",  // 结果告诉 AI 来自哪个集合
+      "source": "star_guide.pdf"
+    }
+  }
+
+AI 回复用户:
+  "根据 astronomy_docs 集合中的文档，北极星是..."
+```
+
+#### AI 决策流程图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              MCP Client (AI 助手)                            │
+│                                                                              │
+│   用户问题: "如何配置 LLM？"                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           AI 的决策过程                                       │
+│                                                                              │
+│   1. 我知道问题属于哪个集合吗？                                                │
+│      ├─ 知道 → 指定 filters                                                  │
+│      └─ 不知道 → 不指定 filters（搜索所有）                                    │
+│                                                                              │
+│   2. 集合名称能给我提示吗？                                                    │
+│      ├─ "technical_docs" → 技术问题可能在这里                                  │
+│      ├─ "user_manuals" → 用户指南可能在这里                                    │
+│      └─ 名称无意义 → 不指定 filters                                           │
+│                                                                              │
+│   3. 用户有没有明确指定？                                                      │
+│      ├─ "在技术文档里找..." → filters: {"collection": "technical_docs"}       │
+│      └─ 没有指定 → 不指定 filters                                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        query_knowledge_hub 调用                              │
+│                                                                              │
+│   情况 A: 不指定 filters                                                      │
+│   {                                                                          │
+│     "query": "如何配置 LLM？"                                                 │
+│   }                                                                          │
+│   → 搜索所有集合，返回最相关的结果                                             │
+│                                                                              │
+│   情况 B: 指定 filters                                                        │
+│   {                                                                          │
+│     "query": "如何配置 LLM？",                                                │
+│     "filters": {"collection": "technical_docs"}                              │
+│   }                                                                          │
+│   → 只搜索 technical_docs 集合                                               │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 关键理解
+
+| 问题 | 答案 |
+|------|------|
+| AI 知道问题属于哪个集合吗？ | **不知道**，除非用户明确指定或集合名称有明确语义 |
+| filters 是必需的吗？ | **不是**，是可选参数 |
+| 不指定 filters 会怎样？ | 搜索所有集合，返回最相关的结果 |
+| 什么时候指定 filters？ | 用户明确要求、或 AI 根据语义推断、或为了优化性能 |
+
+#### list_collections 的真正作用
+
+1. **帮助 AI 了解知识库结构** - 知道有哪些可用的数据源
+2. **辅助决策** - 如果集合名称有意义，AI 可以推断
+3. **用户引导** - AI 可以告诉用户"我搜索了这些集合..."
+
+#### 为什么 filters 是可选参数
+
+**AI 不需要"预先知道"**，因为：
+- 默认行为是搜索所有集合
+- 结果会告诉 AI 来自哪个集合（通过 metadata）
+- 用户可以明确指定集合
+
+这就是为什么 `filters` 是**可选参数**而不是必需参数的设计原因。
+
+### 13.7 关键收获（更新）
+
+| 内容 | 关键收获 |
+|------|----------|
+| list_collections 作用 | 列出可用集合，帮助用户了解知识库结构 |
+| 是否依赖 | 否，两个工具独立运行，只是共享 VectorStore |
+| 如何确定集合 | AI 不知道，默认搜索所有；或根据集合名称语义推断；或用户明确指定 |
+| filters 是否必需 | **否**，是可选参数 |
+| 不指定 filters | 搜索所有集合，返回最相关的结果 |
+| filters 应用位置 | DenseRetriever 预过滤 + Fusion 后再次过滤 |
+| filters 支持格式 | 单值 `{"collection": "docs"}` 或列表 `{"collection": ["docs", "papers"]}` |
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+
+### 下一步建议
+
+1. **深入 filters 实现**：学习 DenseRetriever 如何在向量查询时应用 filters
+2. **元数据设计**：了解文档摄取时如何设置 collection 等元数据
+3. **多集合搜索策略**：探索如何优化跨集合搜索的性能
+
+---
+
+## Phase 14: Collection 的创建时机与命名规则 (2026-03-14)
+
+> 学习目标：理解 collection 是在什么阶段创建的，以及集合名称是如何确定的
+
+### 14.1 核心答案
+
+| 问题 | 答案 |
+|------|------|
+| Collection 何时创建？ | **Ingest 阶段**，文档摄取时自动创建 |
+| 集合名称如何确定？ | **用户指定**，通过命令行参数 `--collection` |
+| 默认集合名是什么？ | `"default"` |
+| ChromaDB 如何处理？ | 使用 `get_or_create_collection()`，不存在则自动创建 |
+
+### 14.2 Collection 创建流程图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Collection 创建完整流程                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Step 1: 用户执行 ingest 命令                                                │
+│  ─────────────────────────────                                              │
+│                                                                              │
+│  $ python scripts/ingest.py --path ./docs/ --collection my_docs             │
+│                                                                              │
+│                                    │                                         │
+│                                    ▼                                         │
+│  Step 2: IngestionPipeline 初始化                                           │
+│  ─────────────────────────────────                                          │
+│                                                                              │
+│  pipeline = IngestionPipeline(settings, collection="my_docs")               │
+│                                    │                                         │
+│                                    ▼                                         │
+│  Step 3: 文档加载时写入 metadata                                            │
+│  ─────────────────────────────────                                          │
+│                                                                              │
+│  document.metadata["collection"] = self._collection  # "my_docs"            │
+│                                    │                                         │
+│                                    ▼                                         │
+│  Step 4: VectorUpserter 调用 ChromaDB                                       │
+│  ─────────────────────────────────                                          │
+│                                                                              │
+│  self._collection = self._client.get_or_create_collection(                  │
+│      name="knowledge_base",  ← 注意：这是固定的！                            │
+│      metadata={"hnsw:space": "cosine"}                                      │
+│  )                                                                          │
+│                                                                              │
+│  ⚠️ 重要发现：ChromaDB 只有一个 collection！                                  │
+│     "my_docs" 是作为 metadata 字段存储的，不是 ChromaDB 的 collection！       │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 14.3 关键代码解读
+
+#### 14.3.1 命令行参数解析
+
+**位置**: `scripts/ingest.py:46-51`
+
+```python
+parser.add_argument(
+    "--collection",
+    type=str,
+    default="default",  # 默认值
+    help="Target collection name (default: default)",
+)
+```
+
+用户可以通过 `--collection` 参数指定集合名称，默认是 `"default"`。
+
+#### 14.3.2 Pipeline 初始化
+
+**位置**: `src/ingestion/pipeline.py:63-88`
+
+```python
+class IngestionPipeline:
+    def __init__(
+        self,
+        settings: Settings,
+        collection: str = "default",  # 接收集合名称
+        ...
+    ):
+        self._collection = collection  # 存储集合名称
+        logger.info(f"IngestionPipeline initialized for collection: {collection}")
+```
+
+#### 14.3.3 Collection 写入 metadata
+
+**位置**: `src/ingestion/pipeline.py:294-321`
+
+```python
+def _stage_load(self, file_path: str, result: Dict, trace) -> Document:
+    loader = self._get_loader(file_path)
+    document = loader.load(file_path)
+
+    # 关键：将 collection 写入文档的 metadata
+    document.metadata["collection"] = self._collection
+
+    return document
+```
+
+#### 14.3.4 ChromaDB 的 Collection 处理
+
+**位置**: `src/libs/vector_store/chroma_store.py:41-78`
+
+```python
+class ChromaStore(BaseVectorStore):
+    def __init__(self, settings: Settings, **kwargs) -> None:
+        # 从配置读取 collection 名称（不是用户指定的！）
+        self._collection_name = kwargs.get(
+            "collection_name",
+            getattr(settings.vector_store, "collection_name", "knowledge_base"),
+        )
+
+        # 获取或创建 collection
+        self._collection = self._client.get_or_create_collection(
+            name=self._collection_name,  # 通常是 "knowledge_base"
+            metadata={"hnsw:space": "cosine"},
+        )
+```
+
+### 14.4 重要发现：两种"Collection"概念
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     两种 "Collection" 概念对比                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. ChromaDB Collection（数据库层面）                                         │
+│  ─────────────────────────────────                                          │
+│  • 定义：ChromaDB 中的物理集合（类似数据库表）                                 │
+│  • 名称：由 settings.yaml 配置，默认 "knowledge_base"                        │
+│  • 数量：通常只有一个                                                         │
+│  • 创建方式：get_or_create_collection()                                      │
+│                                                                              │
+│  2. 业务 Collection（逻辑层面）                                               │
+│  ─────────────────────────────────                                          │
+│  • 定义：文档的元数据字段，用于逻辑分组                                        │
+│  • 名称：用户通过 --collection 参数指定                                       │
+│  • 数量：可以有多个（default, my_docs, papers...）                           │
+│  • 存储方式：作为 metadata["collection"] 字段                                │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    ChromaDB Collection: "knowledge_base"             │   │
+│  │                                                                      │   │
+│  │  ┌─────────────────────────────────────────────────────────────┐   │   │
+│  │  │ Record 1: {                                                   │   │   │
+│  │  │   id: "doc_001_001",                                          │   │   │
+│  │  │   text: "...",                                                │   │   │
+│  │  │   metadata: { collection: "default", ... }  ← 业务 collection │   │   │
+│  │  │ }                                                             │   │   │
+│  │  └─────────────────────────────────────────────────────────────┘   │   │
+│  │  ┌─────────────────────────────────────────────────────────────┐   │   │
+│  │  │ Record 2: {                                                   │   │   │
+│  │  │   id: "doc_002_001",                                          │   │   │
+│  │  │   text: "...",                                                │   │   │
+│  │  │   metadata: { collection: "my_docs", ... } ← 业务 collection  │   │   │
+│  │  │ }                                                             │   │   │
+│  │  └─────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 14.5 list_collections 返回的是什么？
+
+**位置**: `src/libs/vector_store/chroma_store.py:243-256`
+
+```python
+def get_collection_names(self) -> List[str]:
+    """Get all collection names in the ChromaDB instance."""
+    try:
+        collections = self._client.list_collections()
+        return [col.name for col in collections]
+    except Exception as e:
+        raise RuntimeError(f"Failed to list collections: {e}") from e
+```
+
+**返回的是 ChromaDB 的物理 collection**，不是业务 collection！
+
+如果 ChromaDB 只有一个 collection "knowledge_base"，那么 `list_collections` 只返回 `["knowledge_base"]`。
+
+### 14.6 如何获取业务 Collection 列表？
+
+当前设计中，**业务 collection 是存储在 metadata 中的**，要获取所有业务 collection 需要：
+
+```python
+# 方法 1：查询所有记录，提取唯一的 collection 值
+results = vector_store.query(vector=[0.0] * 1024, top_k=10000)
+collections = set(r["metadata"].get("collection") for r in results)
+
+# 方法 2：使用 ChromaDB 的 where 过滤（如果支持）
+# 当前代码没有实现这个功能
+```
+
+### 14.7 实际使用示例
+
+```bash
+# 摄取文档到 "technical_docs" 集合
+python scripts/ingest.py --path ./tech_papers/ --collection technical_docs
+
+# 摄取文档到 "user_manuals" 集合
+python scripts/ingest.py --path ./manuals/ --collection user_manuals
+
+# 摄取文档到默认集合
+python scripts/ingest.py --path ./misc/
+```
+
+所有文档都存储在同一个 ChromaDB collection "knowledge_base" 中，但通过 `metadata["collection"]` 区分。
+
+### 14.8 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| Collection 创建时机 | **Ingest 阶段**，文档摄取时 |
+| 集合名称来源 | **用户指定**，通过 `--collection` 参数 |
+| 默认集合名 | `"default"` |
+| 存储方式 | 作为 `metadata["collection"]` 字段存储 |
+| ChromaDB Collection | 物理集合，通常只有一个 "knowledge_base" |
+| 业务 Collection | 逻辑分组，通过 metadata 区分 |
+| list_collections 返回 | ChromaDB 物理集合列表，不是业务集合 |
+
+### 14.9 设计思考
+
+**为什么这样设计？**
+
+1. **简化存储**：不需要为每个业务集合创建物理表
+2. **灵活过滤**：通过 metadata 过滤实现逻辑分组
+3. **跨集合搜索**：不指定 filters 时可以搜索所有业务集合
+
+**潜在问题？**
+
+1. `list_collections` 返回的不是用户期望的业务集合列表
+2. 大量数据时，metadata 过滤可能不如物理分区高效
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+
+### 下一步建议
+
+1. **改进 list_collections**：考虑返回业务 collection 列表而非 ChromaDB 物理集合
+2. **深入 metadata 过滤**：学习 ChromaDB 的 where 子句如何工作
+3. **性能优化**：探索大量数据时的分区策略
+
+---
+
+## Phase 15: list_collections 应该返回什么？（设计分析） (2026-03-14)
+
+> 学习目标：从专业 RAG 系统设计角度分析 list_collections 应该返回物理集合还是业务集合
+
+### 15.1 核心观点
+
+**结论：应该返回业务集合列表**
+
+### 15.2 设计原则分析
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        设计原则分析                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  原则 1: 用户视角（User-Centric Design）                                     │
+│  ─────────────────────────────────────                                      │
+│  • 用户通过 --collection my_docs 指定名称                                    │
+│  • 用户期望 list_collections 返回 my_docs                                   │
+│  • ❌ 返回 ["knowledge_base"] 会让用户困惑                                   │
+│                                                                              │
+│  原则 2: 工具一致性（Tool Consistency）                                      │
+│  ─────────────────────────────────────                                      │
+│  • query_knowledge_hub 的 filters 使用业务集合名                            │
+│    {"collection": "my_docs"}                                                │
+│  • list_collections 应该返回与之匹配的值                                     │
+│  • 接口语义必须一致                                                          │
+│                                                                              │
+│  原则 3: 抽象原则（Abstraction Principle）                                   │
+│  ─────────────────────────────────────                                      │
+│  • MCP 工具应该对底层实现进行抽象                                            │
+│  • 用户不需要知道 ChromaDB 的物理集合概念                                    │
+│  • 业务集合才是用户关心的"接口"                                              │
+│                                                                              │
+│  原则 4: 语义清晰（Semantic Clarity）                                        │
+│  ─────────────────────────────────────                                      │
+│  • "collection" 在用户心智模型中 = 文档分组                                  │
+│  • 不是数据库表                                                              │
+│  • 概念映射必须清晰                                                          │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 15.3 对比分析
+
+| 维度 | 返回物理集合 | 返回业务集合 |
+|------|-------------|-------------|
+| **用户期望** | ❌ 不符合 | ✅ 符合 |
+| **工具一致性** | ❌ 与 filters 不匹配 | ✅ 与 filters 匹配 |
+| **抽象层次** | ❌ 暴露实现细节 | ✅ 隐藏实现细节 |
+| **语义清晰** | ❌ 概念混淆 | ✅ 概念一致 |
+| **性能** | ✅ 直接查询 | ⚠️ 需要扫描 metadata |
+| **实现复杂度** | ✅ 简单 | ⚠️ 需要额外逻辑 |
+
+### 15.4 当前实现的问题
+
+```python
+# 当前实现（有问题）
+def get_collection_names(self) -> List[str]:
+    collections = self._client.list_collections()
+    return [col.name for col in collections]
+    # 返回 ["knowledge_base"] - 用户困惑！
+
+# 用户期望的流程
+# 1. 用户执行: python ingest.py --collection my_docs
+# 2. 用户调用: list_collections()
+# 3. 用户期望: ["my_docs"]
+# 4. 实际返回: ["knowledge_base"]  ← 问题！
+```
+
+### 15.5 推荐实现方案
+
+#### 方案 A: 维护 Collection 注册表（推荐）
+
+```python
+# 在 SQLite 中维护 collection 注册表
+class CollectionRegistry:
+    """业务 Collection 注册表"""
+
+    def __init__(self, db_path: str = "data/db/collections.db"):
+        self._db = sqlite3.connect(db_path)
+        self._create_table()
+
+    def register(self, collection_name: str) -> None:
+        """注册新 collection"""
+        self._db.execute(
+            "INSERT OR IGNORE INTO collections (name) VALUES (?)",
+            (collection_name,)
+        )
+        self._db.commit()
+
+    def list_all(self) -> List[str]:
+        """列出所有 collection"""
+        cursor = self._db.execute("SELECT name FROM collections ORDER BY name")
+        return [row[0] for row in cursor.fetchall()]
+
+# 在 IngestionPipeline 中调用
+def _stage_load(self, file_path, result, trace):
+    document = loader.load(file_path)
+    document.metadata["collection"] = self._collection
+
+    # 注册 collection
+    self._collection_registry.register(self._collection)
+
+    return document
+```
+
+**优点**：
+- 性能最优，O(1) 查询
+- 不需要扫描全量数据
+- 支持额外元数据（创建时间、文档数量等）
+
+**缺点**：
+- 需要额外维护注册表
+- 需要处理删除文档时的同步
+
+#### 方案 B: 扫描 Metadata（简单实现）
+
+```python
+class ListCollectionsTool:
+    async def execute(self, arguments: Dict[str, Any]) -> list[TextContent]:
+        self._init_vector_store()
+
+        # 查询所有记录，提取唯一的 collection 值
+        results = self._vector_store.query(
+            vector=[0.0] * 1024,  # 空向量
+            top_k=10000,  # 足够大的值
+        )
+
+        collections = sorted(set(
+            r.get("metadata", {}).get("collection", "default")
+            for r in results
+        ))
+
+        return [TextContent(
+            type="text",
+            text=f"可用的集合（共 {len(collections)} 个）：\n\n" +
+                 "\n".join(f"- {col}" for col in collections)
+        )]
+```
+
+**优点**：
+- 实现简单
+- 不需要额外存储
+
+**缺点**：
+- 性能较差，需要扫描大量数据
+- top_k 限制可能导致遗漏
+
+#### 方案 C: 缓存 + 惰性更新（平衡方案）
+
+```python
+class CachedCollectionLister:
+    """带缓存的 Collection 列表器"""
+
+    def __init__(self, vector_store: BaseVectorStore):
+        self._vector_store = vector_store
+        self._cache: Optional[List[str]] = None
+        self._last_update: Optional[datetime] = None
+        self._cache_ttl = timedelta(hours=1)
+
+    def list_collections(self, force_refresh: bool = False) -> List[str]:
+        # 检查缓存是否有效
+        if not force_refresh and self._is_cache_valid():
+            return self._cache or []
+
+        # 刷新缓存
+        self._refresh_cache()
+        return self._cache or []
+
+    def invalidate_cache(self) -> None:
+        """在 ingest 成功后调用"""
+        self._cache = None
+
+    def _is_cache_valid(self) -> bool:
+        if self._cache is None or self._last_update is None:
+            return False
+        return datetime.now() - self._last_update < self._cache_ttl
+
+    def _refresh_cache(self) -> None:
+        results = self._vector_store.query(
+            vector=[0.0] * 1024,
+            top_k=10000,
+        )
+        self._cache = sorted(set(
+            r.get("metadata", {}).get("collection", "default")
+            for r in results
+        ))
+        self._last_update = datetime.now()
+```
+
+**优点**：
+- 平衡性能和实现复杂度
+- 缓存减少重复查询
+- TTL 机制保证数据新鲜度
+
+**缺点**：
+- 需要在 ingest 后手动失效缓存
+
+### 15.6 架构改进建议
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        改进后的架构                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  当前架构（有问题）                                                          │
+│  ───────────────────                                                        │
+│                                                                              │
+│  list_collections() → ChromaDB.list_collections() → ["knowledge_base"]      │
+│                                                                              │
+│  用户期望: ["my_docs", "papers", "manuals"]                                  │
+│  实际返回: ["knowledge_base"]                                                │
+│                                                                              │
+│  ────────────────────────────────────────────────────────────────────────   │
+│                                                                              │
+│  改进架构（推荐）                                                            │
+│  ───────────────────                                                        │
+│                                                                              │
+│  list_collections() → CollectionRegistry.list_all()                         │
+│                           │                                                  │
+│                           ▼                                                  │
+│                    ┌─────────────┐                                           │
+│                    │   SQLite    │                                           │
+│                    │  Registry   │                                           │
+│                    └─────────────┘                                           │
+│                           ▲                                                  │
+│                           │ register()                                       │
+│                    ┌──────┴──────┐                                           │
+│                    │  Ingestion  │                                           │
+│                    │   Pipeline  │                                           │
+│                    └─────────────┘                                           │
+│                                                                              │
+│  返回: ["my_docs", "papers", "manuals"] ✅                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 15.7 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| 设计原则 | 用户视角、工具一致性、抽象原则、语义清晰 |
+| 当前问题 | 返回物理集合，与用户期望不符 |
+| 推荐方案 | 维护 Collection 注册表（方案 A） |
+| 备选方案 | 缓存 + 惰性更新（方案 C） |
+| 核心思想 | MCP 工具应该隐藏底层实现细节 |
+
+### 15.8 设计决策记录
+
+**决策**：`list_collections` 应该返回业务集合列表
+
+**理由**：
+1. 用户通过 `--collection` 指定的是业务集合名
+2. `filters` 参数使用的是业务集合名
+3. MCP 工具应该对底层实现进行抽象
+4. 返回物理集合会暴露实现细节，造成用户困惑
+
+**影响**：
+- 需要修改 `ListCollectionsTool` 实现
+- 建议添加 `CollectionRegistry` 组件
+- 或使用缓存机制优化性能
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+| Phase 15 | list_collections 应该返回什么？（设计分析） | ✅ 已完成 (2026-03-14) |
+
+### 下一步建议
+
+1. **实现 CollectionRegistry**：添加业务集合注册表组件
+2. **修改 list_collections**：返回业务集合列表
+3. **添加单元测试**：验证新实现的行为
+4. **更新文档**：说明 collection 的两种概念
+
+---
+
+## Phase 16: 不指定 --collection 时的行为与智能分类设计 (2026-03-14)
+
+> 学习目标：理解不指定集合名称时的默认行为，以及如何设计更好的分类策略
+
+### 16.1 当前行为
+
+**如果不指定 `--collection` 参数，默认值是 `"default"`**
+
+**代码位置**: `scripts/ingest.py:46-51`
+
+```python
+parser.add_argument(
+    "--collection",
+    type=str,
+    default="default",  # ← 默认值
+    help="Target collection name (default: default)",
+)
+```
+
+**等价命令**：
+```bash
+python scripts/ingest.py --path ./docs/
+# 等价于
+python scripts/ingest.py --path ./docs/ --collection default
+```
+
+### 16.2 当前设计的问题
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        当前设计的问题                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  问题 1: 所有未分类文档混在一起                                              │
+│  ─────────────────────────────────                                          │
+│  • 技术文档、用户手册、会议记录... 全部进入 "default"                        │
+│  • 无法区分不同类型的文档                                                    │
+│  • 查询时无法精确过滤                                                        │
+│                                                                              │
+│  问题 2: 用户负担重                                                          │
+│  ─────────────────────────────────                                          │
+│  • 每次都要手动指定 --collection                                            │
+│  • 容易忘记，导致分类混乱                                                    │
+│  • 集合名称可能不一致（tech_docs vs technical_docs）                        │
+│                                                                              │
+│  问题 3: 不适合自动化场景                                                    │
+│  ─────────────────────────────────                                          │
+│  • 批量导入时难以逐个指定                                                    │
+│  • 爬虫/监控场景无法预先知道分类                                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.3 改进方案对比
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        改进方案对比                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  方案 A: 用户手动指定（当前方案）                                             │
+│  ─────────────────────────────────                                          │
+│  $ python ingest.py --path ./docs/ --collection my_docs                     │
+│                                                                              │
+│  优点:                                                                       │
+│  ✅ 完全可控，用户明确知道文档属于哪个集合                                    │
+│  ✅ 实现简单，不需要额外逻辑                                                 │
+│  ✅ 分类结果可预测                                                           │
+│                                                                              │
+│  缺点:                                                                       │
+│  ❌ 用户负担重，每次都要指定                                                 │
+│  ❌ 容易忘记，导致分类混乱                                                   │
+│  ❌ 集合名称可能不一致                                                       │
+│                                                                              │
+│  ────────────────────────────────────────────────────────────────────────   │
+│                                                                              │
+│  方案 B: 基于路径自动推断                                                    │
+│  ─────────────────────────────────                                          │
+│  $ python ingest.py --path ./technical_docs/api.pdf                         │
+│  → 自动推断 collection: "technical_docs"                                    │
+│                                                                              │
+│  优点:                                                                       │
+│  ✅ 减少用户操作                                                             │
+│  ✅ 分类一致性有保障                                                         │
+│  ✅ 适合有固定目录结构的场景                                                 │
+│                                                                              │
+│  缺点:                                                                       │
+│  ❌ 规则需要预先定义                                                         │
+│  ❌ 无法处理复杂分类需求                                                     │
+│  ❌ 目录结构变化时需要更新规则                                               │
+│                                                                              │
+│  ────────────────────────────────────────────────────────────────────────   │
+│                                                                              │
+│  方案 C: AI 智能分类                                                         │
+│  ─────────────────────────────────                                          │
+│  $ python ingest.py --path ./docs/ --auto-classify                          │
+│  → AI 读取内容 → 判断属于 "technical_docs"                                   │
+│                                                                              │
+│  优点:                                                                       │
+│  ✅ 真正智能，无需用户干预                                                   │
+│  ✅ 基于内容语义分类，更准确                                                 │
+│  ✅ 适应性强，可处理新类型文档                                               │
+│                                                                              │
+│  缺点:                                                                       │
+│  ❌ 增加 API 成本和延迟                                                      │
+│  ❌ 分类结果不可预测                                                         │
+│  ❌ 用户无法提前知道文档会被分到哪个集合                                      │
+│  ❌ 可能产生过多细碎的集合                                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.4 推荐方案：混合模式
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        混合模式架构                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  优先级: 用户指定 > 规则推断 > AI 分类 > 默认值                              │
+│                                                                              │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Step 1: 检查用户是否指定                                             │   │
+│  │                                                                      │   │
+│  │ if args.collection:                                                  │   │
+│  │     collection = args.collection  # 用户明确指定，直接使用           │   │
+│  │     goto STORE                                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Step 2: 尝试从路径推断                                               │   │
+│  │                                                                      │   │
+│  │ inferred = infer_from_path(file_path)                               │   │
+│  │ if inferred:                                                         │   │
+│  │     collection = inferred  # 使用推断结果                            │   │
+│  │     goto STORE                                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Step 3: AI 分类（可选，需要 --auto-classify 参数）                   │   │
+│  │                                                                      │   │
+│  │ if auto_classify:                                                    │   │
+│  │     collection = ai_classify(document)                              │   │
+│  │     goto STORE                                                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ Step 4: 使用默认值                                                   │   │
+│  │                                                                      │   │
+│  │ collection = "default"                                               │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.5 推荐实现代码
+
+```python
+# ingest.py 改进版
+
+def infer_collection_from_path(file_path: str) -> Optional[str]:
+    """从文件路径推断集合名称"""
+    path = Path(file_path)
+
+    # 规则: 使用父目录名作为集合名
+    parent_dir = path.parent.name
+    if parent_dir and parent_dir not in [".", "..", "data", "docs"]:
+        return normalize_collection_name(parent_dir)
+
+    return None
+
+def normalize_collection_name(name: str) -> str:
+    """规范化集合名称"""
+    return name.lower().replace(" ", "_").replace("-", "_")
+
+def determine_collection(
+    file_path: str,
+    user_specified: Optional[str] = None,
+    auto_classify: bool = False,
+    document: Optional[Document] = None,
+) -> str:
+    """确定集合名称（混合模式）"""
+
+    # 优先级 1: 用户指定
+    if user_specified:
+        logger.info(f"Using user-specified collection: {user_specified}")
+        return user_specified
+
+    # 优先级 2: 路径推断
+    inferred = infer_collection_from_path(file_path)
+    if inferred:
+        logger.info(f"Auto-inferred collection from path: {inferred}")
+        return inferred
+
+    # 优先级 3: AI 分类（可选）
+    if auto_classify and document:
+        classified = ai_classify_collection(document)
+        if classified:
+            logger.info(f"AI-classified collection: {classified}")
+            return classified
+
+    # 优先级 4: 默认值
+    logger.info("Using default collection")
+    return "default"
+```
+
+### 16.6 不同场景的最佳实践
+
+| 场景 | 推荐方式 | 理由 |
+|------|----------|------|
+| **企业知识库** | 用户指定 + 规范命名 | 有明确的分类体系，需要可控性 |
+| **个人笔记** | 路径推断 | 目录结构即分类，简单高效 |
+| **自动化爬虫** | AI 分类 | 内容来源多样，无法预知分类 |
+| **多用户系统** | 用户指定 + 权限控制 | 不同用户有不同数据隔离需求 |
+| **原型/测试** | 默认值 | 快速验证，无需关心分类 |
+
+### 16.7 关键设计建议
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        关键设计建议                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. 提供预定义的集合模板                                                     │
+│  ─────────────────────────────                                              │
+│  config/collection_templates.yaml:                                           │
+│    - name: technical_docs                                                   │
+│      description: 技术文档                                                   │
+│      keywords: [api, 架构, 开发]                                             │
+│    - name: user_manuals                                                     │
+│      description: 用户手册                                                   │
+│      keywords: [指南, 教程, 使用]                                            │
+│                                                                              │
+│  2. 支持集合别名                                                             │
+│  ─────────────────────────────                                              │
+│  tech → technical_docs                                                      │
+│  manual → user_manuals                                                      │
+│  避免用户输入不一致导致的集合碎片化                                           │
+│                                                                              │
+│  3. 提供 --dry-run 模式                                                     │
+│  ─────────────────────────────                                              │
+│  $ python ingest.py --path ./docs/ --dry-run                                │
+│  Output: 文档将被分配到集合: technical_docs                                  │
+│  让用户在正式导入前确认分类结果                                               │
+│                                                                              │
+│  4. 支持事后调整                                                             │
+│  ─────────────────────────────                                              │
+│  $ python ingest.py --reclassify --from old_name --to new_name              │
+│  允许用户修正错误的分类                                                       │
+│                                                                              │
+│  5. 记录分类日志                                                             │
+│  ─────────────────────────────                                              │
+│  logs/classification.jsonl:                                                  │
+│    {"file": "api.pdf", "collection": "technical_docs", "method": "inferred"}│
+│  便于审计和调试                                                              │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.8 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| 当前默认值 | `"default"` |
+| 当前问题 | 未分类文档混在一起、用户负担重、不适合自动化 |
+| 推荐方案 | 混合模式：用户指定 > 路径推断 > AI 分类 > 默认值 |
+| 核心原则 | 可控性 > 便利性；一致性 > 灵活性；可追溯 |
+| 最佳实践 | 企业用用户指定，个人用路径推断，爬虫用 AI 分类 |
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+| Phase 15 | list_collections 应该返回什么？（设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 16 | 不指定 --collection 时的行为与智能分类设计 | ✅ 已完成 (2026-03-14) |
+| Phase 17 | Collection 是否真的必要？（深度设计分析） | ✅ 已完成 (2026-03-14) |
+
+### 下一步建议
+
+1. **评估项目规模**：根据文档数量决定是否需要 Collection
+2. **简化设计**：小型项目可移除 Collection，只用 Metadata
+3. **完善权限控制**：如果保留 Collection，添加真正的权限隔离
+4. **统一概念**：解决 ChromaDB Collection vs 业务 Collection 的混乱
+
+---
+
+## Phase 17: Collection 是否真的必要？（深度设计分析） (2026-03-14)
+
+> 学习目标：从 RAG 系统设计角度，深入分析 Collection 的必要性
+
+### 17.1 Collection 的设计初衷
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Collection 的设计初衷                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. 检索精度                                                                 │
+│  ─────────────────                                                          │
+│  • 缩小搜索空间，减少噪音                                                    │
+│  • 例：只搜索 "技术文档" 集合，避免搜索到 "会议记录"                         │
+│                                                                              │
+│  2. 权限隔离                                                                 │
+│  ─────────────────                                                          │
+│  • 不同用户/部门访问不同集合                                                 │
+│  • 例：普通用户只能访问 "公开文档"，管理员可以访问 "内部文档"                │
+│                                                                              │
+│  3. 管理便利                                                                 │
+│  ─────────────────                                                          │
+│  • 批量操作（删除、更新）                                                    │
+│  • 例：删除 "过期文档" 集合                                                  │
+│                                                                              │
+│  4. 性能优化                                                                 │
+│  ─────────────────                                                          │
+│  • 减少向量搜索的计算量                                                      │
+│  • 例：10 万文档分 10 个集合，每次只搜索 1 万                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 17.2 Collection 可能是过度设计的情况
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Collection 可能是过度设计的情况                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  场景 1: 个人知识库                                                          │
+│  ─────────────────────                                                      │
+│  • 文档数量少（< 1000 篇）                                                   │
+│  • 用户自己知道内容在哪                                                      │
+│  • 不需要权限控制                                                            │
+│  → Collection 增加了不必要的复杂度                                           │
+│                                                                              │
+│  场景 2: 单一主题知识库                                                      │
+│  ─────────────────────                                                      │
+│  • 所有文档都是同一主题（如只存技术文档）                                    │
+│  • 不需要分类                                                                │
+│  → Collection 没有实际价值                                                   │
+│                                                                              │
+│  场景 3: 原型/测试阶段                                                      │
+│  ─────────────────────                                                      │
+│  • 快速验证想法                                                              │
+│  • 数据量小                                                                  │
+│  → Collection 是额外负担                                                     │
+│                                                                              │
+│  场景 4: 现代 LLM 能力足够强                                                │
+│  ─────────────────────                                                      │
+│  • LLM 可以从大量上下文中提取关键信息                                        │
+│  • Reranker 可以过滤噪音                                                    │
+│  → Collection 的检索精度价值下降                                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 17.3 替代方案：Metadata 过滤
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     替代方案：Metadata 过滤                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  不用 Collection，用 Metadata 字段：                                         │
+│                                                                              │
+│  {                                                                           │
+│    "id": "doc_001",                                                          │
+│    "text": "...",                                                            │
+│    "metadata": {                                                             │
+│      "doc_type": "technical",      // 文档类型                               │
+│      "department": "engineering",  // 部门                                   │
+│      "access_level": "internal",   // 访问级别                               │
+│      "language": "zh",             // 语言                                   │
+│      "created_at": "2024-01-01",   // 时间                                   │
+│      "tags": ["api", "config"]     // 标签                                   │
+│    }                                                                         │
+│  }                                                                           │
+│                                                                              │
+│  查询时：                                                                    │
+│  filters = {                                                                 │
+│    "doc_type": "technical",                                                  │
+│    "department": "engineering"                                               │
+│  }                                                                           │
+│                                                                              │
+│  优点：                                                                      │
+│  ✅ 更灵活，支持多维度过滤                                                   │
+│  ✅ 不需要预先规划分类体系                                                   │
+│  ✅ 一个文档可以属于多个"虚拟集合"                                           │
+│                                                                              │
+│  缺点：                                                                      │
+│  ❌ 过滤性能可能不如物理分区                                                 │
+│  ❌ 管理复杂度增加                                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 17.4 Collection 必要性决策矩阵
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Collection 必要性决策矩阵                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                    文档数量少          文档数量多                            │
+│                   ─────────────────────────────────                         │
+│  单一主题    │   ❌ 不需要           │   ⚠️ 可选                             │
+│              │   直接搜索即可        │   考虑性能优化                        │
+│              │                        │                                       │
+│  ────────────┼────────────────────────┼───────────────────────────────────  │
+│              │                        │                                       │
+│  多主题      │   ⚠️ 可选             │   ✅ 必要                             │
+│              │   Metadata 过滤足够    │   权限隔离 + 性能优化                 │
+│              │                        │   管理便利                            │
+│              │                        │                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 17.5 不同规模的建议
+
+| 规模 | 文档数量 | 建议 | 理由 |
+|------|----------|------|------|
+| 小型 | < 1,000 | 不需要 Collection | 搜索空间小，噪音影响有限 |
+| 中型 | 1,000 - 10,000 | 可选 | Metadata 过滤足够，但 Collection 有帮助 |
+| 大型 | 10,000 - 100,000 | 推荐 | 性能优化、管理便利 |
+| 企业级 | > 100,000 | 必要 | 权限隔离、分布式存储、性能优化 |
+
+### 17.6 不同场景的建议
+
+| 场景 | 是否需要 Collection | 理由 |
+|------|---------------------|------|
+| 个人笔记 | ❌ 不需要 | 简单优先，用户自己知道内容 |
+| 团队知识库 | ⚠️ 可选 | 看团队规模和文档复杂度 |
+| 企业知识库 | ✅ 必要 | 权限隔离、多部门、多主题 |
+| SaaS 产品 | ✅ 必要 | 多租户隔离是核心需求 |
+| 垂直领域 RAG | ❌ 不需要 | 单一主题，不需要分类 |
+
+### 17.7 当前项目的设计问题
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     当前项目的设计问题                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  问题 1: Collection 概念混乱                                                │
+│  ─────────────────────────────                                              │
+│  • ChromaDB Collection（物理） vs 业务 Collection（逻辑）                   │
+│  • 用户困惑，API 不一致                                                      │
+│                                                                              │
+│  问题 2: 默认值 "default" 没有意义                                          │
+│  ─────────────────────────────                                              │
+│  • 所有未分类文档混在一起                                                    │
+│  • 失去了 Collection 的价值                                                  │
+│                                                                              │
+│  问题 3: 没有权限控制                                                       │
+│  ─────────────────────────────                                              │
+│  • Collection 只用于检索过滤                                                 │
+│  • 没有真正的隔离能力                                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 17.8 改进建议
+
+#### 方案 A: 简化设计（适合小型项目）
+
+```python
+# 完全移除 Collection 概念
+# 只用 Metadata 过滤
+
+# 摄取时
+document.metadata = {
+    "doc_type": "technical",
+    "tags": ["api", "config"],
+    "source": "tech_docs/",
+}
+
+# 查询时
+filters = {"doc_type": "technical"}
+```
+
+#### 方案 B: 强化 Collection（适合企业级）
+
+```python
+# Collection 作为一等公民
+class Collection:
+    name: str
+    description: str
+    permissions: List[str]  # 谁可以访问
+    embedding_model: str    # 可以用不同的模型
+    chunk_size: int         # 可以有不同的切分策略
+
+# 摄取时必须指定
+python ingest.py --path ./docs/ --collection technical_docs
+
+# 查询时自动过滤（基于用户权限）
+results = query_knowledge_hub(
+    query="...",
+    user_id="user_001",  # 自动过滤用户有权限的 collection
+)
+```
+
+#### 方案 C: 混合模式（推荐）
+
+```python
+# Collection 可选，默认不使用
+# 用户可以选择性地创建 Collection 来组织文档
+
+# 简单场景
+python ingest.py --path ./docs/  # 不指定，所有文档在一起
+
+# 复杂场景
+python ingest.py --path ./tech/ --collection technical_docs
+python ingest.py --path ./manuals/ --collection user_manuals
+
+# 查询时
+# 不指定 filters：搜索所有
+# 指定 filters：搜索特定 collection
+```
+
+### 17.9 关键收获
+
+| 维度 | 关键收获 |
+|------|----------|
+| Collection 的价值 | 检索精度、权限隔离、管理便利、性能优化 |
+| 何时不需要 | 小规模、单一主题、个人使用、原型阶段 |
+| 替代方案 | Metadata 多维度过滤 |
+| 决策依据 | 文档数量 × 主题复杂度 |
+| 当前问题 | 概念混乱、默认值无意义、无权限控制 |
+| 推荐方案 | 混合模式：Collection 可选，按需使用 |
+
+### 17.10 最终建议
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              最终建议                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. 对于当前项目（中小型 RAG 系统）                                          │
+│     ─────────────────────────────────                                       │
+│     • Collection 作为可选功能，不是必需                                      │
+│     • 默认行为：不使用 Collection，所有文档在一起                            │
+│     • 用户可以选择性地创建 Collection 来组织文档                             │
+│                                                                              │
+│  2. 如果要保留 Collection                                                   │
+│     ─────────────────────────────────                                       │
+│     • 修复 list_collections 返回业务集合                                    │
+│     • 添加权限控制能力                                                       │
+│     • 让 Collection 真正有价值                                               │
+│                                                                              │
+│  3. 如果要简化设计                                                           │
+│     ─────────────────────────────────                                       │
+│     • 移除 Collection 概念                                                  │
+│     • 只用 Metadata 过滤                                                    │
+│     • 简化用户操作                                                           │
+│                                                                              │
+│  核心原则：                                                                  │
+│     简单优先，按需扩展                                                        │
+│     不要为了"看起来专业"而引入不必要的复杂度                                  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Phase 7: Ingest 阶段详解 (2026-03-14)
+
+> 学习目标：深入理解文档导入管道的完整流程和各组件职责
+
+### 7.1 整体架构
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Ingestion Pipeline 架构                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  入口: scripts/ingest.py                                                     │
+│         │                                                                    │
+│         ▼                                                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    IngestionPipeline (pipeline.py)                   │    │
+│  │                                                                      │    │
+│  │   Stage 1: Integrity Check ──► Stage 2: Load ──► Stage 3: Split    │    │
+│  │        │                           │                   │            │    │
+│  │        ▼                           ▼                   ▼            │    │
+│  │   SQLiteIntegrityChecker      PdfLoader/         DocumentChunker   │    │
+│  │   (文件哈希检查)              MarkdownLoader       (调用 Splitter)  │    │
+│  │                                                                      │    │
+│  │   Stage 4: Transform ────────► Stage 5: Encode ──► Stage 6: Store  │    │
+│  │        │                           │                   │            │    │
+│  │        ▼                           ▼                   ▼            │    │
+│  │   ChunkRefiner              DenseEncoder        VectorUpserter     │    │
+│  │   MetadataEnricher          SparseEncoder       BM25Indexer        │    │
+│  │   ImageCaptioner                                 ImageStorage      │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.2 入口脚本详解
+
+**位置**: `scripts/ingest.py`
+
+```python
+# 命令行参数
+python scripts/ingest.py --path <文件或目录> [--collection <名称>] [--force]
+
+# 参数说明：
+# --path       : 必需，PDF/Markdown 文件或目录路径
+# --collection : 可选，目标集合名称（默认 "default"）
+# --force      : 可选，强制重新处理已处理过的文件
+```
+
+**执行流程**:
+
+```
+main()
+  │
+  ├─► parse_args()           # 解析命令行参数
+  │
+  ├─► load_settings()        # 加载配置
+  │
+  ├─► get_document_files()   # 获取待处理文件列表
+  │       │
+  │       └─► 支持 .pdf, .md, .markdown
+  │
+  ├─► IngestionPipeline()    # 创建管道实例
+  │
+  └─► for doc_file in files:
+          │
+          └─► pipeline.run(file_path, force=...)
+```
+
+### 7.3 六个阶段详解
+
+#### Stage 1: Integrity Check (完整性检查)
+
+**位置**: `src/ingestion/pipeline.py:264-292`
+
+```
+目的：避免重复处理相同文件
+
+流程：
+┌─────────────────────────────────────────┐
+│ 1. 计算 SHA256 哈希                      │
+│    file_hash = SHA256(file_content)     │
+│                                          │
+│ 2. 查询 SQLite 数据库                    │
+│    SELECT * FROM integrity               │
+│    WHERE file_hash = ?                  │
+│                                          │
+│ 3. 判断是否跳过                          │
+│    if 已处理 and not force:             │
+│        → 跳过文件                        │
+│    else:                                │
+│        → 继续处理                        │
+└─────────────────────────────────────────┘
+```
+
+**关键代码**:
+```python
+file_hash = self.integrity_checker.compute_sha256(file_path)
+should_skip = not force and self.integrity_checker.should_skip(file_hash)
+
+if should_skip:
+    raise RuntimeError("SKIP: File already processed")
+```
+
+#### Stage 2: Load (文档加载)
+
+**位置**: `src/ingestion/pipeline.py:294-321`
+
+```
+目的：将文件转换为 Document 对象
+
+┌─────────────────────────────────────────┐
+│ 根据文件扩展名选择 Loader:               │
+│                                          │
+│ .pdf      → PdfLoader                   │
+│ .md/.markdown → MarkdownLoader          │
+│                                          │
+│ 输出: Document {                         │
+│   id: "doc_xxx",                        │
+│   text: "完整文档内容...",               │
+│   metadata: {                           │
+│     source_path: "/path/to/file.pdf",   │
+│     collection: "my_docs",              │
+│     images: [...]  # PDF 提取的图片     │
+│   }                                     │
+│ }                                       │
+└─────────────────────────────────────────┘
+```
+
+#### Stage 3: Split (文档切分)
+
+**位置**: `src/ingestion/chunking/document_chunker.py`
+
+```
+目的：将长文档切分为适合检索的小片段
+
+┌─────────────────────────────────────────────────────────────────┐
+│ DocumentChunker 工作流程                                         │
+│                                                                  │
+│ 1. 调用 Splitter 切分文本                                        │
+│    raw_chunks = splitter.split_text(document.text)              │
+│                                                                  │
+│ 2. 为每个片段创建 Chunk 对象                                     │
+│    for idx, text in enumerate(raw_chunks):                      │
+│        chunk = Chunk(                                           │
+│            id = "{doc_id}_{index:04d}_{hash}",  # 稳定 ID       │
+│            text = text,                                         │
+│            metadata = inherited_metadata,                       │
+│            source_ref = document.id,  # 指向父文档              │
+│        )                                                        │
+│        chunk.metadata["chunk_index"] = idx                      │
+│                                                                  │
+│ 3. 返回 List[Chunk]                                             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Chunk ID 生成规则**:
+```python
+# 格式: {doc_id}_{index:04d}_{content_hash_8chars}
+# 示例: doc_abc123_0001_a3f2b8c1
+
+def _generate_chunk_id(doc_id, index, text):
+    content_hash = hashlib.md5(text.encode()).hexdigest()[:8]
+    return f"{doc_id}_{index:04d}_{content_hash}"
+```
+
+#### Stage 4: Transform (转换增强)
+
+**位置**: `src/ingestion/transform/`
+
+```
+目的：对 Chunks 进行精炼和增强
+
+三个 Transformer 串联执行：
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. ChunkRefiner (精炼器)                                        │
+│    - 合并过短的 chunk                                           │
+│    - 拆分过长的 chunk                                           │
+│    - 清理格式问题                                               │
+│                                                                  │
+│ 2. MetadataEnricher (元数据增强器)                              │
+│    - 提取关键词                                                 │
+│    - 添加文档类型标签                                           │
+│    - 记录处理时间                                               │
+│                                                                  │
+│ 3. ImageCaptioner (图片描述器)                                  │
+│    - 使用 Vision LLM 为图片生成描述                             │
+│    - 将描述注入相关 chunk                                       │
+│    - 仅当文档包含图片时执行                                     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**容错设计**:
+```python
+# 每个 Transformer 失败不影响整体流程
+try:
+    transformed_chunks = self.transform.transform(chunks)
+except Exception as e:
+    logger.warning(f"ChunkRefiner failed, using original chunks: {e}")
+    # 继续使用原始 chunks
+```
+
+#### Stage 5: Encode (向量化)
+
+**位置**: `src/ingestion/embedding/`
+
+```
+目的：为每个 Chunk 生成向量表示
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 双路编码：Dense + Sparse                                        │
+│                                                                  │
+│ ┌─────────────────────┐    ┌─────────────────────┐             │
+│ │ DenseEncoder        │    │ SparseEncoder       │             │
+│ │ (稠密向量)          │    │ (稀疏向量)          │             │
+│ │                     │    │                     │             │
+│ │ Chunk → [0.1, 0.2,  │    │ Chunk → {"关键词":  │             │
+│ │   ..., 0.9]         │    │   2.5, "搜索": 1.8} │             │
+│ │                     │    │                     │             │
+│ │ 1024 维浮点数组     │    │ BM25 词频字典       │             │
+│ │ 用于语义相似度搜索  │    │ 用于关键词精确匹配  │             │
+│ └─────────────────────┘    └─────────────────────┘             │
+│            │                          │                         │
+│            └──────────┬───────────────┘                         │
+│                       ▼                                         │
+│              ChunkRecord {                                      │
+│                id: "chunk_xxx",                                 │
+│                text: "...",                                     │
+│                dense_vector: [0.1, ...],                        │
+│                sparse_vector: {"关键词": 2.5, ...}              │
+│              }                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**DenseEncoder 关键代码**:
+```python
+def encode(self, chunks: List[Chunk]) -> List[ChunkRecord]:
+    # 1. 提取文本
+    texts = [chunk.text for chunk in chunks]
+
+    # 2. 调用 Embedding API
+    vectors = self.embedding_client.embed(texts)
+
+    # 3. 构建 ChunkRecord
+    records = []
+    for i, chunk in enumerate(chunks):
+        record = ChunkRecord(
+            id=chunk.id,
+            text=chunk.text,
+            metadata=chunk.metadata.copy(),
+            dense_vector=vectors[i],  # 1024维向量
+        )
+        records.append(record)
+
+    return records
+```
+
+#### Stage 6: Store (存储)
+
+**位置**: `src/ingestion/storage/`
+
+```
+目的：将编码结果持久化到存储系统
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 三路存储                                                        │
+│                                                                  │
+│ ┌─────────────────────┐                                         │
+│ │ VectorUpserter      │ → ChromaDB (向量数据库)                 │
+│ │                     │   存储: id, vector, text, metadata      │
+│ │ 支持幂等写入        │   用于: 稠密向量检索                    │
+│ └─────────────────────┘                                         │
+│                                                                  │
+│ ┌─────────────────────┐                                         │
+│ │ BM25Indexer         │ → BM25 Index (倒排索引)                 │
+│ │                     │   存储: 词频统计                        │
+│ │ 基于 sparse_vector  │   用于: 关键词检索                      │
+│ └─────────────────────┘                                         │
+│                                                                  │
+│ ┌─────────────────────┐                                         │
+│ │ ImageStorage        │ → SQLite (图片存储)                     │
+│ │                     │   存储: 图片二进制 + 描述                │
+│ │ 仅当有图片时执行    │   用于: 多模态检索                      │
+│ └─────────────────────┘                                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**VectorUpserter 幂等性设计**:
+```python
+def _generate_stable_id(self, record: ChunkRecord) -> str:
+    """生成稳定的记录 ID，确保同一内容始终产生相同 ID"""
+    source_path = record.metadata.get("source_path", "")
+    chunk_index = record.metadata.get("chunk_index", 0)
+    content_hash = hashlib.md5(record.text.encode()).hexdigest()[:8]
+
+    # 相同内容 → 相同 ID → 更新而非插入
+    return f"{source_path}_{chunk_index}_{content_hash}"
+```
+
+### 7.4 数据流转图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              数据流转全过程                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  📄 文件系统                                                                 │
+│  /docs/manual.pdf                                                           │
+│       │                                                                      │
+│       ▼ Stage 1: Integrity Check                                            │
+│  ┌─────────────────┐                                                        │
+│  │ SHA256 Hash     │                                                        │
+│  │ "a3f2b8c1..."   │                                                        │
+│  └─────────────────┘                                                        │
+│       │                                                                      │
+│       ▼ Stage 2: Load                                                       │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Document {                              │                                │
+│  │   id: "doc_a3f2b8c1",                   │                                │
+│  │   text: "完整文档内容 (50000 chars)...", │                                │
+│  │   metadata: {                           │                                │
+│  │     source_path: "/docs/manual.pdf",    │                                │
+│  │     collection: "my_docs",              │                                │
+│  │     images: [img1.png, img2.png]        │                                │
+│  │   }                                     │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Stage 3: Split                                                      │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ [Chunk 1] {                             │                                │
+│  │   id: "doc_a3f2_0001_abc12345",         │                                │
+│  │   text: "第一章 介绍...",               │                                │
+│  │   source_ref: "doc_a3f2b8c1",           │                                │
+│  │   metadata: { chunk_index: 0, ... }     │                                │
+│  │ }                                       │                                │
+│  │ [Chunk 2] { ... }                       │                                │
+│  │ [Chunk 3] { ... }                       │                                │
+│  │ ... (共 50 个 chunks)                   │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Stage 4: Transform                                                  │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ [Chunk 1] {                             │                                │
+│  │   text: "第一章 介绍 (精炼后)...",      │                                │
+│  │   metadata: {                           │                                │
+│  │     keywords: ["介绍", "概述"],         │  ← MetadataEnricher           │
+│  │     image_captions: ["图1: 系统架构"],  │  ← ImageCaptioner             │
+│  │     ...                                 │                                │
+│  │   }                                     │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Stage 5: Encode                                                     │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ChunkRecord {                           │                                │
+│  │   id: "doc_a3f2_0001_abc12345",         │                                │
+│  │   text: "第一章 介绍...",               │                                │
+│  │   dense_vector: [0.12, 0.34, ...],      │  ← 1024维                     │
+│  │   sparse_vector: {"介绍": 2.5, ...},    │  ← BM25 词频                  │
+│  │   metadata: { ... }                     │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Stage 6: Store                                                      │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ChromaDB:  id + vector + text + meta    │                                │
+│  │ BM25:      词频索引                      │                                │
+│  │ SQLite:    图片 + 描述                   │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.5 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| **入口脚本** | `scripts/ingest.py` 解析参数、遍历文件、调用 Pipeline |
+| **Pipeline 编排** | `IngestionPipeline.run()` 串联 6 个阶段，每个阶段独立可测 |
+| **完整性检查** | SHA256 哈希 + SQLite 存储，避免重复处理 |
+| **文档切分** | `DocumentChunker` 生成稳定 ID，继承元数据，建立溯源链接 |
+| **双路编码** | Dense (语义搜索) + Sparse (关键词搜索)，混合检索更精准 |
+| **幂等存储** | 稳定 ID 生成策略，相同内容更新而非重复插入 |
+| **容错设计** | Transform 阶段失败不影响整体，降级使用原始数据 |
+
+### 7.6 实践练习
+
+**练习 1: 运行一次完整的 Ingest**
+```bash
+# 导入单个文件
+python scripts/ingest.py --path ./tests/fixtures/sample_documents/complex_technical_doc.pdf --collection test_docs
+
+# 查看结果
+# - data/db/chroma/ (向量数据库)
+# - data/db/bm25/ (BM25 索引)
+# - data/db/integrity.db (完整性记录)
+```
+
+**练习 2: 强制重新处理**
+```bash
+# 第一次运行
+python scripts/ingest.py --path ./docs/manual.pdf
+
+# 第二次运行 - 会被跳过
+python scripts/ingest.py --path ./docs/manual.pdf
+# 输出: Skipped (already processed)
+
+# 强制重新处理
+python scripts/ingest.py --path ./docs/manual.pdf --force
+```
+
+---
+
+## Phase 7.3 深入: Split 阶段详解 (2026-03-14)
+
+> 学习目标：深入理解文档切分的架构设计和实现细节
+
+### 架构层次
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Split 阶段架构                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  IngestionPipeline                                                          │
+│       │                                                                      │
+│       ▼                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ DocumentChunker (适配器层)                                          │    │
+│  │                                                                      │    │
+│  │ 职责：                                                               │    │
+│  │ • 调用 Splitter 切分文本                                            │    │
+│  │ • 生成稳定的 Chunk ID                                               │    │
+│  │ • 继承 Document 元数据                                              │    │
+│  │ • 建立 source_ref 溯源链接                                          │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│       │                                                                      │
+│       ▼                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ SplitterFactory (工厂层)                                            │    │
+│  │                                                                      │    │
+│  │ 职责：                                                               │    │
+│  │ • 读取 settings.splitter.strategy                                   │    │
+│  │ • 从注册表查找对应的 Splitter 类                                    │    │
+│  │ • 实例化并返回 Splitter                                             │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│       │                                                                      │
+│       ▼                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ BaseSplitter (抽象层)                                               │    │
+│  │                                                                      │    │
+│  │ 定义接口：                                                           │    │
+│  │ • split_text(text) → List[str]                                      │    │
+│  │ • get_strategy_name() → str                                         │    │
+│  │ • get_chunk_size() → int                                            │    │
+│  │ • get_chunk_overlap() → int                                         │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│       │                                                                      │
+│       ├──────────────────┬──────────────────┐                               │
+│       ▼                  ▼                  ▼                               │
+│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                        │
+│  │ Recursive   │   │ Fixed       │   │ Semantic    │                        │
+│  │ Splitter    │   │ Splitter    │   │ Splitter    │                        │
+│  │ (已实现)    │   │ (待实现)    │   │ (待实现)    │                        │
+│  └─────────────┘   └─────────────┘   └─────────────┘                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 核心概念
+
+#### 1. Chunk Size (块大小)
+
+```
+chunk_size = 1000  # 每个 chunk 最大 1000 字符
+
+┌─────────────────────────────────────────────────────────────────┐
+│ 文档内容 (3000 字符)                                             │
+│                                                                  │
+│ "这是一段很长的文档内容，包含多个段落和章节..."                   │
+│                                                                  │
+│ 切分结果：                                                       │
+│ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐    │
+│ │ Chunk 1         │ │ Chunk 2         │ │ Chunk 3         │    │
+│ │ (~1000 字符)    │ │ (~1000 字符)    │ │ (~1000 字符)    │    │
+│ └─────────────────┘ └─────────────────┘ └─────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 2. Chunk Overlap (块重叠)
+
+```
+chunk_overlap = 200  # 相邻 chunk 重叠 200 字符
+
+目的：保持上下文连贯性，避免语义被截断
+
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                  │
+│  Chunk 1                    Chunk 2                             │
+│  ┌────────────────────┐     ┌────────────────────┐              │
+│  │ A B C D E F G H I  │     │          H I J K L │              │
+│  │ J K L M N O P Q R  │     │ M N O P Q R S T U  │              │
+│  │ S T U V W X Y Z    │     │ V W X Y Z 1 2 3 4  │              │
+│  └────────────────────┘     └────────────────────┘              │
+│           │                    ▲                                 │
+│           └────────────────────┘                                 │
+│                  重叠区域 (200 字符)                              │
+│                                                                  │
+│  好处：                                                          │
+│  • 检索时不会漏掉边界内容                                        │
+│  • 语义完整性更好                                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 3. Separators (分隔符优先级)
+
+```python
+# RecursiveSplitter 的分隔符优先级
+DEFAULT_SEPARATORS = [
+    "\n## ",      # 1. 二级标题 (最高优先级)
+    "\n### ",     # 2. 三级标题
+    "\n\n",       # 3. 段落
+    "\n",         # 4. 行
+    ". ",         # 5. 句子
+    " ",          # 6. 词
+    "",           # 7. 字符 (最低优先级，最后手段)
+]
+```
+
+**工作原理**：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Recursive Splitter 切分逻辑                                      │
+│                                                                  │
+│ 输入文本:                                                        │
+│ """                                                              │
+│ ## 第一章 介绍                                                   │
+│                                                                  │
+│ 这是介绍内容...                                                  │
+│                                                                  │
+│ ## 第二章 详细说明                                               │
+│                                                                  │
+│ 这是详细内容...                                                  │
+│ """                                                              │
+│                                                                  │
+│ Step 1: 尝试用 "\n## " 分割                                      │
+│         → ["## 第一章 介绍\n\n这是介绍内容...",                  │
+│            "## 第二章 详细说明\n\n这是详细内容..."]              │
+│                                                                  │
+│ Step 2: 检查每个片段是否 <= chunk_size                           │
+│         → 如果是，完成                                           │
+│         → 如果不是，用下一个分隔符继续分割                       │
+│                                                                  │
+│ Step 3: 递归处理直到所有片段都满足大小限制                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 关键代码解读
+
+#### BaseSplitter (抽象基类)
+
+**位置**: `src/libs/splitter/base_splitter.py`
+
+```python
+class BaseSplitter(ABC):
+    """所有 Splitter 必须实现的接口"""
+
+    @abstractmethod
+    def split_text(self, text: str, trace: Optional[Any] = None) -> List[str]:
+        """将文本切分为字符串列表"""
+        pass
+
+    def validate_text(self, text: str) -> None:
+        """验证输入文本"""
+        if not isinstance(text, str):
+            raise ValueError("Text must be a string")
+        if not text.strip():
+            raise ValueError("Text cannot be empty")
+
+    def get_strategy_name(self) -> str:
+        """返回策略名称（用于日志和追踪）"""
+        raise NotImplementedError
+
+    def get_chunk_size(self) -> int:
+        """返回配置的块大小"""
+        raise NotImplementedError
+
+    def get_chunk_overlap(self) -> int:
+        """返回配置的重叠大小"""
+        raise NotImplementedError
+```
+
+#### SplitterFactory (工厂类)
+
+**位置**: `src/libs/splitter/splitter_factory.py`
+
+```python
+class SplitterFactory:
+    """工厂模式：根据配置创建 Splitter 实例"""
+
+    # 注册表：策略名 → 实现类
+    _PROVIDERS: dict[str, type[BaseSplitter]] = {}
+
+    @classmethod
+    def register_provider(cls, name: str, provider_class: type[BaseSplitter]):
+        """注册新的 Splitter 实现"""
+        cls._PROVIDERS[name.lower()] = provider_class
+
+    @classmethod
+    def create(cls, settings: Settings) -> BaseSplitter:
+        """根据配置创建实例"""
+        strategy_name = settings.splitter.strategy.lower()
+
+        provider_class = cls._PROVIDERS.get(strategy_name)
+        if provider_class is None:
+            raise ValueError(f"Unsupported strategy: {strategy_name}")
+
+        return provider_class(settings=settings)
+
+
+# 自动注册内置实现
+def _register_builtin_providers():
+    from src.libs.splitter.recursive_splitter import RecursiveSplitter
+    SplitterFactory.register_provider("recursive", RecursiveSplitter)
+
+_register_builtin_providers()  # 模块导入时自动执行
+```
+
+#### RecursiveSplitter (具体实现)
+
+**位置**: `src/libs/splitter/recursive_splitter.py`
+
+```python
+class RecursiveSplitter(BaseSplitter):
+    """递归字符切分器 - 基于 LangChain"""
+
+    # Markdown 感知的分隔符
+    DEFAULT_SEPARATORS = [
+        "\n## ",      # 二级标题
+        "\n### ",     # 三级标题
+        "\n\n",       # 段落
+        "\n",         # 行
+        ". ",         # 句子
+        " ",          # 词
+        "",           # 字符
+    ]
+
+    def __init__(self, settings: Settings, **kwargs):
+        # 从配置读取参数
+        self._chunk_size = kwargs.get("chunk_size", settings.splitter.chunk_size)
+        self._chunk_overlap = kwargs.get("chunk_overlap", settings.splitter.chunk_overlap)
+        self._separators = kwargs.get("separators", self.DEFAULT_SEPARATORS)
+
+        # 验证参数
+        if self._chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if self._chunk_overlap >= self._chunk_size:
+            raise ValueError("chunk_overlap must be less than chunk_size")
+
+        # 创建 LangChain splitter
+        self._splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self._chunk_size,
+            chunk_overlap=self._chunk_overlap,
+            separators=self._separators,
+            length_function=len,
+        )
+
+    def split_text(self, text: str, trace: Optional[Any] = None) -> List[str]:
+        """执行切分"""
+        self.validate_text(text)  # 验证输入
+
+        chunks = self._splitter.split_text(text)  # 调用 LangChain
+
+        # 记录追踪信息
+        if trace:
+            trace.record_stage(
+                "split",
+                method="recursive",
+                provider="langchain",
+                chunk_count=len(chunks),
+            )
+
+        return chunks
+```
+
+#### DocumentChunker (适配器层)
+
+**位置**: `src/ingestion/chunking/document_chunker.py`
+
+```python
+class DocumentChunker:
+    """文档切分适配器 - 连接 Splitter 和 Pipeline"""
+
+    def __init__(self, settings: Settings, splitter: Optional[BaseSplitter] = None):
+        # 延迟初始化：通过工厂创建 Splitter
+        self._splitter = splitter or SplitterFactory.create(settings)
+
+    def split_document(self, document: Document, trace=None) -> List[Chunk]:
+        """将 Document 转换为 List[Chunk]"""
+
+        # 1. 调用 Splitter 切分文本
+        raw_chunks = self._splitter.split_text(document.text, trace=trace)
+
+        # 2. 为每个片段创建 Chunk 对象
+        chunks = []
+        inherited_metadata = self._inherit_metadata(document)
+
+        for idx, text in enumerate(raw_chunks):
+            # 生成稳定的 Chunk ID
+            chunk_id = self._generate_chunk_id(
+                doc_id=document.id,
+                index=idx,
+                text=text,
+            )
+
+            chunk = Chunk(
+                id=chunk_id,
+                text=text,
+                metadata=inherited_metadata.copy(),
+                source_ref=document.id,  # 溯源链接
+            )
+            chunk.metadata["chunk_index"] = idx
+
+            chunks.append(chunk)
+
+        return chunks
+
+    def _generate_chunk_id(self, doc_id: str, index: int, text: str) -> str:
+        """生成稳定的 Chunk ID"""
+        content_hash = hashlib.md5(text.encode()).hexdigest()[:8]
+        return f"{doc_id}_{index:04d}_{content_hash}"
+```
+
+### 切分策略对比
+
+| 策略 | 原理 | 优点 | 缺点 | 适用场景 |
+|------|------|------|------|----------|
+| **Recursive** | 按分隔符优先级递归切分 | 保持语义完整、结构感知 | 可能产生不均匀的块 | Markdown 文档 |
+| **Fixed** | 按固定字符数切分 | 简单、块大小均匀 | 可能截断语义 | 结构化数据 |
+| **Semantic** | 基于嵌入相似度切分 | 语义边界准确 | 计算成本高 | 需要高精度切分 |
+
+### 配置示例
+
+**位置**: `config/settings.yaml`
+
+```yaml
+splitter:
+  strategy: recursive      # 切分策略: recursive | fixed | semantic
+  chunk_size: 1000         # 每个块最大字符数
+  chunk_overlap: 200       # 相邻块重叠字符数
+```
+
+### 实践示例
+
+```python
+# 示例：切分一篇 Markdown 文档
+
+text = """
+## 第一章 系统概述
+
+本系统是一个模块化的 RAG 服务器...
+
+### 1.1 核心功能
+
+系统提供以下核心功能：
+- 文档导入
+- 知识检索
+- 智能问答
+
+## 第二章 架构设计
+
+系统采用可插拔架构...
+"""
+
+# 使用 RecursiveSplitter 切分
+splitter = RecursiveSplitter(settings)
+chunks = splitter.split_text(text)
+
+# 输出：
+# Chunk 1: "## 第一章 系统概述\n\n本系统是一个模块化的 RAG 服务器..."
+# Chunk 2: "### 1.1 核心功能\n\n系统提供以下核心功能：\n- 文档导入..."
+# Chunk 3: "## 第二章 架构设计\n\n系统采用可插拔架构..."
+```
+
+### Split 阶段关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| **架构层次** | BaseSplitter → SplitterFactory → DocumentChunker 三层分离 |
+| **工厂模式** | 配置驱动，切换策略只需改 `settings.yaml` |
+| **递归切分** | 按分隔符优先级递归，保持文档结构 |
+| **重叠设计** | `chunk_overlap` 保证边界语义完整 |
+| **稳定 ID** | `{doc_id}_{index}_{hash}` 格式，幂等可追溯 |
+| **适配器层** | `DocumentChunker` 负责类型转换和元数据继承 |
+
+---
+
+## Phase 7.4 深入: Transform 阶段详解 (2026-03-14)
+
+> 学习目标：深入理解三个 Transformer 的设计和实现
+
+### 整体架构
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Transform 阶段架构                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  IngestionPipeline._stage_transform()                                       │
+│       │                                                                      │
+│       ▼                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │                    三个 Transformer 串联执行                         │    │
+│  │                                                                      │    │
+│  │  ┌─────────────────┐                                                │    │
+│  │  │ ChunkRefiner    │  精炼文本内容                                   │    │
+│  │  │ (文本精炼器)    │  去噪 + 可选 LLM 重写                           │    │
+│  │  └────────┬────────┘                                                │    │
+│  │           │                                                          │    │
+│  │           ▼                                                          │    │
+│  │  ┌─────────────────┐                                                │    │
+│  │  │ MetadataEnricher│  增强元数据                                     │    │
+│  │  │ (元数据增强器)  │  title/summary/tags                            │    │
+│  │  └────────┬────────┘                                                │    │
+│  │           │                                                          │    │
+│  │           ▼                                                          │    │
+│  │  ┌─────────────────┐                                                │    │
+│  │  │ ImageCaptioner  │  图片描述生成                                   │    │
+│  │  │ (图片描述器)    │  Vision LLM → caption                          │    │
+│  │  └─────────────────┘                                                │    │
+│  │                                                                      │    │
+│  │  设计原则：每个 Transformer 失败不影响整体流程                        │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### BaseTransform (抽象基类)
+
+**位置**: `src/ingestion/transform/base_transform.py`
+
+```python
+class BaseTransform(ABC):
+    """数据转换抽象基类"""
+
+    @abstractmethod
+    def transform(
+        self,
+        chunks: List[Chunk],
+        trace: Optional[TraceContext] = None
+    ) -> List[Chunk]:
+        """转换 chunks，返回转换后的 chunks"""
+        pass
+```
+
+**设计特点**：
+- 简洁的接口定义，只有一个 `transform` 方法
+- 输入和输出都是 `List[Chunk]`，便于串联
+- 支持 TraceContext 进行追踪
+
+### 1. ChunkRefiner (文本精炼器)
+
+**位置**: `src/ingestion/transform/chunk_refiner.py`
+
+#### 功能概述
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ ChunkRefiner 工作流程                                            │
+│                                                                  │
+│ 输入 Chunk                                                      │
+│     │                                                            │
+│     ▼                                                            │
+│ ┌─────────────────────────────────────────┐                     │
+│ │ Step 1: 规则去噪 (始终执行)              │                     │
+│ │                                          │                     │
+│ │ • 移除 HTML 标签和注释                   │                     │
+│ │ • 移除页眉页脚、页码                     │                     │
+│ │ • 规范化空白字符                         │                     │
+│ │ • 保护代码块不被修改                     │                     │
+│ └─────────────────────────────────────────┘                     │
+│     │                                                            │
+│     ▼                                                            │
+│ ┌─────────────────────────────────────────┐                     │
+│ │ Step 2: LLM 增强 (可选)                  │                     │
+│ │                                          │                     │
+│ │ • 智能重写文本                           │                     │
+│ │ • 修复 OCR 错误                          │                     │
+│ │ • 改善可读性                             │                     │
+│ │                                          │                     │
+│ │ 失败时自动降级到规则结果                 │                     │
+│ └─────────────────────────────────────────┘                     │
+│     │                                                            │
+│     ▼                                                            │
+│ 输出 Chunk (metadata["refined_by"] = "rule" | "llm")            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 规则去噪详解
+
+```python
+def _rule_based_refine(self, text: str) -> str:
+    """规则去噪 - 8 个步骤"""
+
+    # Step 1: 保护代码块（不处理代码块内容）
+    code_blocks = []
+    pattern = re.compile(r'(```[\s\S]*?```|~~~[\s\S]*?~~~)')
+    text = pattern.sub(lambda m: save_code_block(m), text)
+
+    # Step 2: 移除 HTML 标签
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # Step 3: 移除 HTML 注释
+    text = re.sub(r'<!--[\s\S]*?-->', '', text)
+
+    # Step 4: 移除页眉页脚
+    text = re.sub(r'^Page \d+ of \d+$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^CONFIDENTIAL.*$', '', text, flags=re.MULTILINE)
+
+    # Step 5: 规范化水平分隔线
+    text = re.sub(r'^[*_-]{3,}$', '', text, flags=re.MULTILINE)
+
+    # Step 6: 规范化空白（3+ 换行 → 2 换行）
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    # Step 7: 恢复代码块
+    restore_code_blocks()
+
+    # Step 8: 清理首尾空白
+    text = text.strip()
+
+    return text
+```
+
+### 2. MetadataEnricher (元数据增强器)
+
+**位置**: `src/ingestion/transform/metadata_enricher.py`
+
+#### 功能概述
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ MetadataEnricher 工作流程                                        │
+│                                                                  │
+│ 输入 Chunk                                                      │
+│     │                                                            │
+│     ▼                                                            │
+│ ┌─────────────────────────────────────────┐                     │
+│ │ Step 1: 规则增强 (始终执行)              │                     │
+│ │                                          │                     │
+│ │ • title: 提取标题                        │                     │
+│ │   - 优先 Markdown 标题                   │                     │
+│ │   - 次选首行/首句                        │                     │
+│ │                                          │                     │
+│ │ • summary: 生成摘要                      │                     │
+│ │   - 前 2-3 句话                          │                     │
+│ │   - 最多 300 字符                        │                     │
+│ │                                          │                     │
+│ │ • tags: 提取标签                         │                     │
+│ │   - 大写开头的专有名词                   │                     │
+│ │   - 常见技术关键词                       │                     │
+│ │   - 最多 5 个                            │                     │
+│ └─────────────────────────────────────────┘                     │
+│     │                                                            │
+│     ▼                                                            │
+│ ┌─────────────────────────────────────────┐                     │
+│ │ Step 2: LLM 增强 (可选)                  │                     │
+│ │                                          │                     │
+│ │ • 更精准的标题                           │                     │
+│ │ • 更准确的摘要                           │                     │
+│ │ • 更相关的标签                           │                     │
+│ │                                          │                     │
+│ │ 输出格式: JSON                           │                     │
+│ │ {                                        │                     │
+│ │   "title": "...",                        │                     │
+│ │   "summary": "...",                      │                     │
+│ │   "tags": ["...", "..."]                 │                     │
+│ │ }                                        │                     │
+│ └─────────────────────────────────────────┘                     │
+│     │                                                            │
+│     ▼                                                            │
+│ 输出 Chunk (metadata 新增 title/summary/tags)                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 标签提取规则
+
+```python
+def _extract_tags(self, text: str) -> List[str]:
+    """提取标签"""
+
+    tags = set()
+
+    # 1. 大写开头的专有名词
+    capitalized = re.findall(r'\b[A-Z][a-z]{2,}\b', text)
+    tags.update(capitalized[:5])
+
+    # 2. 常见技术关键词
+    common_keywords = [
+        'API', 'configuration', 'database', 'server', 'client',
+        'authentication', 'security', 'performance', 'error',
+        'deployment', 'testing', 'module', 'function', 'class'
+    ]
+    for keyword in common_keywords:
+        if keyword.lower() in text.lower():
+            tags.add(keyword)
+
+    return sorted(list(tags))[:5]
+```
+
+### 3. ImageCaptioner (图片描述器)
+
+**位置**: `src/ingestion/transform/image_captioner.py`
+
+#### 功能概述
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ ImageCaptioner 工作流程                                          │
+│                                                                  │
+│ 输入 Chunk (metadata["images"] = [...])                         │
+│     │                                                            │
+│     ▼                                                            │
+│ ┌─────────────────────────────────────────┐                     │
+│ │ 检查是否启用                             │                     │
+│ │ if not enabled: return chunks           │                     │
+│ └─────────────────────────────────────────┘                     │
+│     │                                                            │
+│     ▼                                                            │
+│ ┌─────────────────────────────────────────┐                     │
+│ │ 检查 Vision LLM 是否可用                 │                     │
+│ │ if not available:                       │                     │
+│ │   mark has_unprocessed_images           │                     │
+│ │   return chunks                         │                     │
+│ └─────────────────────────────────────────┘                     │
+│     │                                                            │
+│     ▼                                                            │
+│ ┌─────────────────────────────────────────┐                     │
+│ │ 为每张图片生成描述                       │                     │
+│ │                                          │                     │
+│ │ for image in images:                    │                     │
+│ │   caption = vision_llm.chat_with_image( │                     │
+│ │       text=prompt,                      │                     │
+│ │       image=image_path                  │                     │
+│ │   )                                     │                     │
+│ │   captions[image_id] = caption          │                     │
+│ │                                          │                     │
+│ │ 单个图片失败不影响其他图片               │                     │
+│ └─────────────────────────────────────────┘                     │
+│     │                                                            │
+│     ▼                                                            │
+│ 输出 Chunk (metadata["image_captions"] = {id: caption, ...})    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 优雅降级设计
+
+```python
+def transform(self, chunks: List[Chunk], trace=None) -> List[Chunk]:
+    """转换 chunks"""
+
+    # 1. 检查是否启用
+    if not self.enabled:
+        return chunks
+
+    # 2. 检查 Vision LLM 是否可用
+    if self.vision_llm is None:
+        # 降级：标记未处理，但不阻塞
+        return self._mark_unprocessed_images(chunks)
+
+    # 3. 处理每张图片
+    for chunk in chunks:
+        for image in chunk.metadata.get("images", []):
+            try:
+                caption = self._generate_caption(image.path)
+                captions[image.id] = caption
+            except Exception:
+                # 单个图片失败不影响其他
+                errors[image.id] = str(e)
+
+    return captioned_chunks
+```
+
+### Pipeline 中的串联调用
+
+**位置**: `src/ingestion/pipeline.py:349-391`
+
+```python
+def _stage_transform(self, chunks, document, result, trace) -> List[Chunk]:
+    """Stage 4: Transform (精炼 + 元数据增强 + 图片描述)"""
+
+    transformed_chunks = chunks
+
+    # 1. ChunkRefiner - 文本精炼
+    try:
+        transformed_chunks = self.transform.transform(transformed_chunks, trace)
+    except Exception as e:
+        logger.warning(f"ChunkRefiner failed, using original chunks: {e}")
+
+    # 2. MetadataEnricher - 元数据增强
+    try:
+        transformed_chunks = self.metadata_enricher.transform(transformed_chunks, trace)
+    except Exception as e:
+        logger.warning(f"MetadataEnricher failed, continuing: {e}")
+
+    # 3. ImageCaptioner - 图片描述 (仅当有图片时)
+    if document.metadata.get("images"):
+        try:
+            transformed_chunks = self.image_captioner.transform(transformed_chunks, trace)
+        except Exception as e:
+            logger.warning(f"ImageCaptioner failed, continuing: {e}")
+
+    return transformed_chunks
+```
+
+**容错设计**：
+- 每个 Transformer 用 `try-except` 包裹
+- 失败时记录警告，继续使用之前的结果
+- 单个 Transformer 失败不影响整体流程
+
+### Transform 阶段关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| **架构设计** | 三个 Transformer 串联，每个独立可测 |
+| **BaseTransform** | 简洁接口，输入输出都是 `List[Chunk]` |
+| **ChunkRefiner** | 规则去噪 + 可选 LLM 增强，保护代码块 |
+| **MetadataEnricher** | 生成 title/summary/tags，提升检索质量 |
+| **ImageCaptioner** | Vision LLM 生成图片描述，支持多模态检索 |
+| **容错设计** | 每个 Transformer 失败不影响整体，降级处理 |
+| **配置驱动** | 通过 `settings.yaml` 控制是否启用 LLM 增强 |
+
+---
+
+## Phase 7.4.1: Transform 阶段 RAG 专家视角 (2026-03-14)
+
+> 学习目标：从 RAG 专家视角深入理解三个 Transformer 的原理和价值
+
+### 一、为什么需要 Transform 阶段？
+
+#### 1.1 RAG 系统的核心问题
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        RAG 检索的核心问题                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  问题 1: 原始文档质量差                                                      │
+│  ─────────────────────────                                                   │
+│  • PDF 转换后包含页眉页脚、页码                                              │
+│  • HTML 标签残留                                                            │
+│  • OCR 识别错误                                                             │
+│  • 多余的空白字符                                                           │
+│                                                                              │
+│  影响：检索时匹配到无关内容，降低准确率                                       │
+│                                                                              │
+│  问题 2: Chunk 缺乏上下文                                                    │
+│  ─────────────────────────                                                   │
+│  • 一个 Chunk 只是文档片段，没有标题                                         │
+│  • 用户搜索 "API 配置"，但 Chunk 里没有这个词                                │
+│  • 检索系统无法理解 Chunk 的主题                                             │
+│                                                                              │
+│  影响：语义匹配失败，召回率下降                                               │
+│                                                                              │
+│  问题 3: 图片内容无法检索                                                    │
+│  ─────────────────────────                                                   │
+│  • 技术文档中的架构图、流程图包含重要信息                                     │
+│  • 图片没有文本描述，向量检索无法匹配                                         │
+│                                                                              │
+│  影响：丢失大量视觉信息，检索不完整                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 1.2 Transform 阶段的解决方案
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Transform 解决的问题                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ChunkRefiner ────────────► 解决问题 1: 提升文本质量                         │
+│  MetadataEnricher ────────► 解决问题 2: 增加上下文信息                       │
+│  ImageCaptioner ──────────► 解决问题 3: 图片内容文本化                       │
+│                                                                              │
+│  最终效果：                                                                  │
+│  • 更干净的文本 → 更准确的向量表示                                           │
+│  • 更丰富的元数据 → 更精准的语义匹配                                         │
+│  • 图片转文本 → 多模态内容可检索                                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 二、ChunkRefiner (文本精炼器) 深入
+
+#### 2.1 核心作用
+
+**核心作用**：清洗文本，去除噪声，提升向量质量
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        为什么文本需要精炼？                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  想象你在图书馆找书：                                                        │
+│                                                                              │
+│  ❌ 没有精炼的情况：                                                         │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Page 1 of 50                            │                                │
+│  │ CONFIDENTIAL                            │                                │
+│  │ <div class="content">                   │                                │
+│  │ ## API 配置                             │                                │
+│  │ 本节介绍如何配置 API...                  │                                │
+│  │ </div>                                  │                                │
+│  │ --- Document ID: abc123 ---             │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  用户搜索 "API 配置" 时：                                                    │
+│  • 向量包含 "Page 1 of 50"、"CONFIDENTIAL" 等噪声                           │
+│  • 检索质量下降                                                              │
+│                                                                              │
+│  ✅ 精炼后的情况：                                                           │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ## API 配置                             │                                │
+│  │ 本节介绍如何配置 API...                  │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  用户搜索 "API 配置" 时：                                                    │
+│  • 向量只包含核心内容                                                        │
+│  • 检索更精准                                                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 2.2 规则去噪的 8 个步骤
+
+| 步骤 | 操作 | 原因 |
+|------|------|------|
+| 1 | 保护代码块 | 代码块内容不应被修改 |
+| 2 | 移除 HTML 标签 | `<div>`, `<p>` 等是格式噪声 |
+| 3 | 移除 HTML 注释 | `<!-- comment -->` 对检索无意义 |
+| 4 | 移除页眉页脚 | "Page X of Y", "CONFIDENTIAL" 等 |
+| 5 | 规范化分隔线 | `---`, `***` 等统一处理 |
+| 6 | 规范化空白 | 3+ 换行 → 2 换行 |
+| 7 | 恢复代码块 | 还原被保护的代码 |
+| 8 | 清理首尾空白 | 去除多余空格 |
+
+#### 2.3 LLM 增强的价值
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        LLM 增强的价值                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  规则去噪的局限：                                                            │
+│  • 无法修复 OCR 错误（如 "configurat1on" → "configuration"）                 │
+│  • 无法改善表达混乱的文本                                                    │
+│  • 无法补充缺失的标点                                                        │
+│                                                                              │
+│  LLM 增强能做什么：                                                          │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 原文:                                   │                                │
+│  │ "API configurat1on 需要设置 api_key     │                                │
+│  │  和 base_url 两个参数"                  │                                │
+│  │                                         │                                │
+│  │ LLM 精炼后:                             │                                │
+│  │ "API 配置需要设置 api_key 和 base_url   │                                │
+│  │  两个参数。"                            │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  代价：                                                                      │
+│  • 需要调用 LLM API，有成本                                                  │
+│  • 处理速度变慢                                                              │
+│  • 可能引入 LLM 的幻觉                                                       │
+│                                                                              │
+│  建议：                                                                      │
+│  • 质量要求高的场景启用                                                      │
+│  • 一般场景用规则去噪即可                                                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 三、MetadataEnricher (元数据增强器) 深入
+
+#### 3.1 核心作用
+
+**核心作用**：为 Chunk 添加语义信息，提升检索召回率
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     为什么需要元数据增强？                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  场景：用户搜索 "如何配置数据库连接"                                         │
+│                                                                              │
+│  ❌ 没有元数据增强：                                                         │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Chunk 文本:                             │                                │
+│  │ "在 settings.yaml 中添加以下配置：      │                                │
+│  │  host: localhost                        │                                │
+│  │  port: 5432                             │                                │
+│  │  name: mydb"                            │                                │
+│  │                                         │                                │
+│  │ 问题：文本中没有 "数据库"、"连接" 这些词 │                                │
+│  │ 结果：检索失败，召回率为 0               │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  ✅ 有元数据增强：                                                           │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Chunk 文本: 同上                        │                                │
+│  │                                         │                                │
+│  │ metadata:                               │                                │
+│  │   title: "数据库配置"                   │                                │
+│  │   summary: "介绍如何配置数据库连接..."  │                                │
+│  │   tags: ["database", "configuration"]   │                                │
+│  │                                         │                                │
+│  │ 检索时：                                │                                │
+│  │ • title 包含 "数据库"                   │                                │
+│  │ • summary 包含 "连接"                   │                                │
+│  │ • tags 包含 "database"                  │                                │
+│  │ 结果：检索成功！                         │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.2 三种元数据的作用
+
+| 元数据 | 作用 | 生成规则 |
+|--------|------|----------|
+| **Title** | 快速理解 Chunk 主题 | Markdown 标题 > 首行 > 首句 > 前 50 字符 |
+| **Summary** | 补充上下文，解决 Chunk 不完整 | 前 2-3 句话，最多 300 字符 |
+| **Tags** | 关键词匹配，提升召回率 | 专有名词 + 技术关键词，最多 5 个 |
+
+#### 3.3 LLM 增强对比
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     LLM 元数据增强 vs 规则增强                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入文本:                                                                   │
+│  "在 production 环境中，建议使用环境变量来管理敏感配置..."                   │
+│                                                                              │
+│  规则增强:                                                                   │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ title: "在 production 环境中"           │  ← 不够准确                    │
+│  │ summary: "在 production 环境中，建议    │                                │
+│  │          使用环境变量来管理敏感配置..." │                                │
+│  │ tags: ["production"]                    │  ← 遗漏关键词                  │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  LLM 增强:                                                                   │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ title: "生产环境敏感配置管理"           │  ← 更准确                      │
+│  │ summary: "介绍在生产环境中使用环境变量  │                                │
+│  │          安全管理敏感配置的最佳实践"    │  ← 更完整                      │
+│  │ tags: ["security", "environment",       │  ← 更相关                      │
+│  │        "configuration", "best-practice"]│                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  LLM 增强的优势：                                                            │
+│  • 理解语义，生成更准确的标题                                                │
+│  • 提取更相关的关键词                                                        │
+│  • 摘要更完整、更有信息量                                                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 四、ImageCaptioner (图片描述器) 深入
+
+#### 4.1 核心作用
+
+**核心作用**：将图片内容转换为文本，实现多模态检索
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     为什么需要图片描述？                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  技术文档中的图片类型：                                                      │
+│  ─────────────────────                                                       │
+│  • 架构图：展示系统组件关系                                                  │
+│  • 流程图：展示业务流程                                                      │
+│  • 截图：展示 UI 界面                                                        │
+│  • 数据图表：展示统计信息                                                    │
+│                                                                              │
+│  问题：                                                                      │
+│  ──────                                                                      │
+│  • 图片本身无法被文本检索                                                    │
+│  • 用户搜索 "系统架构" 时，架构图无法被找到                                  │
+│  • 大量视觉信息丢失                                                          │
+│                                                                              │
+│  解决方案：                                                                  │
+│  ──────────                                                                  │
+│  使用 Vision LLM 为图片生成文本描述                                          │
+│  将描述存入 Chunk 的 metadata                                                │
+│  检索时可以匹配图片描述                                                      │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.2 处理流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     ImageCaptioner 处理流程                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入 Chunk (来自 PDF 提取):                                                 │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ text: "## 系统架构                       │                                │
+│  │                                        │                                │
+│  │ 我们的系统采用微服务架构，如下图所示：   │                                │
+│  │ [图片: architecture.png]               │                                │
+│  │                                        │                                │
+│  │ metadata: {                             │                                │
+│  │   images: [{ id: "img_001",             │                                │
+│  │              path: "/data/images/..." }]│                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│       │                                                                      │
+│       ▼ 调用 Vision LLM                                                      │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Vision LLM 输出:                        │                                │
+│  │ "这是一张系统架构图，展示了微服务架构    │                                │
+│  │  的组件关系。图中包含 API Gateway 作为   │                                │
+│  │  入口，连接到 Auth Service、User Service │                                │
+│  │  和 Order Service 三个微服务..."         │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│       │                                                                      │
+│       ▼ 输出                                                                 │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ metadata: {                             │                                │
+│  │   image_captions: {                     │                                │
+│  │     "img_001": "这是一张系统架构图..."  │                                │
+│  │   }                                     │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  检索效果：                                                                  │
+│  • 用户搜索 "微服务架构图" → 匹配成功                                        │
+│  • 用户搜索 "API Gateway" → 匹配成功                                         │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.3 优雅降级设计
+
+| 场景 | 处理方式 |
+|------|----------|
+| 功能未启用 | 直接返回原 chunks |
+| Vision LLM 不可用 | 标记 `has_unprocessed_images`，不阻塞 |
+| 单个图片处理失败 | 记录错误，继续处理其他图片 |
+
+### 五、三个 Transformer 的协作关系
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Transform 阶段完整流程                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  原始 Chunk                                                                  │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ text: "<p>## API 配置</p>               │                                │
+│  │       Page 1 of 50                      │                                │
+│  │       本节介绍如何配置 API...            │                                │
+│  │       [图片: api_flow.png]              │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ ChunkRefiner (文本精炼)                                              │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 效果：去除噪声，保留核心内容             │                                │
+│  │ text: "## API 配置                       │                                │
+│  │        本节介绍如何配置 API..."           │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ MetadataEnricher (元数据增强)                                        │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 效果：增加语义信息，提升召回率           │                                │
+│  │ metadata: {                             │                                │
+│  │   title: "API 配置",                    │                                │
+│  │   summary: "本节介绍如何配置 API...",   │                                │
+│  │   tags: ["API", "configuration"]        │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ ImageCaptioner (图片描述)                                            │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 效果：图片内容可检索                     │                                │
+│  │ metadata: {                             │                                │
+│  │   image_captions: {                     │                                │
+│  │     "img_001": "API 调用流程图..."      │                                │
+│  │   }                                     │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 六、RAG 专家总结
+
+| Transformer | 解决的问题 | 核心价值 | 适用场景 |
+|-------------|-----------|----------|----------|
+| **ChunkRefiner** | 文本噪声 | 提升向量质量 | 所有文档 |
+| **MetadataEnricher** | 缺乏上下文 | 提升召回率 | 所有文档 |
+| **ImageCaptioner** | 图片不可检索 | 多模态检索 | 含图片的文档 |
+
+**设计原则**：
+1. **规则优先**：规则方法始终执行，作为兜底
+2. **LLM 可选**：LLM 增强可选，失败自动降级
+3. **容错设计**：单个 Transformer 失败不影响整体
+4. **配置驱动**：通过 `settings.yaml` 控制开关
+
+---
+
+## Phase 7.5: Encode 阶段详解 (RAG 专家视角) (2026-03-14)
+
+> 学习目标：深入理解双路编码（Dense + Sparse）的原理和实现
+
+### 一、为什么需要 Encode 阶段？
+
+#### 1.1 RAG 检索的核心问题
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     为什么需要将文本转换为向量？                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  问题：计算机无法直接理解文本                                                 │
+│  ───────────────────────────────                                             │
+│                                                                              │
+│  文本 A: "如何配置数据库连接"                                                 │
+│  文本 B: "数据库连接配置方法"                                                 │
+│  文本 C: "今天天气真好"                                                       │
+│                                                                              │
+│  计算机视角：                                                                │
+│  • 字符串比较：A ≠ B ≠ C（完全不同的字符串）                                  │
+│  • 无法判断 A 和 B 语义相似                                                   │
+│  • 无法判断 C 与 A、B 无关                                                    │
+│                                                                              │
+│  解决方案：向量嵌入 (Embedding)                                               │
+│  ─────────────────────────────                                               │
+│                                                                              │
+│  文本 A → [0.12, 0.34, -0.56, 0.78, ...]  (1024维向量)                       │
+│  文本 B → [0.11, 0.35, -0.54, 0.79, ...]  (1024维向量)                       │
+│  文本 C → [0.89, -0.23, 0.45, -0.67, ...] (1024维向量)                       │
+│                                                                              │
+│  向量相似度计算：                                                            │
+│  • A 与 B 的余弦相似度 = 0.95 (非常相似！)                                   │
+│  • A 与 C 的余弦相似度 = 0.12 (不相关)                                       │
+│                                                                              │
+│  核心价值：                                                                  │
+│  • 语义相似的文本 → 向量距离近                                               │
+│  • 语义不同的文本 → 向量距离远                                               │
+│  • 支持模糊匹配、语义搜索                                                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 1.2 双路编码的必要性
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     为什么需要 Dense + Sparse 双路编码？                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  场景 1: 语义搜索                                                            │
+│  ─────────────────                                                           │
+│  用户搜索: "如何设置 API 密钥"                                                │
+│  文档内容: "配置 API Key 的方法..."                                           │
+│                                                                              │
+│  Dense 向量: 能匹配！（语义相似）                                             │
+│  Sparse 向量: 可能不匹配（关键词不同）                                        │
+│                                                                              │
+│  场景 2: 精确关键词搜索                                                       │
+│  ─────────────────────                                                       │
+│  用户搜索: "GLM-4"                                                           │
+│  文档内容: "GLM-4 是智谱的大语言模型..."                                      │
+│                                                                              │
+│  Dense 向量: 可能匹配（语义理解）                                             │
+│  Sparse 向量: 一定匹配！（精确关键词）                                        │
+│                                                                              │
+│  场景 3: 专业术语搜索                                                         │
+│  ─────────────────                                                           │
+│  用户搜索: "BM25"                                                            │
+│  文档内容: "BM25 是一种信息检索算法..."                                       │
+│                                                                              │
+│  Dense 向量: 可能不匹配（专业术语语义理解弱）                                 │
+│  Sparse 向量: 一定匹配！（精确术语）                                          │
+│                                                                              │
+│  结论：                                                                      │
+│  ──────                                                                      │
+│  • Dense 擅长：语义理解、模糊匹配、同义词扩展                                 │
+│  • Sparse 擅长：精确匹配、专业术语、关键词检索                                │
+│  • 双路融合：取长补短，检索效果最佳                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 二、Dense Encoder (稠密向量编码器)
+
+#### 2.1 什么是稠密向量？
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        稠密向量详解                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  定义：                                                                      │
+│  ──────                                                                      │
+│  稠密向量是一个固定长度的浮点数数组，每个位置都有值（非零）。                  │
+│                                                                              │
+│  示例 (1024维):                                                              │
+│  ┌─────────────────────────────────────────────────────────────────┐        │
+│  │ [0.0234, -0.1567, 0.8921, 0.0012, -0.3456, ..., 0.0789]        │        │
+│  │   ↑        ↑         ↑        ↑         ↑           ↑          │        │
+│  │ 位置0    位置1     位置2    位置3     位置4      位置1023       │        │
+│  │                                                                 │        │
+│  │ 每个位置代表一个语义维度，值表示该维度的强度                      │        │
+│  └─────────────────────────────────────────────────────────────────┘        │
+│                                                                              │
+│  特点：                                                                      │
+│  ──────                                                                      │
+│  1. 固定维度：所有文本生成相同长度的向量                                      │
+│  2. 语义压缩：将文本语义压缩到高维空间                                        │
+│  3. 连续值：每个位置都是浮点数，非离散                                        │
+│  4. 语义相似性：相似文本的向量在高维空间中距离近                              │
+│                                                                              │
+│  常见模型：                                                                  │
+│  ──────────                                                                  │
+│  • OpenAI text-embedding-3-small: 1536维                                     │
+│  • OpenAI text-embedding-3-large: 3072维                                     │
+│  • BGE-M3: 1024维 (本项目默认)                                               │
+│  • GLM Embedding: 1024维                                                     │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 2.2 DenseEncoder 工作流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     DenseEncoder 处理流程                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入: List[Chunk]                                                           │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Chunk 1: "API 配置方法"                  │                                │
+│  │ Chunk 2: "数据库连接设置"                │                                │
+│  │ Chunk 3: "用户认证流程"                  │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Step 1: 提取文本                                                     │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ texts = ["API 配置方法",                 │                                │
+│  │         "数据库连接设置",                │                                │
+│  │         "用户认证流程"]                  │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Step 2: 调用 Embedding API                                           │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ embedding_client.embed(texts)           │                                │
+│  │                                         │                                │
+│  │ 内部流程：                              │                                │
+│  │ 1. 文本预处理 (截断、清洗)              │                                │
+│  │ 2. 调用远程 API 或本地模型              │                                │
+│  │ 3. 返回向量列表                         │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Step 3: 构建 ChunkRecord                                             │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ChunkRecord 1:                          │                                │
+│  │   id: "chunk_001"                       │                                │
+│  │   text: "API 配置方法"                  │                                │
+│  │   dense_vector: [0.12, 0.34, ...]       │                                │
+│  │   metadata: {...}                       │                                │
+│  │                                         │                                │
+│  │ ChunkRecord 2:                          │                                │
+│  │   dense_vector: [0.56, -0.23, ...]      │                                │
+│  │ ...                                     │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  输出: List[ChunkRecord] (每个包含 dense_vector)                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 2.3 关键代码解读
+
+**位置**: `src/ingestion/embedding/dense_encoder.py`
+
+```python
+class DenseEncoder:
+    """稠密向量编码器"""
+
+    def __init__(self, settings: Settings, embedding_client: Optional[BaseEmbedding] = None):
+        self._settings = settings
+        self._embedding_client = embedding_client  # 支持依赖注入
+
+    @property
+    def embedding_client(self) -> BaseEmbedding:
+        """延迟初始化：通过工厂创建 Embedding 客户端"""
+        if self._embedding_client is None:
+            self._embedding_client = EmbeddingFactory.create(self._settings)
+        return self._embedding_client
+
+    def encode(self, chunks: List[Chunk], trace=None) -> List[ChunkRecord]:
+        """编码流程"""
+        # 1. 提取文本
+        texts = [chunk.text for chunk in chunks]
+
+        # 2. 调用 Embedding API
+        vectors = self.embedding_client.embed(texts, trace=trace)
+
+        # 3. 构建 ChunkRecord
+        records = []
+        for i, chunk in enumerate(chunks):
+            record = ChunkRecord(
+                id=chunk.id,
+                text=chunk.text,
+                metadata=chunk.metadata.copy(),
+                dense_vector=vectors[i],  # 1024维向量
+            )
+            records.append(record)
+
+        return records
+```
+
+### 三、Sparse Encoder (稀疏向量编码器)
+
+#### 3.1 什么是稀疏向量？
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        稀疏向量详解                                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  定义：                                                                      │
+│  ──────                                                                      │
+│  稀疏向量是一个字典，只存储非零值（词项及其权重）。                            │
+│                                                                              │
+│  示例：                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐        │
+│  │ 文本: "API 配置 API 设置 数据库"                                 │        │
+│  │                                                                 │        │
+│  │ 稀疏向量 (词频统计):                                            │        │
+│  │ {                                                               │        │
+│  │   "api": 2.0,      ← "API" 出现 2 次                            │        │
+│  │   "配置": 1.0,     ← "配置" 出现 1 次                           │        │
+│  │   "设置": 1.0,     ← "设置" 出现 1 次                           │        │
+│  │   "数据库": 1.0    ← "数据库" 出现 1 次                         │        │
+│  │ }                                                               │        │
+│  │                                                                 │        │
+│  │ 注意：停用词（"的"、"是"、"在"等）被过滤掉                       │        │
+│  └─────────────────────────────────────────────────────────────────┘        │
+│                                                                              │
+│  特点：                                                                      │
+│  ──────                                                                      │
+│  1. 可变长度：不同文本有不同的词项数量                                        │
+│  2. 离散值：每个词项对应一个权重值                                            │
+│  3. 精确匹配：支持关键词精确检索                                              │
+│  4. 可解释性：可以直接看到哪些词匹配                                          │
+│                                                                              │
+│  用途：                                                                      │
+│  ──────                                                                      │
+│  • BM25 检索：基于词频和文档频率计算相关性                                    │
+│  • 关键词搜索：精确匹配用户输入的关键词                                       │
+│  • 专业术语：对专业术语检索效果更好                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.2 SparseEncoder 工作流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     SparseEncoder 处理流程                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入: "The API configuration is simple and easy to use."                    │
+│                                                                              │
+│       │                                                                      │
+│       ▼ Step 1: 分词                                                         │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 原始 tokens:                            │                                │
+│  │ ["the", "api", "configuration", "is",   │                                │
+│  │  "simple", "and", "easy", "to", "use"]  │                                │
+│  │                                         │                                │
+│  │ 过滤后 (去除停用词、短词):              │                                │
+│  │ ["api", "configuration", "simple",      │                                │
+│  │  "easy", "use"]                         │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Step 2: 计算词频 (TF)                                                │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 词频统计:                               │                                │
+│  │ {                                       │                                │
+│  │   "api": 1,                             │                                │
+│  │   "configuration": 1,                   │                                │
+│  │   "simple": 1,                          │                                │
+│  │   "easy": 1,                            │                                │
+│  │   "use": 1                              │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Step 3: 构建稀疏向量                                                 │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ sparse_vector: {                        │                                │
+│  │   "api": 1.0,                           │                                │
+│  │   "configuration": 1.0,                 │                                │
+│  │   "simple": 1.0,                        │                                │
+│  │   "easy": 1.0,                          │                                │
+│  │   "use": 1.0                            │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  输出: ChunkRecord.sparse_vector = {"api": 1.0, ...}                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.3 停用词过滤
+
+```python
+DEFAULT_STOP_WORDS = {
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
+    "be", "have", "has", "had", "do", "does", "did", "will", "would",
+    "could", "should", "may", "might", "must", "shall", "can", "need",
+    # ... 更多停用词
+}
+
+def _tokenize(self, text: str) -> List[str]:
+    """分词并过滤"""
+    text = text.lower()
+    tokens = re.findall(r'\b[a-z0-9]+\b', text)  # 提取单词
+
+    # 过滤：长度 2-50，非停用词
+    filtered = [
+        t for t in tokens
+        if 2 <= len(t) <= 50 and t not in self._stop_words
+    ]
+    return filtered
+```
+
+### 四、BatchProcessor (批处理器)
+
+#### 4.1 为什么需要批处理？
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        批处理的必要性                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  场景：需要编码 1000 个 Chunks                                               │
+│                                                                              │
+│  ❌ 不使用批处理：                                                           │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ for chunk in chunks:                    │                                │
+│  │     vector = embed(chunk.text)  # 1000次API调用                         │
+│  │                                         │                                │
+│  │ 问题：                                  │                                │
+│  │ • 1000 次 API 调用 = 1000 次网络开销    │                                │
+│  │ • 总耗时 = 1000 × 100ms = 100秒         │                                │
+│  │ • API 可能有速率限制                    │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  ✅ 使用批处理 (batch_size=32):                                              │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ batches = [chunks[0:32], chunks[32:64], ...]                            │
+│  │ for batch in batches:                   │                                │
+│  │     vectors = embed(batch)  # 32次API调用                               │
+│  │                                         │                                │
+│  │ 优势：                                  │                                │
+│  │ • 32 次 API 调用 = 32 次网络开销        │                                │
+│  │ • 总耗时 = 32 × 150ms = 4.8秒           │                                │
+│  │ • 效率提升 20 倍！                      │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  批处理原理：                                                                │
+│  ────────────                                                                │
+│  Embedding API 通常支持批量处理，一次请求可以编码多个文本。                   │
+│  批量处理比多次单独请求更高效，因为：                                         │
+│  • 减少网络往返次数                                                          │
+│  • 更好地利用 GPU 并行计算                                                   │
+│  • 减少 API 速率限制的影响                                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.2 BatchProcessor 工作流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     BatchProcessor 处理流程                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入: 100 个 Chunks, batch_size = 32                                        │
+│                                                                              │
+│       │                                                                      │
+│       ▼ Step 1: 分批                                                         │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Batch 0: chunks[0:32]   (32个)          │                                │
+│  │ Batch 1: chunks[32:64]  (32个)          │                                │
+│  │ Batch 2: chunks[64:96]  (32个)          │                                │
+│  │ Batch 3: chunks[96:100] (4个)           │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Step 2: 逐批处理                                                     │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ for batch in batches:                   │                                │
+│  │     # Dense 编码                        │                                │
+│  │     dense_records = dense_encoder.encode(batch)                         │
+│  │                                         │                                │
+│  │     # Sparse 编码                       │                                │
+│  │     sparse_records = sparse_encoder.encode(batch)                       │
+│  │                                         │                                │
+│  │     # 合并结果                          │                                │
+│  │     for i, chunk in enumerate(batch):   │                                │
+│  │         record = dense_records[i]       │                                │
+│  │         record.sparse_vector =          │                                │
+│  │             sparse_records[i].sparse_vector                             │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ Step 3: 返回结果                                                     │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ BatchProcessingResult:                  │                                │
+│  │   total_chunks: 100                     │                                │
+│  │   batch_count: 4                        │                                │
+│  │   total_duration_ms: 4800               │                                │
+│  │   results: [BatchResult, ...]           │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 五、Embedding 工厂模式
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     EmbeddingFactory 架构                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  settings.yaml:                                                              │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ embedding:                              │                                │
+│  │   provider: bge          ◄──────────────┼── 选择提供者                   │
+│  │   model: bge-m3                         │                                │
+│  │   api_key: ${BGE_API_KEY}               │                                │
+│  │   dimension: 1024                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ EmbeddingFactory.create(settings)                                    │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 注册表查找:                             │                                │
+│  │ _PROVIDERS = {                          │                                │
+│  │   "openai": OpenAIEmbedding,            │                                │
+│  │   "azure": AzureEmbedding,              │                                │
+│  │   "ollama": OllamaEmbedding,            │                                │
+│  │   "glm": GLMEmbedding,                  │                                │
+│  │   "bge": BGEEmbedding,    ◄─────────────┼── 返回这个                    │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ 返回实例                                                             │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ BGEEmbedding 实例                       │                                │
+│  │ • get_model_name() → "bge-m3"           │                                │
+│  │ • get_dimension() → 1024                │                                │
+│  │ • embed(texts) → List[List[float]]      │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  切换提供者：只需修改 settings.yaml，无需改代码！                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 六、Pipeline 中的 Encode 阶段
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Pipeline._stage_encode() 流程                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入: List[Chunk] (来自 Transform 阶段)                                      │
+│                                                                              │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ Chunk 1:                                │                                │
+│  │   text: "API 配置方法"                  │                                │
+│  │   metadata: {title, summary, tags}      │                                │
+│  │                                         │                                │
+│  │ Chunk 2:                                │                                │
+│  │   text: "数据库连接设置"                │                                │
+│  │   metadata: {...}                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ DenseEncoder.encode()                                                │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ChunkRecord 1:                          │                                │
+│  │   dense_vector: [0.12, 0.34, ...]       │                                │
+│  │                                         │                                │
+│  │ ChunkRecord 2:                          │                                │
+│  │   dense_vector: [0.56, -0.23, ...]      │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ SparseEncoder.encode()                                               │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ChunkRecord 1:                          │                                │
+│  │   sparse_vector: {"api": 1.0, ...}      │                                │
+│  │                                         │                                │
+│  │ ChunkRecord 2:                          │                                │
+│  │   sparse_vector: {"数据库": 1.0, ...}   │                                │
+│  └─────────────────────────────────────────┘                                │
+│       │                                                                      │
+│       ▼ 合并结果                                                             │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ChunkRecord 1:                          │                                │
+│  │   id: "chunk_001"                       │                                │
+│  │   text: "API 配置方法"                  │                                │
+│  │   dense_vector: [0.12, 0.34, ...]       │                                │
+│  │   sparse_vector: {"api": 1.0, ...}      │                                │
+│  │   metadata: {...}                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  输出: List[ChunkRecord] (包含 dense + sparse 双路向量)                      │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 七、RAG 专家总结
+
+| 组件 | 作用 | 输出 | 适用场景 |
+|------|------|------|----------|
+| **DenseEncoder** | 语义向量化 | 1024维浮点数组 | 语义搜索、模糊匹配 |
+| **SparseEncoder** | 词频统计 | 词项权重字典 | 关键词搜索、精确匹配 |
+| **BatchProcessor** | 批量处理优化 | 批次处理结果 | 大规模文档处理 |
+| **EmbeddingFactory** | 提供者管理 | Embedding 实例 | 切换不同模型 |
+
+**设计原则**：
+1. **双路编码**：Dense + Sparse 取长补短
+2. **工厂模式**：配置驱动，轻松切换模型
+3. **批处理优化**：减少 API 调用，提升效率
+4. **延迟初始化**：按需创建 Embedding 客户端
+
+---
+
+## Phase 7.6: Store 阶段详解 (RAG 专家视角) (2026-03-14)
+
+> 学习目标：深入理解三路存储（Vector + BM25 + Image）的原理和实现
+
+### 一、为什么需要 Store 阶段？
+
+#### 1.1 RAG 检索的数据持久化需求
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     为什么需要持久化存储？                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  问题：编码后的数据在内存中，程序退出就丢失                                   │
+│  ───────────────────────────────────────────                                 │
+│                                                                              │
+│  Ingest 阶段产生的数据：                                                     │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ ChunkRecord 1:                          │                                │
+│  │   id: "chunk_001"                       │                                │
+│  │   text: "API 配置方法"                  │                                │
+│  │   dense_vector: [0.12, 0.34, ...]       │  ← 1024维浮点数组              │
+│  │   sparse_vector: {"api": 1.0, ...}      │  ← 词频字典                    │
+│  │   metadata: {title, summary, tags}      │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  如果不持久化：                                                              │
+│  • 每次查询都要重新导入文档                                                  │
+│  • 每次查询都要重新计算向量                                                  │
+│  • 系统无法实际使用                                                          │
+│                                                                              │
+│  解决方案：三路持久化存储                                                    │
+│  ─────────────────────────                                                   │
+│  1. VectorUpserter → ChromaDB (向量数据库)                                  │
+│  2. BM25Indexer → BM25 Index (倒排索引)                                     │
+│  3. ImageStorage → SQLite + 文件系统 (图片存储)                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 1.2 三路存储的分工
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     三路存储架构                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入: ChunkRecord (包含 dense_vector + sparse_vector + metadata)            │
+│                                                                              │
+│       │                                                                      │
+│       ├─────────────────────────────────────────────────────────┐            │
+│       │                                                         │            │
+│       ▼                                                         ▼            │
+│  ┌─────────────────┐                                    ┌─────────────────┐  │
+│  │ VectorUpserter  │                                    │ BM25Indexer     │  │
+│  │                 │                                    │                 │  │
+│  │ 存储:           │                                    │ 存储:           │  │
+│  │ • dense_vector  │                                    │ • sparse_vector │  │
+│  │ • text          │                                    │ • 词频统计      │  │
+│  │ • metadata      │                                    │ • IDF 值        │  │
+│  │                 │                                    │                 │  │
+│  │ 目标: ChromaDB  │                                    │ 目标: JSON 文件 │  │
+│  │                 │                                    │                 │  │
+│  │ 用途:           │                                    │ 用途:           │  │
+│  │ 语义相似度搜索  │                                    │ 关键词精确匹配  │  │
+│  └─────────────────┘                                    └─────────────────┘  │
+│                                                                              │
+│       │ (仅当有图片时)                                                        │
+│       ▼                                                                      │
+│  ┌─────────────────┐                                                        │
+│  │ ImageStorage    │                                                        │
+│  │                 │                                                        │
+│  │ 存储: 图片文件  │                                                        │
+│  │ 目标: SQLite    │                                                        │
+│  │ 用途: 多模态检索│                                                        │
+│  └─────────────────┘                                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 二、VectorUpserter (向量存储器)
+
+#### 2.1 核心作用
+
+**核心作用**：将稠密向量持久化到向量数据库，支持语义检索
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     向量数据库的作用                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  传统数据库 vs 向量数据库                                                    │
+│  ─────────────────────────                                                   │
+│                                                                              │
+│  传统数据库 (MySQL, PostgreSQL):                                             │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 查询: SELECT * FROM docs WHERE text LIKE '%API%'                        │
+│  │                                         │                                │
+│  │ 问题：                                  │                                │
+│  │ • 只能精确匹配关键词                    │                                │
+│  │ • 无法理解语义                          │                                │
+│  │ • "配置方法" 和 "设置方式" 无法匹配     │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  向量数据库:                                     │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ 查询: 向量相似度搜索                    │                                │
+│  │                                         │                                │
+│  │ 优势：                                  │                                │
+│  │ • 理解语义相似性                        │                                │
+│  │ • "配置方法" 和 "设置方式" 可以匹配     │                                │
+│  │ • 支持模糊搜索                          │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 2.2 幂等性设计
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     幂等性设计详解                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  什么是幂等性？                                                              │
+│  ──────────────                                                              │
+│  同一操作执行多次，结果与执行一次相同。                                       │
+│                                                                              │
+│  实现方式：稳定 ID 生成                                                      │
+│  ─────────────────────                                                       │
+│  def _generate_stable_id(self, record):                                      │
+│      source_path = record.metadata.get("source_path", "")                    │
+│      chunk_index = record.metadata.get("chunk_index", 0)                     │
+│      content_hash = hashlib.md5(record.text.encode()).hexdigest()[:8]        │
+│                                                                              │
+│      return f"{source_path}_{chunk_index}_{content_hash}"                    │
+│                                                                              │
+│  关键点：                                                                    │
+│  • 相同内容 → 相同哈希 → 相同 ID                                            │
+│  • 不同内容 → 不同哈希 → 不同 ID                                            │
+│  • 重复写入 → 更新而非插入                                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 三、BM25Indexer (BM25 索引器)
+
+#### 3.1 什么是 BM25？
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     BM25 算法详解                                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  BM25 = Best Matching 25                                                    │
+│  ─────────────────────────                                                   │
+│  一种基于概率检索模型的排序算法，用于计算文档与查询的相关性分数。             │
+│                                                                              │
+│  核心公式：                                                                  │
+│  ──────────                                                                  │
+│  BM25(D, Q) = Σ IDF(qi) × (f(qi, D) × (k1 + 1))                             │
+│                     ───────────────────────────────                          │
+│                     f(qi, D) + k1 × (1 - b + b × |D|/avgdl)                  │
+│                                                                              │
+│  参数解释：                                                                  │
+│  ──────────                                                                  │
+│  • f(qi, D): 词 qi 在文档 D 中的词频 (TF)                                   │
+│  • |D|: 文档 D 的长度                                                       │
+│  • avgdl: 平均文档长度                                                      │
+│  • k1: 词频饱和参数 (默认 1.5)，控制词频增长的边际递减                       │
+│  • b: 文档长度归一化参数 (默认 0.75)，控制长文档的惩罚                       │
+│  • IDF(qi): 逆文档频率，衡量词的稀有程度                                     │
+│                                                                              │
+│  直观理解：                                                                  │
+│  ──────────                                                                  │
+│  • 词频越高 → 分数越高 (但有上限)                                           │
+│  • 词越稀有 → 分数越高 (IDF 高)                                             │
+│  • 文档越长 → 分数越低 (归一化)                                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.2 倒排索引结构
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     倒排索引详解                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  什么是倒排索引？                                                            │
+│  ────────────────                                                            │
+│  从词到文档的映射，是搜索引擎的核心数据结构。                                 │
+│                                                                              │
+│  倒排索引 (词 → 文档):                                                       │
+│  ┌─────────────────────────────────────────┐                                │
+│  │ "api": {                                │                                │
+│  │   "idf": 0.287,                         │                                │
+│  │   "postings": [                         │                                │
+│  │     {"chunk_id": "doc_1", "tf": 1, "doc_length": 3},                    │
+│  │     {"chunk_id": "doc_3", "tf": 1, "doc_length": 2}                     │
+│  │   ]                                     │                                │
+│  │ }                                       │                                │
+│  └─────────────────────────────────────────┘                                │
+│                                                                              │
+│  查询流程：                                                                  │
+│  ──────────                                                                  │
+│  1. 用户查询: "api configuration"                                            │
+│  2. 分词: ["api", "configuration"]                                          │
+│  3. 查倒排索引: 找到包含这些词的文档                                         │
+│  4. 计算 BM25 分数                                                           │
+│  5. 按分数排序返回                                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 四、ImageStorage (图片存储器)
+
+#### 4.1 核心作用
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     图片存储的作用                                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  为什么需要单独存储图片？                                                    │
+│  ─────────────────────                                                       │
+│                                                                              │
+│  技术文档中的图片：                                                          │
+│  • 架构图：展示系统组件关系                                                  │
+│  • 流程图：展示业务流程                                                      │
+│  • 截图：展示 UI 界面                                                        │
+│  • 数据图表：展示统计信息                                                    │
+│                                                                              │
+│  解决方案：                                                                  │
+│  ──────────                                                                  │
+│  • 文件存储：data/images/{collection}/{image_id}.png                        │
+│  • 索引存储：SQLite 数据库记录元数据                                         │
+│  • 描述存储：在 ChunkRecord.metadata["image_captions"] 中                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.2 SQLite 索引结构
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     SQLite 索引表结构                                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  表: image_index                                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ 字段          │ 类型      │ 说明                                    │    │
+│  ├─────────────────────────────────────────────────────────────────────┤    │
+│  │ image_id      │ TEXT      │ 主键，全局唯一图片标识                   │    │
+│  │ file_path     │ TEXT      │ 图片文件存储路径                         │    │
+│  │ collection    │ TEXT      │ 所属集合名称                             │    │
+│  │ doc_hash      │ TEXT      │ 所属文档哈希                             │    │
+│  │ page_num      │ INTEGER   │ 页码（PDF 提取时）                       │    │
+│  │ created_at    │ TIMESTAMP │ 创建时间                                 │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
+│  索引：                                                                      │
+│  • idx_collection: 按 collection 查询                                       │
+│  • idx_doc_hash: 按 doc_hash 查询                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 五、Pipeline 中的 Store 阶段
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Pipeline._stage_store() 流程                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  输入: List[ChunkRecord] (来自 Encode 阶段)                                   │
+│                                                                              │
+│       │                                                                      │
+│       ├──────────────────────────────────────────────────────┐               │
+│       │                                                      │               │
+│       ▼                                                      ▼               │
+│  ┌─────────────────┐                                ┌─────────────────┐     │
+│  │ VectorUpserter  │                                │ BM25Indexer     │     │
+│  │                 │                                │                 │     │
+│  │ upsert(records) │                                │ build(records)  │     │
+│  │                 │                                │                 │     │
+│  │ → ChromaDB      │                                │ → JSON 文件     │     │
+│  └─────────────────┘                                └─────────────────┘     │
+│       │                                                                      │
+│       │ (仅当有图片时)                                                        │
+│       ▼                                                                      │
+│  ┌─────────────────┐                                                        │
+│  │ ImageStorage    │                                                        │
+│  │ → SQLite + 文件 │                                                        │
+│  └─────────────────┘                                                        │
+│                                                                              │
+│  输出: 数据持久化完成                                                        │
+│  • data/db/chroma/ (向量数据库)                                              │
+│  • data/db/bm25/ (BM25 索引)                                                │
+│  • data/images/ (图片文件)                                                  │
+│  • data/db/image_index.db (图片索引)                                        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 六、RAG 专家总结
+
+| 组件 | 存储内容 | 存储目标 | 用途 |
+|------|----------|----------|------|
+| **VectorUpserter** | dense_vector + text + metadata | ChromaDB | 语义相似度搜索 |
+| **BM25Indexer** | sparse_vector + IDF + 倒排索引 | JSON 文件 | 关键词精确匹配 |
+| **ImageStorage** | 图片文件 + 元数据索引 | SQLite + 文件系统 | 多模态检索 |
+
+**设计原则**：
+1. **三路存储**：Dense + Sparse + Image 各司其职
+2. **幂等性**：稳定 ID 保证重复写入不产生重复数据
+3. **可扩展性**：工厂模式支持切换存储后端
+4. **索引优化**：SQLite 使用 WAL 模式支持并发
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 7 | Ingest 阶段详解 | ✅ 已完成 (2026-03-14) |
+| Phase 7.3 | Split 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4 | Transform 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4.1 | Transform 阶段 RAG 专家视角 | ✅ 已完成 (2026-03-14) |
+| Phase 7.5 | Encode 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 7.6 | Store 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+| Phase 15 | list_collections 应该返回什么？（设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 16 | 不指定 --collection 时的行为与智能分类设计 | ✅ 已完成 (2026-03-14) |
+| Phase 17 | Collection 是否真的必要？（深度设计分析） | ✅ 已完成 (2026-03-14) |
+
+### 下一步建议
+
+1. **Query 阶段学习**：学习查询流程（Dense + Sparse + RRF + Rerank）
+2. **实践练习**：运行一次完整的 Ingest 流程，观察各阶段输出
+3. **Rerank 阶段学习**：学习重排序器的实现
+
+---
+
+## Phase 18: IDF (Inverse Document Frequency) 详解 (2026-03-16)
+
+> 学习目标：理解 IDF 在 BM25 算法中的作用、计算方法和代码实现
+
+### 18.1 核心概念
+
+**IDF 的直觉**：
+- 如果一个词在**所有文档**中都出现（如"的"、"是"），它的区分度很低，IDF 值小
+- 如果一个词只在**少数文档**中出现（如"量子计算"），它的区分度高，IDF 值大
+
+**公式**（见 `bm25_indexer.py:68`）：
+```
+IDF(term) = log((N - df + 0.5) / (df + 0.5))
+```
+
+其中：
+- `N` = 文档总数 (`_total_documents`)
+- `df` = 包含该词的文档数 (`document_frequency`)
+
+### 18.2 代码实现解析
+
+#### 18.2.1 IDF 计算
+
+**位置**: `src/ingestion/storage/bm25_indexer.py:65-80`
+
+```python
+def _calculate_idf(self, document_frequency: int) -> float:
+    """计算 IDF (Inverse Document Frequency)。
+
+    Formula: IDF(term) = log((N - df + 0.5) / (df + 0.5))
+    """
+    if document_frequency <= 0 or self._total_documents <= 0:
+        return 0.0
+    if document_frequency >= self._total_documents:  # 词出现在所有文档中
+        return 0.0  # IDF = 0，表示无区分度
+    return math.log((self._total_documents - document_frequency + 0.5) / (document_frequency + 0.5))
+```
+
+**边界处理**：
+- `df <= 0`：词不存在，返回 0
+- `df >= N`：词出现在所有文档中，返回 0（无区分度）
+
+#### 18.2.2 索引构建时计算 IDF
+
+**位置**: `src/ingestion/storage/bm25_indexer.py:132-149`
+
+```python
+# 第一步：统计每个词出现在多少个文档中
+term_document_freq: Dict[str, int] = defaultdict(int)
+
+for record in valid_records:
+    unique_terms = set(record.sparse_vector.keys())  # 去重！
+    for term in unique_terms:
+        term_document_freq[term] += 1  # 文档频率 +1
+
+# 第二步：为每个词计算 IDF 并存入倒排索引
+for term, df in term_document_freq.items():
+    idf = self._calculate_idf(df)
+    inverted_index[term] = {"idf": idf, "postings": []}
+```
+
+**关键点**：`unique_terms = set(...)` 确保每个词在每个文档中只计数一次！
+
+#### 18.2.3 查询时使用 IDF
+
+**位置**: `src/ingestion/storage/bm25_indexer.py:189-204`
+
+```python
+for keyword in keywords:
+    term = keyword.lower()
+    if term not in self._index:
+        continue
+
+    term_data = self._index[term]
+    idf = term_data["idf"]  # 直接使用预计算的 IDF
+    postings = term_data["postings"]
+
+    for posting in postings:
+        score = self._compute_bm25_score(term, tf, doc_length, idf)
+        scores[chunk_id] += score
+```
+
+### 18.3 完整 BM25 公式
+
+IDF 是 BM25 得分的一部分，完整公式（`bm25_indexer.py:92`）：
+
+```
+BM25(D, Q) = Σ IDF(qi) × (tf × (k1 + 1)) / (tf + k1 × (1 - b + b × (dl / avg_dl)))
+```
+
+| 参数 | 含义 | 默认值 |
+|------|------|--------|
+| `k1` | 词频饱和参数 | 1.5 |
+| `b` | 文档长度归一化参数 | 0.75 |
+| `tf` | 词频 | - |
+| `dl` | 文档长度 | - |
+| `avg_dl` | 平均文档长度 | - |
+
+### 18.4 数据结构
+
+倒排索引结构 (`InvertedIndex`)：
+
+```python
+{
+    "hello": {
+        "idf": 2.34,           # 预计算的 IDF 值
+        "postings": [          # 倒排列表
+            {"chunk_id": "doc1", "tf": 3, "doc_length": 150},
+            {"chunk_id": "doc3", "tf": 1, "doc_length": 80},
+        ]
+    },
+    "world": {
+        "idf": 1.87,
+        "postings": [...]
+    }
+}
+```
+
+### 18.5 数据流图
+
+```
+文档入库流程:
+┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
+│ ChunkRecord │ → │ 统计词频(DF) │ → │ 计算 IDF 并存储 │
+│ (sparse_vec)│    │              │    │ 到倒排索引      │
+└─────────────┘    └──────────────┘    └─────────────────┘
+
+查询流程:
+┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
+│ 关键词列表  │ → │ 查倒排索引   │ → │ 用 IDF × TF     │
+│ ["hello"]   │    │ 取 IDF 值    │    │ 计算 BM25 得分  │
+└─────────────┘    └──────────────┘    └─────────────────┘
+```
+
+### 18.6 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| IDF 公式 | `log((N - df + 0.5) / (df + 0.5))`，衡量词的区分度 |
+| 边界处理 | 词出现在所有文档时 IDF = 0，无区分度 |
+| 预计算 | IDF 在索引构建时计算并存储，查询时直接使用 |
+| 去重统计 | 用 `set()` 确保每个词在每个文档只计数一次 |
+| BM25 参数 | `k1=1.5`（词频饱和），`b=0.75`（长度归一化）|
+
+### 18.7 相关文件
+
+| 文件 | 作用 |
+|------|------|
+| `src/ingestion/storage/bm25_indexer.py` | BM25 索引构建、IDF 计算、查询 |
+| `src/core/query_engine/sparse_retriever.py` | 稀疏检索器，调用 BM25 查询 |
+| `src/ingestion/embedding/sparse_encoder.py` | 稀疏编码器，生成词频统计 |
+| `tests/unit/test_bm25_indexer_roundtrip.py` | BM25 单元测试 |
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 7 | Ingest 阶段详解 | ✅ 已完成 (2026-03-14) |
+| Phase 7.3 | Split 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4 | Transform 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4.1 | Transform 阶段 RAG 专家视角 | ✅ 已完成 (2026-03-14) |
+| Phase 7.5 | Encode 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 7.6 | Store 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+| Phase 15 | list_collections 应该返回什么？（设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 16 | 不指定 --collection 时的行为与智能分类设计 | ✅ 已完成 (2026-03-14) |
+| Phase 17 | Collection 是否真的必要？（深度设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 18 | IDF (Inverse Document Frequency) 详解 | ✅ 已完成 (2026-03-16) |
+| Phase 18.1 | IDF 代码注释补充 | ✅ 已完成 (2026-03-16) |
+
+### 下一步建议
+
+1. **RRF (Reciprocal Rank Fusion)** - 理解 Dense + Sparse 结果融合
+2. **实践练习** - 运行一次完整的 Ingest 流程，观察 BM25 索引构建
+3. **ImageStorage 集成** - 补全 Pipeline 中缺失的图片存储功能
+
+---
+
+## Phase 18.1: IDF 代码注释补充 (2026-03-16)
+
+> 学习目标：为 IDF 相关代码添加详细注释，加深理解
+
+### 18.1.1 已添加注释的文件
+
+| 文件 | 注释内容 |
+|------|----------|
+| `src/ingestion/storage/bm25_indexer.py` | IDF 公式、边界处理、数值示例 |
+| `src/ingestion/storage/bm25_indexer.py` | BM25 完整公式、参数说明、示例计算 |
+| `src/ingestion/storage/bm25_indexer.py` | build() 两遍扫描流程、数据结构 |
+| `src/ingestion/storage/bm25_indexer.py` | query() 查询流程、得分累加 |
+| `src/ingestion/embedding/sparse_encoder.py` | 稀疏向量概念、与 BM25 关系 |
+| `src/ingestion/embedding/sparse_encoder.py` | 词频 (TF) 计算、编码流程 |
+
+### 18.1.2 关键注释摘要
+
+**IDF 公式注释**：
+```python
+# IDF(term) = log((N - df + 0.5) / (df + 0.5))
+# 边界情况：
+# - df <= 0 或 N <= 0：返回 0
+# - df >= N：词出现在所有文档中，无区分度，返回 0
+```
+
+**BM25 公式注释**：
+```python
+# BM25 = IDF × (tf × (k1 + 1)) / (tf + k1 × (1 - b + b × (dl / avg_dl)))
+# 参数：
+# - k1=1.5：词频饱和参数，控制 tf 增长速度
+# - b=0.75：文档长度归一化参数
+```
+
+**build() 两遍扫描**：
+```python
+# 第一遍：统计文档频率 (df)，计算 IDF
+# 第二遍：构建倒排列表 (postings)，记录 tf 和 doc_length
+# 关键：使用 set() 去重，每个词在每个文档只计数一次
+```
+
+### 18.1.3 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| 代码注释 | 通过写注释加深了对 IDF/BM25 公式的理解 |
+| 两遍扫描 | build() 需要两遍扫描：先统计 df，再构建 postings |
+| TF vs DF | TF 是文档级别，DF 是集合级别，分开计算 |
+| 稀疏向量 | 只存储非零值，维度等于词表大小 |
+
+### 18.1.4 DF vs TF 去重区别（深入理解）
+
+**核心概念**：
+
+| 概念 | 问题 | 是否去重 | 存储位置 |
+|------|------|----------|----------|
+| **DF** (Document Frequency) | 这个词在多少个文档中出现？ | ✅ 去重 | 倒排索引 `idf` 字段 |
+| **TF** (Term Frequency) | 这个词在当前文档出现多少次？ | ❌ 不去重 | 倒排列表 `tf` 字段 |
+
+**具体例子**：
+
+假设有 3 个文档：
+```
+文档1: "量子计算是未来，量子计算很强大"
+文档2: "量子力学很复杂，量子计算更复杂"
+文档3: "人工智能发展迅速"
+```
+
+**"量子" 的统计**：
+
+| 文档 | TF（出现次数） | 是否计入 DF |
+|------|----------------|-------------|
+| 文档1 | 2 | ✅ +1（只计一次） |
+| 文档2 | 2 | ✅ +1（只计一次） |
+| 文档3 | 0 | ❌ |
+
+**结果**：
+- DF("量子") = **2**（出现在 2 个文档中）
+- TF("量子", 文档1) = **2**（在文档1中出现 2 次）
+- TF("量子", 文档2) = **2**（在文档2中出现 2 次）
+
+**为什么 DF 要去重？**
+
+IDF 衡量的是"这个词能区分多少文档"：
+- 一个文档中出现 100 次"量子"，和出现 1 次，对"区分度"的贡献是一样的
+- 所以 DF 只关心"是否出现"，不关心"出现几次"
+
+**为什么 TF 不去重？**
+
+TF 衡量的是"这个词在这个文档中有多重要"：
+- 出现 100 次的词，显然比出现 1 次的词更重要
+- 所以 TF 要统计实际出现次数
+
+**代码体现**：
+
+```python
+# 第一遍：计算 DF（去重！）
+unique_terms = set(record.sparse_vector.keys())  # 关键：set() 去重
+for term in unique_terms:
+    term_document_freq[term] += 1  # DF +1
+
+# 第二遍：记录 TF（不去重！）
+for term, tf in record.sparse_vector.items():
+    posting = {"tf": tf}  # TF 是实际出现次数
+```
+
+---
+
+## Phase 19: RRF (Reciprocal Rank Fusion) 详解 (2026-03-18)
+
+> 学习目标：理解如何将 Dense 检索和 Sparse 检索的结果融合为一个统一的排名
+
+### 19.1 为什么需要 RRF？
+
+在混合检索系统中，我们有两条检索路径：
+
+```
+用户查询
+    │
+    ├──► Dense 检索（语义相似）──► 结果列表 A（按向量距离排序）
+    │
+    └──► Sparse 检索（关键词匹配）──► 结果列表 B（按 BM25 分数排序）
+
+问题：两个列表的分数不可比！
+  - Dense 分数: 余弦相似度，范围 [0, 1]
+  - Sparse 分数: BM25 分数，范围无上限
+
+如何合并？→ RRF 是答案！
+```
+
+**RRF 的核心思想**：不比较分数，只比较**排名**！
+
+### 19.2 RRF 算法原理
+
+**公式**：
+
+```
+RRF(d) = Σ (1 / (k + rank(d)))
+```
+
+其中：
+- `d` 是文档/chunk
+- `rank(d)` 是文档在某个检索结果列表中的排名位置（从 1 开始）
+- `k` 是平滑常数（默认 60）
+
+**直观理解**：
+
+```
+假设 k=60，两个检索结果：
+
+Dense 检索结果:
+  排名 1: chunk_001 → RRF 贡献 = 1/(60+1) = 0.0164
+  排名 2: chunk_002 → RRF 贡献 = 1/(60+2) = 0.0161
+  排名 3: chunk_003 → RRF 贡献 = 1/(60+3) = 0.0159
+
+Sparse 检索结果:
+  排名 1: chunk_002 → RRF 贡献 = 1/(60+1) = 0.0164
+  排名 2: chunk_003 → RRF 贡献 = 1/(60+2) = 0.0161
+  排名 3: chunk_001 → RRF 贡献 = 1/(60+3) = 0.0159
+
+最终融合分数:
+  chunk_002: 0.0161 + 0.0164 = 0.0325 ← 最高！
+  chunk_001: 0.0164 + 0.0159 = 0.0323
+  chunk_003: 0.0159 + 0.0161 = 0.0320
+```
+
+**为什么 chunk_002 排第一？**
+- 它在 Dense 检索中排名第 2
+- 它在 Sparse 检索中排名第 1
+- 综合排名最好，所以融合分数最高
+
+### 19.3 代码详解
+
+#### 核心代码流程图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Fusion.fuse() 方法                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  输入: result_lists = [dense_results, sparse_results]        │
+│                                                              │
+│  Step 1: 初始化数据结构                                       │
+│  ┌─────────────────┐    ┌─────────────────┐                │
+│  │ chunk_scores    │    │ chunk_data      │                │
+│  │ {id: rrf_score} │    │ {id: 原始结果}   │                │
+│  └─────────────────┘    └─────────────────┘                │
+│                                                              │
+│  Step 2: 遍历每个结果列表                                     │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ for result_list in result_lists:            │            │
+│  │   for rank, result in enumerate(..., 1):   │            │
+│  │     rrf_score = 1 / (k + rank)              │            │
+│  │     chunk_scores[id] += rrf_score           │ 累加分数  │
+│  │     chunk_data[id] = 更高分的结果            │ 保留最佳  │
+│  └─────────────────────────────────────────────┘            │
+│                                                              │
+│  Step 3: 构建 fused_results                                  │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ 创建新 RetrievalResult:                     │            │
+│  │   - chunk_id: 原值                          │            │
+│  │   - score: RRF 分数（不是原始分数！）         │            │
+│  │   - text/metadata: 最高分结果的内容          │            │
+│  └─────────────────────────────────────────────┘            │
+│                                                              │
+│  Step 4: 排序并截取 top_k                                    │
+│  ┌─────────────────────────────────────────────┐            │
+│  │ fused_results.sort(by score, reverse=True) │            │
+│  │ return fused_results[:top_k]                │            │
+│  └─────────────────────────────────────────────┘            │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 关键代码注释
+
+```python
+# src/core/query_engine/fusion.py
+
+class Fusion:
+    DEFAULT_K = 60  # 默认平滑常数
+
+    def fuse(self, result_lists, top_k=None):
+        """融合多个检索结果列表"""
+
+        # 用于存储累加的 RRF 分数
+        chunk_scores: Dict[str, float] = {}
+        # 用于存储原始结果数据（保留 metadata 和 text）
+        chunk_data: Dict[str, RetrievalResult] = {}
+
+        for result_list in result_lists:
+            if not result_list:
+                continue  # 跳过空列表
+
+            # rank 从 1 开始（不是 0）
+            for rank, result in enumerate(result_list, start=1):
+                if not result.chunk_id:
+                    continue  # 跳过无效 ID
+
+                # 核心 RRF 公式
+                rrf_score = 1.0 / (self._k + rank)
+
+                if result.chunk_id in chunk_scores:
+                    # 已经存在：累加分数
+                    chunk_scores[result.chunk_id] += rrf_score
+
+                    # 如果新结果原始分数更高，保留它的 metadata
+                    existing = chunk_data[result.chunk_id]
+                    if result.score > existing.score:
+                        chunk_data[result.chunk_id] = result
+                else:
+                    # 首次出现：初始化
+                    chunk_scores[result.chunk_id] = rrf_score
+                    chunk_data[result.chunk_id] = result
+
+        # 构建融合后的结果
+        fused_results = []
+        for chunk_id, rrf_score in chunk_scores.items():
+            original = chunk_data[chunk_id]
+            fused_results.append(
+                RetrievalResult(
+                    chunk_id=original.chunk_id,
+                    score=rrf_score,  # 注意：这里是 RRF 分数！
+                    text=original.text,
+                    metadata=original.metadata,
+                )
+            )
+
+        # 按融合分数降序排序
+        fused_results.sort(key=lambda x: x.score, reverse=True)
+
+        # 截取 top_k
+        if top_k:
+            fused_results = fused_results[:top_k]
+
+        return fused_results
+```
+
+### 19.4 k 参数的影响
+
+**k 的作用**：控制排名对分数的影响程度
+
+```
+k 越小（如 k=1）：
+  - 排名靠前的结果获得巨大优势
+  - 排名 1: 1/(1+1) = 0.5
+  - 排名 2: 1/(1+2) = 0.33
+  - 差距明显！→ "激进" 融合
+
+k 越大（如 k=100）：
+  - 排名差异被弱化
+  - 排名 1: 1/(100+1) = 0.0099
+  - 排名 2: 1/(100+2) = 0.0098
+  - 差距微小！→ "保守" 融合
+
+k=60（默认）：
+  - 学术研究中验证的最佳值
+  - 平衡激进与保守
+```
+
+### 19.5 HybridSearch 中的集成
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  HybridSearch.search() 流程                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. 查询处理                                                  │
+│     query → QueryProcessor → keywords, filters              │
+│                                                              │
+│  2. 并行检索                                                  │
+│     ┌────────────────┐    ┌────────────────┐               │
+│     │ DenseRetriever │    │ SparseRetriever│               │
+│     │ (向量语义搜索)  │    │ (BM25 关键词)  │               │
+│     └───────┬────────┘    └───────┬────────┘               │
+│             │                     │                         │
+│             ▼                     ▼                         │
+│         dense_results        sparse_results                 │
+│                                                              │
+│  3. RRF 融合 ← 本节重点                                       │
+│     Fusion.fuse([dense, sparse], top_k=40)                  │
+│                                                              │
+│  4. 可选：元数据过滤                                          │
+│     _apply_metadata_filters(fused, filters)                 │
+│                                                              │
+│  5. 重排序 ← 后续学习                                         │
+│     Reranker.rerank(query, fused) → 最终结果                 │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 19.6 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| **核心思想** | 不比较分数，只比较排名；让不同检索方法的结果可比 |
+| **公式** | `RRF(d) = Σ 1/(k+rank(d))`，k=60 是经验最佳值 |
+| **优势** | 无需分数归一化；对异常值鲁棒；实现简单 |
+| **在系统中的位置** | HybridSearch 的第 3 步，Dense/Sparse 检索之后，Rerank 之前 |
+| **结果分数含义** | 融合后的 score 是 RRF 分数，不是原始相似度分数 |
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 7 | Ingest 阶段详解 | ✅ 已完成 (2026-03-14) |
+| Phase 7.3 | Split 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4 | Transform 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4.1 | Transform 阶段 RAG 专家视角 | ✅ 已完成 (2026-03-14) |
+| Phase 7.5 | Encode 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 7.6 | Store 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+| Phase 15 | list_collections 应该返回什么？（设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 16 | 不指定 --collection 时的行为与智能分类设计 | ✅ 已完成 (2026-03-14) |
+| Phase 17 | Collection 是否真的必要？（深度设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 18 | IDF (Inverse Document Frequency) 详解 | ✅ 已完成 (2026-03-16) |
+| Phase 18.1 | IDF 代码注释补充 | ✅ 已完成 (2026-03-16) |
+| Phase 19 | RRF (Reciprocal Rank Fusion) 详解 | ✅ 已完成 (2026-03-18) |
+
+### 下一步建议
+
+1. **Reranker 重排序** - 理解 Cross-Encoder 和 LLM Reranker 的工作原理
+2. **实践练习** - 运行一次完整的 Query 流程，观察 RRF 融合效果
+3. **ImageStorage 集成** - 补全 Pipeline 中缺失的图片存储功能
+
+---
+
+## Phase 20: Metadata Filter (元数据过滤) 详解 (2026-03-18)
+
+> 学习目标：理解 filters 如何在整个查询流程中传递和执行
+
+### 20.1 Filter 是什么？
+
+**Filter 的作用**：在检索时按元数据字段过滤结果。
+
+```
+用户场景示例：
+  1. 只查 PDF 文档：filters={"doc_type": "pdf"}
+  2. 只查某个 collection：filters={"collection": "docs"}
+  3. 组合过滤：filters={"collection": "docs", "author": "张三"}
+```
+
+### 20.2 Filter 流经路径
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Filter 数据流                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  用户调用 MCP 工具                                                    │
+│  ┌─────────────────────────────────────────────┐                    │
+│  │ query_knowledge_hub(query, top_k, filters) │                    │
+│  └─────────────────────┬───────────────────────┘                    │
+│                        │                                             │
+│                        ▼                                             │
+│  ┌─────────────────────────────────────────────┐                    │
+│  │ HybridSearch.search(query, filters=filters) │                    │
+│  └─────────────────────┬───────────────────────┘                    │
+│                        │                                             │
+│          ┌─────────────┴─────────────┐                              │
+│          ▼                           ▼                              │
+│  ┌───────────────────┐      ┌───────────────────┐                   │
+│  │ DenseRetriever    │      │ SparseRetriever   │                   │
+│  │ .retrieve(        │      │ .retrieve()       │                   │
+│  │   filters=filters │      │  (无 filter)      │                   │
+│  │ )                 │      │                   │                   │
+│  └─────────┬─────────┘      └───────────────────┘                   │
+│            │                                                         │
+│            ▼                                                         │
+│  ┌───────────────────┐                                               │
+│  │ VectorStore.query │  ← 数据库层面过滤                             │
+│  │ (where=filters)   │    (ChromaDB where clause)                   │
+│  └───────────────────┘                                               │
+│                                                                      │
+│  融合后（可选）                                                       │
+│  ┌─────────────────────────────────────────────┐                    │
+│  │ _apply_metadata_filters(fused, filters)     │ ← 后过滤            │
+│  └─────────────────────────────────────────────┘                    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 20.3 两层过滤机制
+
+#### 第一层：DenseRetriever 层面（数据库过滤）
+
+```python
+# src/core/query_engine/dense_retriever.py:134-138
+
+raw_results = self._vector_store.query(
+    vector=query_vector,
+    top_k=effective_top_k,
+    filters=filters,  # ← 直接传给 VectorStore
+    trace=trace,
+)
+```
+
+**ChromaDB 实现** (`src/libs/vector_store/chroma_store.py:161-165`):
+
+```python
+results = self._collection.query(
+    query_embeddings=[vector],
+    n_results=top_k,
+    where=filters,  # ← ChromaDB 的 where 子句
+)
+```
+
+**特点**：
+- 在数据库层面执行，效率高
+- 只影响 Dense 检索
+- Sparse 检索（BM25）不支持 filter
+
+#### 第二层：HybridSearch 层面（后过滤）
+
+```python
+# src/core/query_engine/fusion.py:271-272
+
+if filters:
+    fused_results = self._apply_metadata_filters(fused_results, filters)
+```
+
+**`_apply_metadata_filters()` 实现** (`fusion.py:282-317`):
+
+```python
+def _apply_metadata_filters(
+    self,
+    results: List[RetrievalResult],
+    filters: Dict[str, Any],
+) -> List[RetrievalResult]:
+    """Apply metadata filters to results."""
+    if not filters:
+        return results
+
+    filtered: List[RetrievalResult] = []
+    for result in results:
+        metadata = result.metadata
+        match = True
+        for key, value in filters.items():
+            if key not in metadata:
+                match = False
+                break
+            if isinstance(value, list):
+                # 值在列表中匹配
+                if metadata[key] not in value:
+                    match = False
+                    break
+            elif metadata[key] != value:
+                # 值精确匹配
+                match = False
+                break
+        if match:
+            filtered.append(result)
+
+    return filtered
+```
+
+### 20.4 支持的 Filter 格式
+
+```
+1. 精确匹配：
+   {"collection": "docs"}
+
+2. 列表匹配（IN 查询）：
+   {"doc_type": ["pdf", "md"]}  # 匹配 pdf 或 md
+
+3. 组合过滤：
+   {"collection": "docs", "author": "张三"}  # AND 关系
+```
+
+### 20.5 Filter 代码位置汇总
+
+| 位置 | 文件 | 行号 | 作用 |
+|------|------|------|------|
+| 工具入口 | `mcp_server/tools/query_knowledge_hub.py` | 85 | 从 arguments 获取 filters |
+| HybridSearch | `core/query_engine/fusion.py` | 216, 271 | 传递给 Dense，后过滤融合结果 |
+| DenseRetriever | `core/query_engine/dense_retriever.py` | 97, 137 | 传递给 VectorStore |
+| ChromaStore | `libs/vector_store/chroma_store.py` | 135, 164 | 执行 where 查询 |
+| 后过滤 | `core/query_engine/fusion.py` | 282-317 | 融合后的内存过滤 |
+
+### 20.6 Filter 参数如何被指定？（Q&A 深度解析）
+
+#### Q1: Filter 参数是谁指定的？用户还是 LLM？
+
+**答**：两种方式都支持，取决于用户提问的明确程度：
+
+```
+场景 A：用户明确指定
+──────────────────────
+用户问题：「在 PDF 文档中查找 API 配置」
+          ↑ 明确限定
+LLM 推断：filters={"doc_type": "pdf"}
+
+场景 B：用户未明确指定
+──────────────────────
+用户问题：「如何配置 API？」
+          ↑ 无限定
+LLM 推断：不传 filters（全库搜索）
+```
+
+#### Q2: LLM 如何知道有哪些 filter 条件可用？
+
+**答**：通过 **MCP Tool Definition** 的 `inputSchema` 获取：
+
+```json
+// query_knowledge_hub 的 inputSchema 定义
+{
+  "properties": {
+    "filters": {
+      "type": "object",
+      "properties": {
+        "collection": {"type": "string", "description": "文档集合名称"},
+        "doc_type": {"type": "string", "enum": ["pdf", "markdown"]},
+        "source_path": {"type": "string"},
+        "title": {"type": "string"},
+        "author": {"type": "string"}
+      }
+    }
+  }
+}
+```
+
+LLM 在调用工具前会解析这个 schema，从而知道：
+- 有哪些 filter 字段可选
+- 每个字段的类型（string, enum）
+- 每个字段的含义（通过 description）
+
+#### Q3: 用户不指定时，LLM 会自动推断吗？
+
+**答**：**会**，前提是 tool definition 提供了足够的上下文信息。
+
+我们进行了以下改进来增强自动推断能力：
+
+**改进 1：增强 description 字段**
+
+```python
+# src/mcp_server/tools/query_knowledge_hub.py
+
+"description": (
+    "基于混合检索（Dense + Sparse + RRF + Rerank）"
+    "查询知识库，并生成包含引用的响应。\n\n"
+    "## 可用的 metadata 过滤字段\n\n"
+    "你可以根据用户问题的特征，自动推断合适的 filters：\n\n"
+    "| 字段 | 说明 | 示例值 |\n"
+    "|------|------|--------|\n"
+    "| collection | 文档所属集合 | 'docs', 'wiki', 'manual' |\n"
+    "| doc_type | 文档类型 | 'pdf', 'markdown' |\n"
+    "| source_path | 源文件路径 | '/docs/api.pdf' |\n"
+    "| title | 文档标题 | 'API Reference' |\n"
+    "| tags | 标签（数组） | ['API', 'configuration'] |\n"
+    "| author | 作者 | '张三' |\n\n"
+    "## 自动推断示例\n\n"
+    "- 用户问「PDF 文档中关于 API 的内容」→ filters={\"doc_type\": \"pdf\"}\n"
+    "- 用户问「在 wiki 集合中查找配置方法」→ filters={\"collection\": \"wiki\"}\n"
+    "- 用户问「张三写的文档」→ filters={\"author\": \"张三\"}\n"
+    "- 用户无明确限定 → 不传 filters（全库搜索）\n\n"
+    "注意：先调用 list_collections 获取可用集合列表。"
+)
+```
+
+**改进 2：增强 filters 的 description**
+
+```python
+"filters": {
+    "type": "object",
+    "description": (
+        "元数据过滤条件。根据用户问题自动推断：\n"
+        "- collection: 集合名称（先调用 list_collections 获取可用值）\n"
+        "- doc_type: 文档类型，如 'pdf', 'markdown'\n"
+        "- source_path: 源文件路径\n"
+        "- title: 文档标题关键词\n"
+        "- tags: 标签数组\n"
+        "- author: 作者名称\n"
+        "示例：{\"collection\": \"docs\", \"doc_type\": \"pdf\"}"
+    ),
+    "properties": {
+        "collection": {"type": "string", "description": "文档集合名称，如 'docs', 'wiki'"},
+        "doc_type": {"type": "string", "enum": ["pdf", "markdown"], "description": "文档类型"},
+        ...
+    }
+}
+```
+
+**改进 3：增强 list_collections 的 description**
+
+```python
+# src/mcp_server/tools/list_collections.py
+
+"description": (
+    "列出知识库中所有可用的文档集合。\n\n"
+    "## 使用场景\n\n"
+    "在调用 query_knowledge_hub 之前，先调用此工具获取可用集合列表，"
+    "以便根据用户问题推断合适的 collection filter。\n\n"
+    "## 示例流程\n\n"
+    "1. 用户问「在技术文档中查找 API 配置」\n"
+    "2. 先调用 list_collections 获取：['tech_docs', 'wiki', 'manual']\n"
+    "3. 推断 'tech_docs' 最相关\n"
+    "4. 调用 query_knowledge_hub(query='API 配置', filters={'collection': 'tech_docs'})"
+)
+```
+
+#### 自动推断的工作原理
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    LLM 自动推断 Filter 流程                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  1. 用户提问                                                         │
+│     ┌──────────────────────────────────────────┐                    │
+│     │ 「在 PDF 文档中查找关于 API 的内容」       │                    │
+│     └─────────────────────┬────────────────────┘                    │
+│                           │                                          │
+│                           ▼                                          │
+│  2. LLM 解析 Tool Definition                                         │
+│     ┌──────────────────────────────────────────┐                    │
+│     │ 查看 filters.properties.doc_type:        │                    │
+│     │   - type: string                         │                    │
+│     │   - enum: ["pdf", "markdown"]            │                    │
+│     │   - description: "文档类型"              │                    │
+│     └─────────────────────┬────────────────────┘                    │
+│                           │                                          │
+│                           ▼                                          │
+│  3. 语义匹配                                                         │
+│     ┌──────────────────────────────────────────┐                    │
+│     │ 用户提到 "PDF"                           │                    │
+│     │ doc_type.enum 包含 "pdf"                 │                    │
+│     │ → 匹配成功                               │                    │
+│     └─────────────────────┬────────────────────┘                    │
+│                           │                                          │
+│                           ▼                                          │
+│  4. 构造 filter 参数                                                 │
+│     ┌──────────────────────────────────────────┐                    │
+│     │ filters = {"doc_type": "pdf"}            │                    │
+│     └─────────────────────┬────────────────────┘                    │
+│                           │                                          │
+│                           ▼                                          │
+│  5. 调用工具                                                         │
+│     ┌──────────────────────────────────────────┐                    │
+│     │ query_knowledge_hub(                     │                    │
+│     │   query="关于 API 的内容",               │                    │
+│     │   filters={"doc_type": "pdf"}            │                    │
+│     │ )                                        │                    │
+│     └──────────────────────────────────────────┘                    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 20.7 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| **两层过滤** | Dense 层面（数据库）+ 融合层面（内存后过滤） |
+| **为什么两层** | Sparse 检索不支持 filter，需要后过滤保证一致性 |
+| **效率考量** | Dense 过滤在数据库执行，高效；后过滤在内存，候选集小 |
+| **Filter 格式** | 支持精确匹配、列表匹配、组合过滤 |
+| **ChromaDB** | 使用 where 参数，原生支持 metadata 过滤 |
+| **LLM 自动推断** | 通过 Tool Definition 的 description 和 properties 启发 LLM |
+| **增强方法** | 在 description 中添加示例、使用场景、字段说明表 |
+
+---
+
+## Phase 21: Reranker 重排序详解 (2026-03-19)
+
+> 学习目标：理解 Reranker 的架构设计、三种后端实现（None/CrossEncoder/LLM）、以及在查询流程中的作用
+
+### 21.0 RAG 新手入门：粗排与精排详解 (2026-03-21)
+
+> 本节专为 RAG 新手设计，用通俗易懂的方式讲解"粗排"和"精排"
+
+#### 21.0.1 什么是粗排和精排？
+
+**用一个生活比喻来理解**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              📚 图书馆找书的比喻                                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  用户问题："我想找关于 Python 机器学习的书"                          │
+│                                                                      │
+│  【粗排 - 快速筛选】                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 图书管理员快速浏览书架标签：                                 │    │
+│  │   - 计算机区 ✅                                              │    │
+│  │   - 编程语言区 ✅                                            │    │
+│  │   - 历史区 ❌                                                │    │
+│  │   - 文学区 ❌                                                │    │
+│  │                                                              │    │
+│  │ 从 10,000 本书 → 筛选出 100 本候选                          │    │
+│  │ 耗时：10 秒                                                  │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  【精排 - 仔细评估】                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 专家逐本翻阅这 100 本书：                                    │    │
+│  │   - 看目录、序言、章节内容                                   │    │
+│  │   - 评估与"Python 机器学习"的相关程度                        │    │
+│  │   - 打分排序                                                 │    │
+│  │                                                              │    │
+│  │ 从 100 本候选 → 精选出 Top 10 最相关的书                     │    │
+│  │ 耗时：5 分钟                                                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│                   最终推荐 10 本书                                   │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**为什么要分两阶段？**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      粗排 + 精排 的必要性                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  假设知识库有 1,000,000 个文档片段                                   │
+│                                                                      │
+│  ❌ 如果只用精排（Cross-Encoder）：                                  │
+│     - 每个文档都要深度打分 → 1,000,000 次推理                        │
+│     - 假设每次推理 50ms → 总耗时 50,000 秒 ≈ 14 小时                │
+│     - 用户等不起！                                                   │
+│                                                                      │
+│  ✅ 粗排 + 精排：                                                    │
+│     - 粗排：向量检索，毫秒级从 1M 召回 Top 100                       │
+│     - 精排：只对 100 个候选深度打分 → 100 × 50ms = 5 秒              │
+│     - 总耗时：< 6 秒                                                 │
+│     - 用户可以接受！                                                 │
+│                                                                      │
+│  结论：粗排"快而粗"，精排"慢而精"，两者结合才能兼顾效率和质量        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 21.0.2 粗排技术详解
+
+**粗排（Coarse Ranking / First-Stage Retrieval）**：从海量文档中快速召回候选集。
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        粗排的两种主要方式                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【方式一】Dense 检索（向量检索 / Bi-Encoder）                        │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  原理：把 Query 和 Doc 都转成向量，算相似度                   │    │
+│  │                                                              │    │
+│  │  Query: "如何学习 Python？"                                  │    │
+│  │     ↓ Embedding Model (BGE-M3)                              │    │
+│  │  [0.12, -0.34, 0.56, ...] ← 1024 维向量                     │    │
+│  │                                                              │    │
+│  │  Doc1: "Python 是一门编程语言..."                             │    │
+│  │     ↓ Embedding Model (离线预计算)                           │    │
+│  │  [0.15, -0.30, 0.52, ...]                                   │    │
+│  │                                                              │    │
+│  │  相似度 = cosine(Query Vector, Doc Vector) = 0.92            │    │
+│  │                                                              │    │
+│  │  优点：理解语义，"苹果手机"和"iPhone"相似度高                  │    │
+│  │  缺点：可能忽略精确关键词匹配                                  │    │
+│  │  速度：快！向量数据库支持 ANN 近似搜索（毫秒级）              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【方式二】Sparse 检索（词汇检索 / BM25）                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  原理：基于词频统计，计算文档与查询的相关度                    │    │
+│  │                                                              │    │
+│  │  Query: "Python 机器学习"                                    │    │
+│  │     ↓ 分词                                                   │    │
+│  │  ["Python", "机器", "学习"]                                  │    │
+│  │                                                              │    │
+│  │  Doc1: "Python 是一门编程语言..."                             │    │
+│  │     ↓ 计算词频                                               │    │
+│  │  TF(Python) = 3, TF(机器) = 0, TF(学习) = 1                  │    │
+│  │     ↓ BM25 公式                                              │    │
+│  │  Score = Σ TF × IDF × ...                                   │    │
+│  │                                                              │    │
+│  │  优点：精确关键词匹配，"Python"一定匹配"Python"               │    │
+│  │  缺点：不理解语义，"苹果"（水果）和"苹果公司"无法区分          │    │
+│  │  速度：快！倒排索引检索（毫秒级）                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【融合】RRF (Reciprocal Rank Fusion)                               │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  将 Dense 和 Sparse 的结果融合，取长补短                    │    │
+│  │                                                              │    │
+│  │  Dense Top-20 + Sparse Top-20 → RRF 融合 → Top-40 候选      │    │
+│  │                                                              │    │
+│  │  RRF 公式：Score(d) = Σ 1/(k + rank(d))                      │    │
+│  │  - 在两路结果中排名越靠前，分数越高                           │    │
+│  │  - k 通常为 60，用于平滑                                     │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 21.0.3 精排技术详解
+
+**精排（Reranking / Second-Stage Retrieval）**：对粗排召回的候选集进行精细化重排序。
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        精排的两种主要方式                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【方式一】Cross-Encoder（交叉编码器）                               │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  原理：Query 和 Doc 一起送入模型，联合编码                    │    │
+│  │                                                              │    │
+│  │  输入：[CLS] Query [SEP] Document [SEP]                       │    │
+│  │         "如何学习Python？   Python是一门编程语言..."          │    │
+│  │                    ↓                                         │    │
+│  │              BERT Encoder (12层)                              │    │
+│  │                    ↓                                         │    │
+│  │              [CLS] 向量                                      │    │
+│  │                    ↓                                         │    │
+│  │              Linear → 0.85 (相关性分数)                       │    │
+│  │                                                              │    │
+│  │  为什么更准确？                                               │    │
+│  │  - Query 和 Doc 在模型内部有"交互"                           │    │
+│  │  - 可以捕捉细微的相关性（如否定词、条件关系）                  │    │
+│  │                                                              │    │
+│  │  为什么更慢？                                                 │    │
+│  │  - 每个候选都要完整过一遍模型                                 │    │
+│  │  - 无法预计算（不像 Bi-Encoder 可以预先向量化 Doc）            │    │
+│  │                                                              │    │
+│  │  典型模型：cross-encoder/ms-marco-MiniLM-L-6-v2 (23M 参数)    │    │
+│  │  速度：100 个候选约 100ms（本地 GPU/CPU）                     │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【方式二】LLM Reranker（大语言模型重排序）                          │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  原理：用 Prompt 让 LLM 对 Query-Doc 相关性打分                │    │
+│  │                                                              │    │
+│  │  Prompt:                                                     │    │
+│  │  ┌───────────────────────────────────────────────────────┐   │    │
+│  │  │ 你是一个相关性评估助手。请评估以下文档与查询的相关性。  │   │    │
+│  │  │                                                      │   │    │
+│  │  │ 查询：如何学习 Python？                               │   │    │
+│  │  │ 文档：Python 是一门编程语言...                         │   │    │
+│  │  │                                                      │   │    │
+│  │  │ 请给出 0-10 分的相关性评分：                           │   │    │
+│  │  └───────────────────────────────────────────────────────┘   │    │
+│  │                                                              │    │
+│  │  LLM 输出："8"                                               │    │
+│  │                                                              │    │
+│  │  优点：最准确！能理解复杂语义、推理关系                       │    │
+│  │  缺点：最慢！每个候选要调用一次 LLM API                       │    │
+│  │  速度：100 个候选约 30-60 秒（API 调用）                      │    │
+│  │  成本：按 token 计费，100 个候选约 $0.5-2                     │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 21.0.4 Bi-Encoder vs Cross-Encoder 对比
+
+**这是 RAG 中最重要的概念之一**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                  Bi-Encoder vs Cross-Encoder                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【Bi-Encoder - 双塔编码器】（用于粗排）                             │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  Query → Encoder A → Vector A                               │    │
+│  │                         ↘                                   │    │
+│  │                           cosine(A, B) → 相似度             │    │
+│  │                         ↗                                   │    │
+│  │  Doc   → Encoder B → Vector B                               │    │
+│  │                                                              │    │
+│  │  特点：                                                      │    │
+│  │  - Query 和 Doc 分别独立编码（两个"塔"）                     │    │
+│  │  - Doc 向量可以预计算存储                                    │    │
+│  │  - 查询时只需编码 Query，然后向量检索                        │    │
+│  │  - 速度快，适合大规模召回                                    │    │
+│  │  - 但无法捕捉 Query-Doc 交互信息                             │    │
+│  │                                                              │    │
+│  │  适用：粗排阶段，从百万文档召回 Top-100                       │    │
+│  │  代表模型：BGE-M3, text-embedding-ada-002                    │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【Cross-Encoder - 交叉编码器】（用于精排）                          │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  [Query, Doc] → Encoder → Score                              │    │
+│  │                                                              │    │
+│  │  特点：                                                      │    │
+│  │  - Query 和 Doc 一起送入模型（"交叉"编码）                   │    │
+│  │  - 模型内部有深度交互，能捕捉细微相关性                       │    │
+│  │  - 更准确，但无法预计算                                      │    │
+│  │  - 每个候选都要完整推理一次                                  │    │
+│  │  - 速度慢，只适合小规模重排序                                │    │
+│  │                                                              │    │
+│  │  适用：精排阶段，对 50-100 候选重排序                        │    │
+│  │  代表模型：ms-marco-MiniLM-L-6-v2                            │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【比喻理解】                                                        │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  Bi-Encoder 像看封面选书：                                   │    │
+│  │  - 快速浏览每本书的封面（向量相似度）                        │    │
+│  │  - 可能漏掉好书，但速度快                                    │    │
+│  │                                                              │    │
+│  │  Cross-Encoder 像翻开书看内容：                               │    │
+│  │  - 真正阅读内容，判断是否相关                                │    │
+│  │  - 更准确，但耗时久                                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 21.0.5 完整检索流程图
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    RAG 完整检索流程（粗排 + 精排）                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  用户查询："Python 如何实现机器学习？"                               │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                    【粗排阶段】                              │    │
+│  │                     大规模召回                               │    │
+│  ├─────────────────────────────────────────────────────────────┤    │
+│  │                                                              │    │
+│  │  Query ──────┬──▶ Dense Retriever (Bi-Encoder)              │    │
+│  │              │         │                                    │    │
+│  │              │         ↓                                    │    │
+│  │              │    Top 20 候选                                │    │
+│  │              │    (向量相似度搜索)                           │    │
+│  │              │                                              │    │
+│  │              └──▶ Sparse Retriever (BM25)                   │    │
+│  │                        │                                    │    │
+│  │                        ↓                                    │    │
+│  │                   Top 20 候选                                │    │
+│  │                   (关键词匹配)                              │    │
+│  │                        │                                    │    │
+│  │                        ▼                                    │    │
+│  │                   RRF Fusion                                │    │
+│  │                        │                                    │    │
+│  │                        ↓                                    │    │
+│  │                   Top 40 候选                               │    │
+│  │                                                              │    │
+│  │  耗时：< 100ms                                               │    │
+│  │  从 1,000,000 文档 → 召回 40 个候选                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                    【精排阶段】                              │    │
+│  │                     精细重排序                               │    │
+│  ├─────────────────────────────────────────────────────────────┤    │
+│  │                                                              │    │
+│  │              Top 40 候选                                     │    │
+│  │                   │                                         │    │
+│  │                   ▼                                         │    │
+│  │         ┌─────────────────┐                                 │    │
+│  │         │  Reranker        │                                 │    │
+│  │         │  (Cross-Encoder) │                                 │    │
+│  │         └────────┬────────┘                                 │    │
+│  │                  │                                          │    │
+│  │                  ▼                                          │    │
+│  │         对每个候选深度打分                                    │    │
+│  │         Query + Doc → Score                                 │    │
+│  │                  │                                          │    │
+│  │                  ▼                                          │    │
+│  │         按分数降序排列                                        │    │
+│  │                  │                                          │    │
+│  │                  ▼                                          │    │
+│  │            Top 10 结果                                       │    │
+│  │                                                              │    │
+│  │  耗时：~100ms（40 个候选）                                   │    │
+│  │  40 个候选 → 精选出 10 个最相关                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                    【生成阶段】                              │    │
+│  │                   LLM 回答生成                               │    │
+│  ├─────────────────────────────────────────────────────────────┤    │
+│  │                                                              │    │
+│  │  Query + Top 10 Docs → LLM → 最终回答                       │    │
+│  │                                                              │    │
+│  │  耗时：~2-5 秒                                               │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  总耗时：粗排(100ms) + 精排(100ms) + 生成(3s) ≈ 3-4 秒              │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 21.0.6 关键概念总结表
+
+| 概念 | 定义 | 作用 | 典型技术 |
+|------|------|------|----------|
+| **粗排** | First-Stage Retrieval | 从海量文档快速召回候选集 | Dense (Bi-Encoder), Sparse (BM25), RRF 融合 |
+| **精排** | Second-Stage Reranking | 对候选集精细化重排序 | Cross-Encoder, LLM Reranker |
+| **Bi-Encoder** | 双塔编码器 | Query 和 Doc 独立编码，适合粗排 | BGE-M3, text-embedding-ada-002 |
+| **Cross-Encoder** | 交叉编码器 | Query 和 Doc 联合编码，适合精排 | ms-marco-MiniLM-L-6-v2 |
+| **Dense Retrieval** | 向量检索 | 语义相似度搜索，理解语义 | ChromaDB, Faiss, Milvus |
+| **Sparse Retrieval** | 词汇检索 | 关键词精确匹配，基于词频 | BM25, Elasticsearch |
+| **RRF** | Reciprocal Rank Fusion | 融合多路检索结果 | 基于排名的融合算法 |
+
+#### 21.0.7 Q&A: 元数据过滤的位置设计 (2026-03-21)
+
+**问**：为何元数据过滤的步骤是放在 RRF 融合后、重排序/精排之前呢？符合最佳实践吗？
+
+**答**：
+
+这是一个非常好的问题！让我从代码分析和最佳实践两个角度来解答。
+
+**当前项目的实际设计**：
+
+```python
+# src/core/query_engine/fusion.py:249-280
+
+# Step 1: Dense 检索 - 已经应用了元数据过滤！
+dense_results = self._dense_retriever.retrieve(
+    query, top_k=effective_top_k, filters=filters, trace=trace  # ← 传递了 filters
+)
+
+# Step 2: Sparse 检索 - 没有应用过滤
+sparse_results = self._sparse_retriever.retrieve(
+    keywords, top_k=effective_top_k, trace=trace  # ← 没有 filters 参数
+)
+
+# Step 3: RRF 融合
+fused_results = self._fusion.fuse([dense_results, sparse_results], ...)
+
+# Step 4: 再次应用元数据过滤（对融合结果）
+if filters:
+    fused_results = self._apply_metadata_filters(fused_results, filters)
+
+# Step 5: Rerank 精排
+reranked_results = self._reranker.rerank(query, fused_results, trace=trace)
+```
+
+**过滤发生了两次！**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                   当前项目的过滤位置                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Dense 检索                                                          │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ ChromaDB.query(vector, top_k, filters=filters)  ← 过滤①    │    │
+│  │                                                              │    │
+│  │ 特点：在向量数据库层面过滤，效率最高                          │    │
+│  │ 原理：ChromaDB 支持 where 子句，过滤后再搜索                  │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  Sparse 检索                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ BM25.query(keywords, top_k)  ← 无过滤                        │    │
+│  │                                                              │    │
+│  │ 原因：BM25 索引不支持元数据过滤                               │    │
+│  │ 结果：可能返回不符合 filters 的文档                           │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  RRF Fusion                                                          │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 合并 Dense 和 Sparse 结果                                    │    │
+│  │ 可能包含来自 Sparse 的不符合过滤条件的文档                    │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  过滤②：_apply_metadata_filters()                                   │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 对融合结果再次应用元数据过滤                                  │    │
+│  │ 过滤掉来自 Sparse 的不符合条件的文档                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  Rerank 精排                                                         │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 只对符合过滤条件的候选进行精排                                │    │
+│  │ 避免浪费计算资源在无关文档上                                  │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**三种过滤位置对比**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                 过滤位置的三种策略对比                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【策略 A】过滤在检索前（Pre-filtering）                              │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Query → [过滤] → Dense/Sparse 检索 → RRF → Rerank            │    │
+│  │                                                              │    │
+│  │ 优点：效率最高，减少检索范围                                  │    │
+│  │ 缺点：需要数据库支持预过滤（ChromaDB 支持，BM25 不支持）       │    │
+│  │                                                              │    │
+│  │ 适用：向量数据库 + 关系型数据库                               │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【策略 B】过滤在融合后、精排前（Post-fusion, Pre-rerank）            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Query → Dense/Sparse 检索 → RRF → [过滤] → Rerank            │    │
+│  │                                                              │    │
+│  │ 优点：兼容性最好，不依赖数据库特性                            │    │
+│  │       确保精排只处理有效候选                                  │    │
+│  │ 缺点：可能检索到不需要的文档，浪费召回资源                    │    │
+│  │                                                              │    │
+│  │ 适用：混合检索场景，部分检索器不支持预过滤                    │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【策略 C】过滤在精排后（Post-rerank）                               │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Query → Dense/Sparse 检索 → RRF → Rerank → [过滤]            │    │
+│  │                                                              │    │
+│  │ 优点：无（通常不推荐）                                        │    │
+│  │ 缺点：浪费精排资源在无关文档上                                │    │
+│  │       精排是计算密集型操作，应该只处理有效候选                │    │
+│  │                                                              │    │
+│  │ 适用：无（这是反模式）                                        │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**为什么项目选择"融合后过滤"？**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      设计原因分析                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  原因 1：BM25 不支持元数据预过滤                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ BM25 是基于倒排索引的算法：                                   │    │
+│  │   - 只能根据关键词检索                                        │    │
+│  │   - 不支持 WHERE 子句                                         │    │
+│  │   - 无法在索引层面过滤                                        │    │
+│  │                                                              │    │
+│  │ 解决方案：检索后再过滤                                        │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  原因 2：避免 RRF 融合时被"污染"                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 如果不过滤，融合结果中可能包含：                              │    │
+│  │   - Dense 返回的符合条件文档 ✅                               │    │
+│  │   - Sparse 返回的不符合条件文档 ❌                            │    │
+│  │                                                              │    │
+│  │ 融合后再过滤，确保最终候选都符合条件                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  原因 3：在精排前过滤，节省计算资源                                   │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 精排（Cross-Encoder/LLM）是计算密集型操作：                   │    │
+│  │   - Cross-Encoder：每个候选约 1-5ms                          │    │
+│  │   - LLM Reranker：每个候选约 300-500ms                       │    │
+│  │                                                              │    │
+│  │ 如果不过滤，浪费资源在无关文档上                              │    │
+│  │                                                              │    │
+│  │ 假设：融合后 40 个候选，过滤后剩 20 个                        │    │
+│  │   - 不过滤：精排 40 个 → 浪费 20 次                           │    │
+│  │   - 过滤后：精排 20 个 → 节省 50%                             │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**是否符合最佳实践？**
+
+**是的，这是一种常见且合理的做法**，但还有优化空间：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      最佳实践对比                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  当前项目实现（优化版混合策略）：                                     │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Dense: 预过滤 (ChromaDB 支持)                                │    │
+│  │ Sparse: 无预过滤 (BM25 不支持)                              │    │
+│  │ RRF 后: 再次过滤 (兜底)                                      │    │
+│  │ Rerank 前: 最终过滤完成                                      │    │
+│  │                                                              │    │
+│  │ ✅ 优点：充分利用各检索器特性                                │    │
+│  │ ✅ 优点：确保最终结果符合条件                                 │    │
+│  │ ✅ 优点：精排只处理有效候选                                   │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  更优化的方案（如需要）：                                             │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 方案 1：给 BM25 增加后置过滤支持                              │    │
+│  │   - 在 SparseRetriever.retrieve() 后立即过滤                 │    │
+│  │   - 减少 Sparse 返回的无效结果                                │    │
+│  │                                                              │    │
+│  │ 方案 2：使用支持预过滤的稀疏检索器                            │    │
+│  │   - 如 Elasticsearch / Opensearch                            │    │
+│  │   - 支持 bool query + term query                             │    │
+│  │                                                              │    │
+│  │ 方案 3：两阶段过滤                                            │    │
+│  │   - Dense: 预过滤                                             │    │
+│  │   - Sparse: 后置过滤（在检索后立即进行）                      │    │
+│  │   - RRF 融合时已保证两路都是有效结果                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**RAG 最佳实践总结**：
+
+| 过滤位置 | 适用场景 | 效率 | 实现复杂度 |
+|----------|----------|------|------------|
+| **检索前** | 所有检索器都支持过滤 | 最高 | 低 |
+| **融合后、精排前** | 混合检索，部分检索器不支持预过滤 | 中等 | 中 |
+| **精排后** | 无（反模式） | 最低 | 低 |
+
+**核心原则**：
+1. **尽早过滤**：减少后续处理的无效数据
+2. **精排前必须过滤**：精排是计算密集型，不应浪费在无关文档上
+3. **兼容性考量**：根据检索器能力选择过滤位置
+
+#### 21.0.8 Q&A: 为什么不在 RRF 融合前过滤？(2026-03-21)
+
+**问**：从最佳实践的角度分析，为何不在 RRF 融合前选择对元数据过滤呢？而是在 RRF 后过滤呢？哪种更加符合最佳实践呢？
+
+**答**：
+
+这是一个非常好的深入问题！首先需要澄清一个概念：**"RRF 融合前过滤"有两种不同的含义**。
+
+**澄清：RRF 融合前过滤的两种理解**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│           "RRF 融合前过滤"的两种不同含义                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【理解 A】各检索器检索后、融合前，分别过滤                             │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  Query                                                       │    │
+│  │     │                                                        │    │
+│  │     ├─────▶ Dense 检索 → Dense 结果                          │    │
+│  │     │              │                                         │    │
+│  │     │              ▼                                         │    │
+│  │     │         【过滤 A】← 在融合前，对 Dense 结果过滤          │    │
+│  │     │              │                                         │    │
+│  │     │              ▼                                         │    │
+│  │     │         过滤后的 Dense 结果                             │    │
+│  │     │                                                        │    │
+│  │     └─────▶ Sparse 检索 → Sparse 结果                        │    │
+│  │                    │                                         │    │
+│  │                    ▼                                         │    │
+│  │               【过滤 B】← 在融合前，对 Sparse 结果过滤         │    │
+│  │                    │                                         │    │
+│  │                    ▼                                         │    │
+│  │               过滤后的 Sparse 结果                            │    │
+│  │                    │                                         │    │
+│  │     ┌──────────────┘                                         │    │
+│  │     ▼                                                        │    │
+│  │  RRF 融合 ← 融合的是已过滤的结果                              │    │
+│  │     │                                                        │    │
+│  │     ▼                                                        │    │
+│  │  Rerank                                                      │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【理解 B】检索前就过滤（Pre-filtering，数据库层面）                   │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  Query + Filters                                             │    │
+│  │     │                                                        │    │
+│  │     ├─────▶ Dense 检索（带 filters）→ 已过滤的结果            │    │
+│  │     │              ↑                                         │    │
+│  │     │         ChromaDB 在索引层面过滤                         │    │
+│  │     │                                                        │    │
+│  │     └─────▶ Sparse 检索（无 filters 支持）→ 未过滤的结果      │    │
+│  │                                                              │    │
+│  │  这实际上是当前项目的做法！                                    │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**最佳实践对比分析**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              三种过滤策略的最佳实践对比                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【策略 1】检索前预过滤（Pre-filtering，数据库层面）                   │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  流程：Query → [Dense 带过滤] + [Sparse 无过滤] → RRF → 后过滤 │    │
+│  │                                                              │    │
+│  │  ✅ 优点：                                                    │    │
+│  │     - 效率最高：Dense 检索范围缩小，向量计算量减少             │    │
+│  │     - 节省 I/O：数据库层面过滤，只读取符合条件的向量           │    │
+│  │     - 内存友好：不需要加载全部数据再过滤                       │    │
+│  │                                                              │    │
+│  │  ❌ 缺点：                                                    │    │
+│  │     - 需要数据库支持（ChromaDB 支持，但纯 BM25 不支持）        │    │
+│  │     - Sparse 检索器可能不支持预过滤                           │    │
+│  │                                                              │    │
+│  │  适用场景：所有检索器都支持预过滤时                           │    │
+│  │                                                              │    │
+│  │  最佳实践评级：⭐⭐⭐⭐⭐ (最理想)                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【策略 2】检索后、融合前过滤（Post-retrieval, Pre-fusion）           │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  流程：                                                      │    │
+│  │  Query → Dense 检索 → 过滤 →┐                               │    │
+│  │         → Sparse 检索 → 过滤 →┘→ RRF → Rerank              │    │
+│  │                                                              │    │
+│  │  ✅ 优点：                                                    │    │
+│  │     - 兼容性好：不依赖数据库特性                              │    │
+│  │     - 融合前保证两路结果都是有效的                            │    │
+│  │     - RRF 融合更准确（基于有效候选的排名）                    │    │
+│  │                                                              │    │
+│  │  ❌ 缺点：                                                    │    │
+│  │     - 检索时可能返回大量无效结果（浪费检索资源）              │    │
+│  │     - 需要额外的过滤步骤                                      │    │
+│  │                                                              │    │
+│  │  适用场景：检索器不支持预过滤，但需要保证融合质量             │    │
+│  │                                                              │    │
+│  │  最佳实践评级：⭐⭐⭐⭐ (推荐)                                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【策略 3】融合后、精排前过滤（Post-fusion, Pre-rerank）              │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  流程：                                                      │    │
+│  │  Query → Dense + Sparse → RRF 融合 → 过滤 → Rerank          │    │
+│  │                                                              │    │
+│  │  ✅ 优点：                                                    │    │
+│  │     - 实现最简单：只需一处过滤代码                            │    │
+│  │     - 兼容性最好：不依赖任何检索器特性                        │    │
+│  │                                                              │    │
+│  │  ❌ 缺点：                                                    │    │
+│  │     - RRF 融合被"污染"：无效结果参与排名计算                  │    │
+│  │     - 可能导致有效结果排名下降                                │    │
+│  │                                                              │    │
+│  │  示例问题：                                                   │    │
+│  │  ┌───────────────────────────────────────────────────────┐   │    │
+│  │  │ 假设用户要求：collection = "tech_docs"                │   │    │
+│  │  │                                                      │   │    │
+│  │  │ Dense 返回：                                          │   │    │
+│  │  │   - Doc1 (tech_docs) 排名 1                           │   │    │
+│  │  │   - Doc2 (tech_docs) 排名 2                           │   │    │
+│  │  │                                                       │   │    │
+│  │  │ Sparse 返回：                                         │   │    │
+│  │  │   - Doc3 (wiki) 排名 1   ← 不符合条件！              │   │    │
+│  │  │   - Doc4 (tech_docs) 排名 2                           │   │    │
+│  │  │                                                       │   │    │
+│  │  │ RRF 融合时：                                          │   │    │
+│  │  │   - Doc3 (wiki) 的排名 1 参与计算，得分较高            │   │    │
+│  │  │   - 但 Doc3 最终会被过滤掉                            │   │    │
+│  │  │   - 它的高分"挤占"了其他有效结果的排名位置            │   │    │
+│  │  └───────────────────────────────────────────────────────┘   │    │
+│  │                                                              │    │
+│  │  适用场景：快速原型开发，对召回质量要求不高                   │    │
+│  │                                                              │    │
+│  │  最佳实践评级：⭐⭐⭐ (可用，但有改进空间)                     │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**当前项目的实际策略分析**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              当前项目实现的是"混合策略"                                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  实际流程（来自 fusion.py:249-280）：                                 │
+│                                                                      │
+│  Dense 检索：                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ dense_results = self._dense_retriever.retrieve(            │    │
+│  │     query, top_k=effective_top_k, filters=filters  ← 预过滤  │    │
+│  │ )                                                           │    │
+│  │                                                              │    │
+│  │ → Dense 使用了策略 1（检索前预过滤）                         │    │
+│  │ → ChromaDB 支持 where 子句，在数据库层面过滤                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  Sparse 检索：                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ sparse_results = self._sparse_retriever.retrieve(           │    │
+│  │     keywords, top_k=effective_top_k  ← 无 filters 参数       │    │
+│  │ )                                                           │    │
+│  │                                                              │    │
+│  │ → Sparse 无法预过滤（BM25 不支持元数据过滤）                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  RRF 融合：                                                          │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ fused_results = self._fusion.fuse(                          │    │
+│  │     [dense_results, sparse_results], ...                    │    │
+│  │ )                                                           │    │
+│  │                                                              │    │
+│  │ → 问题：sparse_results 可能包含不符合条件的文档              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  融合后过滤：                                                        │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ if filters:                                                 │    │
+│  │     fused_results = self._apply_metadata_filters(...)       │    │
+│  │                                                              │    │
+│  │ → 策略 3（融合后过滤），作为兜底                              │    │
+│  │ → 过滤掉 Sparse 带来的无效结果                               │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  结论：项目采用 Dense 预过滤 + RRF 后兜底过滤 的混合策略             │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**为什么不在 RRF 融合前统一过滤？**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│        为什么不在融合前对 Sparse 结果单独过滤？                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【当前设计】                                                        │
+│  Dense (预过滤) + Sparse (无过滤) → RRF → 后过滤                     │
+│                                                                      │
+│  【可能的改进】                                                      │
+│  Dense (预过滤) + Sparse (后置过滤) → RRF                           │
+│                         ↑                                           │
+│                    在融合前就过滤                                    │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 如果在融合前对 Sparse 结果单独过滤，有什么好处？              │    │
+│  │                                                              │    │
+│  │  ✅ RRF 融合更准确：                                         │    │
+│  │     - 只有有效候选参与排名计算                               │    │
+│  │     - 不会出现"无效结果挤占排名"的问题                        │    │
+│  │                                                              │    │
+│  │  ✅ 可以更早发现问题：                                        │    │
+│  │     - 如果 Sparse 过滤后结果为空，可以知道没有匹配            │    │
+│  │                                                              │    │
+│  │  实现方式：                                                   │    │
+│  │  在 sparse_retriever.retrieve() 返回后立即过滤：              │    │
+│  │                                                              │    │
+│  │  sparse_results = self._sparse_retriever.retrieve(...)      │    │
+│  │  if filters:                                                │    │
+│  │      sparse_results = self._apply_metadata_filters(         │    │
+│  │          sparse_results, filters                             │    │
+│  │      )                                                      │    │
+│  │  # 然后再进行 RRF 融合                                       │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【为什么当前项目没有这样做？】                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  1. 实现简洁性：                                             │    │
+│  │     - 只需一处过滤代码（在融合后）                           │    │
+│  │     - 避免在多处重复过滤逻辑                                 │    │
+│  │                                                              │    │
+│  │  2. 结果等价性：                                             │    │
+│  │     - 无论在融合前还是融合后过滤                             │    │
+│  │     - 最终进入 Rerank 的候选是相同的                         │    │
+│  │     - 对最终结果没有影响                                     │    │
+│  │                                                              │    │
+│  │  3. 性能考量：                                               │    │
+│  │     - 过滤操作本身是 O(n) 的遍历，开销很小                   │    │
+│  │     - 无论过滤一次还是两次，总开销几乎相同                    │    │
+│  │                                                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【但从最佳实践角度，融合前过滤更好】                                │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  理由：RRF 融合的排名计算应该只基于有效候选                   │    │
+│  │                                                              │    │
+│  │  示例：                                                      │    │
+│  │  假设 top_k=20，用户要求 collection="tech_docs"              │    │
+│  │                                                              │    │
+│  │  Sparse 返回 20 个结果，但只有 5 个是 tech_docs              │    │
+│  │                                                              │    │
+│  │  【融合后过滤】                                               │    │
+│  │  - RRF 计算时，15 个无效结果参与排名                          │    │
+│  │  - 它们的排名位置被"浪费"                                    │    │
+│  │  - 融合后只剩 Dense 的结果 + Sparse 的 5 个有效结果           │    │
+│  │  - 可能导致总候选数不足                                       │    │
+│  │                                                              │    │
+│  │  【融合前过滤】                                               │    │
+│  │  - Sparse 先过滤，只保留 5 个有效结果                         │    │
+│  │  - RRF 计算只基于有效结果                                     │    │
+│  │  - 排名更准确地反映相关性                                     │    │
+│  │                                                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**最佳实践推荐**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     最佳实践推荐方案                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【推荐方案】两阶段过滤 + 融合前过滤                                  │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  Query + Filters                                             │    │
+│  │       │                                                      │    │
+│  │       ▼                                                      │    │
+│  │  ┌────────────────────────────────────────────────────────┐ │    │
+│  │  │ Dense 检索（预过滤）                                    │ │    │
+│  │  │   - ChromaDB.query(vector, top_k, filters=filters)     │ │    │
+│  │  │   - 数据库层面过滤，效率最高                            │ │    │
+│  │  │   - 返回：Dense 结果（已过滤）                          │ │    │
+│  │  └────────────────────────────────────────────────────────┘ │    │
+│  │                         │                                    │    │
+│  │                         ▼                                    │    │
+│  │  ┌────────────────────────────────────────────────────────┐ │    │
+│  │  │ Sparse 检索（无预过滤）                                 │ │    │
+│  │  │   - BM25.query(keywords, top_k)                        │ │    │
+│  │  │   - BM25 不支持元数据过滤                              │ │    │
+│  │  │   - 返回：Sparse 结果（未过滤）                         │ │    │
+│  │  └────────────────────────────────────────────────────────┘ │    │
+│  │                         │                                    │    │
+│  │                         ▼                                    │    │
+│  │  ┌────────────────────────────────────────────────────────┐ │    │
+│  │  │ Sparse 后置过滤 ← 【新增】                              │ │    │
+│  │  │   - 对 Sparse 结果应用元数据过滤                        │ │    │
+│  │  │   - 在融合前保证 Sparse 结果都是有效的                  │ │    │
+│  │  │   - 返回：Sparse 结果（已过滤）                          │ │    │
+│  │  └────────────────────────────────────────────────────────┘ │    │
+│  │                         │                                    │    │
+│  │                         ▼                                    │    │
+│  │  ┌────────────────────────────────────────────────────────┐ │    │
+│  │  │ RRF 融合                                               │ │    │
+│  │  │   - 两路都是已过滤的有效结果                            │ │    │
+│  │  │   - 排名计算准确，无污染                                │ │    │
+│  │  │   - 返回：融合结果                                      │ │    │
+│  │  └────────────────────────────────────────────────────────┘ │    │
+│  │                         │                                    │    │
+│  │                         ▼                                    │    │
+│  │  ┌────────────────────────────────────────────────────────┐ │    │
+│  │  │ Rerank 精排                                            │ │    │
+│  │  │   - 只对有效候选进行精排                                │ │    │
+│  │  └────────────────────────────────────────────────────────┘ │    │
+│  │                                                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  关键改进：在融合前对 Sparse 结果进行过滤                             │
+│                                                                      │
+│  代码改进建议：                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ # 改进后的 HybridSearch.search() 方法                        │    │
+│  │                                                              │    │
+│  │ # Dense 检索（已预过滤）                                     │    │
+│  │ dense_results = self._dense_retriever.retrieve(             │    │
+│  │     query, top_k=effective_top_k, filters=filters            │    │
+│  │ )                                                            │    │
+│  │                                                              │    │
+│  │ # Sparse 检索（未预过滤）                                    │    │
+│  │ sparse_results = self._sparse_retriever.retrieve(           │    │
+│  │     keywords, top_k=effective_top_k                          │    │
+│  │ )                                                            │    │
+│  │                                                              │    │
+│  │ # 【新增】融合前对 Sparse 结果过滤                           │    │
+│  │ if filters:                                                  │    │
+│  │     sparse_results = self._apply_metadata_filters(          │    │
+│  │         sparse_results, filters                              │    │
+│  │     )                                                        │    │
+│  │                                                              │    │
+│  │ # RRF 融合（两路都是有效结果）                                │    │
+│  │ fused_results = self._fusion.fuse(                           │    │
+│  │     [dense_results, sparse_results], ...                     │    │
+│  │ )                                                            │    │
+│  │                                                              │    │
+│  │ # 融合后不再需要过滤（已保证两路都是有效的）                  │    │
+│  │ # 但保留作为兜底也是可以的                                    │    │
+│  │                                                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**总结表**：
+
+| 策略 | Dense 过滤位置 | Sparse 过滤位置 | RRF 质量 | 最佳实践评级 |
+|------|----------------|-----------------|----------|--------------|
+| 当前项目 | 检索前（预过滤） | 融合后 | 可能被污染 | ⭐⭐⭐ |
+| 改进方案 | 检索前（预过滤） | 融合前 | 纯净 | ⭐⭐⭐⭐ |
+| 理想方案 | 检索前（预过滤） | 检索前（预过滤） | 纯净 | ⭐⭐⭐⭐⭐ |
+
+**结论**：
+- 当前项目选择"融合后过滤"主要是出于实现简洁性和结果等价性的考虑
+- 从最佳实践角度，**融合前过滤**更好，因为：
+  1. RRF 融合的排名计算更准确
+  2. 避免无效结果"挤占"有效结果的排名
+  3. 符合"尽早过滤"的原则
+- 改进建议：在 Sparse 检索后、RRF 融合前，增加一次元数据过滤
+
+#### 21.0.9 Q&A: 融合后过滤会导致结果为空吗？(2026-03-21)
+
+**问**：既然当前项目选择"融合后过滤"，那么会不会出现一种最坏的情况，融合后过滤的结果变成 0 条呢？全部结果归类为无效的情况呢？
+
+**答**：
+
+这是一个非常好的边界情况问题！让我详细分析。
+
+**答案：是的，确实可能出现这种情况！**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                   最坏情况：过滤后结果为 0                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  场景：用户查询 "如何配置 LLM？"，并指定 filters: {"collection": "tech_docs"} │
+│                                                                      │
+│  假设知识库中：                                                      │
+│  - collection="tech_docs" 的文档：0 篇（或没有被索引）               │
+│  - 其他集合的文档：100 篇                                            │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Step 1: Dense 检索（预过滤）                                │    │
+│  │                                                              │    │
+│  │ dense_results = retrieve(query, filters={"collection": "tech_docs"}) │
+│  │                                                              │    │
+│  │ → ChromaDB 在索引中找不到符合 collection="tech_docs" 的文档  │    │
+│  │ → 返回：[] (空列表)                                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Step 2: Sparse 检索（无过滤）                               │    │
+│  │                                                              │    │
+│  │ sparse_results = retrieve(["如何", "配置", "LLM"])           │    │
+│  │                                                              │    │
+│  │ → BM25 找到 20 个关键词匹配的文档                            │    │
+│  │ → 但这些文档都属于其他集合（wiki, manual 等）                 │    │
+│  │ → 返回：20 条结果，但没有一条 collection="tech_docs"          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Step 3: 检查是否有结果                                      │    │
+│  │                                                              │    │
+│  │ if not dense_results and not sparse_results:                │    │
+│  │     return []  # 但这里不会触发！                            │    │
+│  │                                                              │    │
+│  │ → dense_results = [] (空)                                   │    │
+│  │ → sparse_results = [20条] (不为空)                           │    │
+│  │ → 条件不满足，继续执行                                       │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Step 4: RRF 融合                                            │    │
+│  │                                                              │    │
+│  │ fused_results = fuse([[], 20条结果])                         │    │
+│  │                                                              │    │
+│  │ → 融合结果：20 条（全部来自 Sparse）                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Step 5: 融合后过滤                                          │    │
+│  │                                                              │    │
+│  │ if filters:                                                 │    │
+│  │     fused_results = _apply_metadata_filters(...)             │    │
+│  │                                                              │    │
+│  │ → 对 20 条结果检查 collection 字段                           │    │
+│  │ → 没有一条是 "tech_docs"                                     │    │
+│  │ → 返回：[] (空列表)                                          │    │
+│  │                                                              │    │
+│  │ ⚠️ 最坏情况发生！融合后结果为 0！                             │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Step 6: Rerank                                              │    │
+│  │                                                              │    │
+│  │ reranked_results = reranker.rerank(query, fused_results)    │    │
+│  │                                                              │    │
+│  │ → fused_results = [] (空列表)                               │    │
+│  │ → 调用 NoneReranker.validate_inputs()                       │    │
+│  │ → 抛出 ValueError("Candidates list cannot be empty")        │    │
+│  │                                                              │    │
+│  │ 💥 程序报错！                                                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**当前代码的问题**：
+
+```python
+# fusion.py:271-280
+if filters:
+    fused_results = self._apply_metadata_filters(fused_results, filters)
+
+try:
+    reranked_results = self._reranker.rerank(
+        query, fused_results, trace=trace  # ← fused_results 可能为空！
+    )
+    return reranked_results[:effective_top_k]
+except Exception:
+    return fused_results[:effective_top_k]  # ← 兜底处理
+```
+
+**分析**：
+1. `NoneReranker.validate_inputs()` 会检查空列表，抛出 `ValueError`
+2. 但外层有 `try-except`，会捕获异常并返回 `fused_results[:effective_top_k]`
+3. 如果 `fused_results` 为空，返回 `[]`
+
+**实际行为**：
+- 当前代码虽然有 `try-except` 兜底，但这是一种"被动"处理
+- 没有给用户明确的提示，用户不知道为什么没有结果
+- 可能掩盖了真正的问题（如：指定的集合不存在）
+
+**更好的处理方式**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                   推荐的改进方案                                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【改进 1】在融合后过滤前，检查 Dense 结果是否为空                     │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  if filters and not dense_results:                          │    │
+│  │      # Dense 预过滤后为空，说明没有符合条件的文档             │    │
+│  │      # 此时可以直接返回空，并给用户友好提示                   │    │
+│  │      logger.warning(f"No documents found matching filters: {filters}") │    │
+│  │      return []                                               │    │
+│  │                                                              │    │
+│  │  # 或者：抛出更明确的异常                                     │    │
+│  │  if filters and not dense_results and not sparse_results:   │    │
+│  │      raise NoMatchingDocumentsError(                         │    │
+│  │          f"No documents found matching filters: {filters}"   │    │
+│  │      )                                                       │    │
+│  │                                                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【改进 2】在过滤后，检查结果是否为空                                 │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  if filters:                                                 │    │
+│  │      fused_results = self._apply_metadata_filters(...)       │    │
+│  │                                                              │    │
+│  │      # 检查过滤后是否为空                                     │    │
+│  │      if not fused_results:                                   │    │
+│  │          logger.info(                                        │    │
+│  │              f"All {len(original_fused)} results were "      │    │
+│  │              f"filtered out by filters: {filters}"           │    │
+│  │          )                                                   │    │
+│  │          return []                                            │    │
+│  │                                                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  【改进 3】在 Rerank 前，显式处理空列表                               │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │                                                              │    │
+│  │  # 在调用 rerank 之前检查                                    │    │
+│  │  if not fused_results:                                       │    │
+│  │      # 直接返回空结果，不调用 rerank                         │    │
+│  │      return []                                               │    │
+│  │                                                              │    │
+│  │  reranked_results = self._reranker.rerank(                  │    │
+│  │      query, fused_results, trace=trace                       │    │
+│  │  )                                                           │    │
+│  │                                                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**改进后的代码建议**：
+
+```python
+def search(
+    self,
+    query: str,
+    top_k: Optional[int] = None,
+    filters: Optional[Dict[str, Any]] = None,
+    trace: Optional[Any] = None,
+) -> List[RetrievalResult]:
+    """Execute hybrid search pipeline."""
+    # ... 前面的代码不变 ...
+
+    # Dense 检索（预过滤）
+    dense_results = self._dense_retriever.retrieve(
+        query, top_k=effective_top_k, filters=filters, trace=trace
+    )
+
+    # Sparse 检索（无过滤）
+    sparse_results = self._sparse_retriever.retrieve(
+        keywords, top_k=effective_top_k, trace=trace
+    )
+
+    # 两边都没结果，直接返回空
+    if not dense_results and not sparse_results:
+        return []
+
+    # RRF 融合
+    fused_results = self._fusion.fuse(
+        [dense_results, sparse_results],
+        top_k=effective_top_k * 2,
+    )
+
+    # 融合后过滤
+    if filters:
+        original_count = len(fused_results)
+        fused_results = self._apply_metadata_filters(fused_results, filters)
+
+        # 【新增】检查过滤后是否为空
+        if not fused_results:
+            logger.info(
+                "All %d candidates were filtered out by filters: %s",
+                original_count,
+                filters,
+            )
+            return []  # 返回空结果，而不是继续调用 rerank
+
+    # 【新增】在 Rerank 前检查空列表
+    if not fused_results:
+        return []
+
+    # Rerank
+    try:
+        reranked_results = self._reranker.rerank(
+            query, fused_results, trace=trace
+        )
+        return reranked_results[:effective_top_k]
+    except Exception:
+        return fused_results[:effective_top_k]
+```
+
+**总结表**：
+
+| 场景 | Dense 结果 | Sparse 结果 | 融合后过滤结果 | 最终行为 |
+|------|-----------|-------------|----------------|----------|
+| 正常 | 有（已过滤）| 有（可能无效）| 有 | 正常返回 |
+| Dense 为空 | 空 | 有（但全无效）| **空** | ⚠️ 触发异常或返回空 |
+| 两边都为空 | 空 | 空 | 空 | 返回空 |
+| 过滤条件太严 | 少量 | 大量但无效 | **空** | ⚠️ 触发异常或返回空 |
+
+**核心结论**：
+
+1. **是的，可能出现过滤后结果为 0 的情况**
+2. **当前代码通过 `try-except` 兜底，可以处理这种情况**
+3. **但缺少明确的日志和用户提示**
+4. **建议增加显式的空结果检查和日志记录**
+
+---
+
+### 21.1 Reranker 是什么？
+
+**Reranker（重排序器）**：在检索结果融合后，对候选文档进行**精细相关性打分**，重新排序。
+
+```
+为什么需要 Reranker？
+──────────────────────
+┌─────────────────────────────────────────────────────────────────────┐
+│  Dense 检索（向量相似度）                                            │
+│  └─ 问题：只看语义相似，可能忽略关键词精确匹配                         │
+│                                                                      │
+│  Sparse 检索（BM25）                                                 │
+│  └─ 问题：只看词频，可能忽略语义理解                                  │
+│                                                                      │
+│  RRF 融合                                                            │
+│  └─ 问题：只是基于排名融合，没有重新评估相关性                         │
+│                                                                      │
+│  ✅ Reranker：对每个候选文档，与 Query 进行深度相关性评分             │
+│     → 更精准的排序                                                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 21.2 架构设计
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Reranker 架构                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  libs/ 层（可插拔后端）                                              │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ BaseReranker (抽象基类)                                      │    │
+│  │   └─ rerank(query, candidates) → sorted_candidates          │    │
+│  │   └─ validate_inputs()                                      │    │
+│  │   └─ get_backend_name()                                     │    │
+│  ├─────────────────────────────────────────────────────────────┤    │
+│  │ NoneReranker        → 直接返回原始顺序                       │    │
+│  │ CrossEncoderReranker → 使用 Cross-Encoder 模型打分          │    │
+│  │ LLMReranker         → 使用 LLM 进行相关性评分                │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         ▲                                           │
+│                         │ 创建                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ RerankerFactory                                             │    │
+│  │   └─ create(settings) → BaseReranker 实例                   │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  core/ 层（编排器）                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Reranker (core/query_engine/reranker.py)                    │    │
+│  │   └─ rerank(query, candidates) → RetrievalResult[]          │    │
+│  │   └─ 失败时 Graceful Degradation                            │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 21.3 三种后端实现
+
+#### 21.3.1 NoneReranker（直通模式）
+
+```python
+# src/libs/reranker/base_reranker.py:108-137
+
+class NoneReranker(BaseReranker):
+    """Passthrough reranker - 直接返回原始顺序。"""
+
+    def rerank(self, query, candidates, trace=None, **kwargs):
+        self.validate_inputs(query, candidates)
+        return list(candidates)  # 原样返回
+
+    def get_backend_name(self) -> str:
+        return "none"
+```
+
+**使用场景**：
+- 不需要重排序
+- Reranker 失败时的兜底
+- 快速测试/调试
+
+#### 21.3.2 CrossEncoderReranker（Cross-Encoder 模型）
+
+```python
+# src/libs/reranker/cross_encoder_reranker.py
+
+class CrossEncoderReranker(BaseReranker):
+    """使用 Cross-Encoder 模型进行重排序。
+
+    Cross-Encoder 特点：
+    - 联合编码 Query 和 Passage
+    - 比 Bi-Encoder 更准确，但更慢
+    - 典型模型：cross-encoder/ms-marco-MiniLM-L-6-v2
+    """
+
+    def rerank(self, query, candidates, trace=None, **kwargs):
+        # 1. 构建 query-passage 对
+        pairs = [(query, candidate["text"]) for candidate in candidates]
+
+        # 2. 模型打分
+        raw_scores = self.model.predict(pairs, batch_size=self.batch_size)
+
+        # 3. 归一化到 [0, 1]
+        normalized_scores = (raw_scores - min) / (max - min)
+
+        # 4. 按分数排序
+        scored_candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
+
+        return scored_candidates
+```
+
+**Cross-Encoder vs Bi-Encoder 对比**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Bi-Encoder（Dense 检索用的 Embedding 模型）                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  Query → Encoder → Vector A                                         │
+│  Doc  → Encoder → Vector B    → cosine(A, B)                       │
+│                                                                      │
+│  优点：向量可预计算，检索速度快                                      │
+│  缺点：Query 和 Doc 独立编码，无法捕捉交互信息                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  Cross-Encoder（Reranker 用的模型）                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  [Query, Doc] → Encoder → Score (直接输出相关性分数)                │
+│                                                                      │
+│  优点：联合编码，能捕捉 Query-Doc 交互，更准确                       │
+│  缺点：无法预计算，每个候选都需要推理，速度慢                        │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 21.3.2.1 CrossEncoder 深入学习 (2026-03-21)
+
+**Cross-Encoder 工作流程详解**：
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                Cross-Encoder Rerank 流程                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  输入：Query + 100 个候选文档（来自 RRF 融合）                       │
+│                                                                      │
+│  Step 1: 构建 Query-Doc Pairs                                       │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ pairs = [                                                    │    │
+│  │   ("What is RAG?", "RAG is retrieval-augmented..."),        │    │
+│  │   ("What is RAG?", "Python is a programming..."),           │    │
+│  │   ...                                                        │    │
+│  │ ]                                                            │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  Step 2: 批量推理                                                    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ raw_scores = model.predict(pairs, batch_size=32)            │    │
+│  │                                                              │    │
+│  │ 每个 pair 的内部处理：                                        │    │
+│  │ ┌───────────────────────────────────────────────────────┐    │    │
+│  │ │ Input: [CLS] What is RAG? [SEP] RAG is retrieval...   │    │    │
+│  │ │         ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓      │    │    │
+│  │ │ BERT: 12 层 Transformer (MiniLM-L-6-v2)               │    │    │
+│  │ │         ↓                                              │    │    │
+│  │ │ Output: [CLS] 向量 (384维)                             │    │    │
+│  │ │         ↓                                              │    │    │
+│  │ │ Linear: → 单个分数 (例如 8.5)                          │    │    │
+│  │ └───────────────────────────────────────────────────────┘    │    │
+│  │                                                              │    │
+│  │ 返回：raw_scores = [8.5, -3.2, 5.1, ...]  (numpy array)      │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  Step 3: Min-Max 归一化到 [0, 1]                                    │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ normalized = (score - min) / (max - min)                    │    │
+│  │ 例如：8.5 → (8.5 - (-10)) / (10 - (-10)) = 0.925           │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  Step 4: 按分数降序排序                                              │
+│                                                                      │
+│  输出：重排序后的候选文档列表                                        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**代码核心解读**：
+
+1. **懒加载模型** (Lazy Loading)
+```python
+# src/libs/reranker/cross_encoder_reranker.py:73-104
+
+@property
+def model(self) -> Any:
+    """Lazy-load the Cross-Encoder model."""
+    if self._model is None:
+        from sentence_transformers import CrossEncoder
+        self._model = CrossEncoder(
+            self.model_name,           # 例如 "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            max_length=self.max_length, # 通常 512
+        )
+    return self._model
+```
+
+**懒加载的原因**：
+- 模型加载需要 ~2 秒，占用 ~80MB 内存
+- 如果 `rerank.backend=none`，则完全不会加载，节省资源
+
+2. **批量推理** (Batch Inference)
+```python
+# src/libs/reranker/cross_encoder_reranker.py:149-159
+
+pairs = [(query, candidate.get("text", "")) for candidate in candidates]
+raw_scores = self.model.predict(pairs, batch_size=self.batch_size)
+```
+
+**批量推理的优势**：
+```
+假设 100 个候选，GPU 可并行处理 32 个
+
+单条推理（batch_size=1）：总耗时 = 100 × T
+批量推理（batch_size=32）：总耗时 ≈ 4 × T
+
+加速比 = 25 倍！
+```
+
+3. **Min-Max 归一化**
+```python
+# src/libs/reranker/cross_encoder_reranker.py:161-179
+
+if max_score > min_score:
+    normalized_scores = [
+        float((s - min_score) / (max_score - min_score))
+        for s in raw_scores
+    ]
+```
+
+**归一化的好处**：
+- 不同模型原始分数范围不同（可能是 [-10, 10] 或 [0, 1]）
+- 归一化到 [0, 1] 后，分数可比较、可融合、易读
+
+**典型 Cross-Encoder 模型对比**：
+
+| 模型 | 参数量 | 速度 | 精度 | 适用场景 |
+|------|--------|------|------|----------|
+| `ms-marco-TinyBERT-L-2-v2` | 4M | 最快 | 一般 | 资源受限 |
+| `ms-marco-MiniLM-L-4-v2` | 12M | 快 | 较好 | 平衡选择 |
+| `ms-marco-MiniLM-L-6-v2` | 23M | 中等 | 好 | **推荐默认** |
+| `ms-marco-MiniLM-L-12-v2` | 34M | 较慢 | 很好 | 高精度需求 |
+
+**如何启用 Cross-Encoder**：
+
+```yaml
+# config/settings.yaml
+
+rerank:
+  backend: cross_encoder  # 启用 Cross-Encoder
+  model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  top_m: 50  # 重排序的候选数量
+```
+
+#### 21.3.3 LLMReranker（大语言模型）
+
+```python
+# src/libs/reranker/llm_reranker.py
+
+class LLMReranker(BaseReranker):
+    """使用 LLM 对每个候选进行相关性评分。"""
+
+    def rerank(self, query, candidates, trace=None, **kwargs):
+        scored_candidates = []
+
+        for candidate in candidates:
+            # 1. 构造 Prompt
+            prompt = self.prompt_template.format(
+                query=query,
+                passage=candidate["text"][:2000]  # 截断避免超 token
+            )
+
+            # 2. 调用 LLM
+            response = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=10,
+                temperature=0.0,  # 确定性输出
+            )
+
+            # 3. 解析分数 (0-10)
+            llm_score = self._parse_score(response)
+
+            scored_candidates.append({
+                **candidate,
+                "rerank_score": llm_score,
+                "reranked_by": "llm",
+            })
+
+        # 4. 按分数排序
+        scored_candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
+        return scored_candidates
+```
+
+**Prompt 模板示例** (`config/prompts/rerank.txt`)：
+
+```
+You are a relevance scoring assistant. Given a query and a candidate
+text passage, rate how relevant the passage is to the query.
+
+Score from 0 to 10:
+- 0: Completely irrelevant
+- 5: Somewhat relevant
+- 10: Highly relevant and directly answers the query
+
+Query: {query}
+
+Passage: {passage}
+
+Relevance score (0-10):
+```
+
+### 21.4 Core 层编排器
+
+```python
+# src/core/query_engine/reranker.py
+
+class Reranker:
+    """Core 层重排序编排器。
+
+    职责：
+    1. 调用 libs.reranker 后端
+    2. 失败时 Graceful Degradation
+    3. 在 metadata 中标记 rerank 状态
+    """
+
+    def rerank(self, query, candidates, trace=None):
+        if not candidates:
+            return []
+
+        try:
+            # 调用后端
+            reranked_dicts = self._reranker.rerank(query, candidates_dicts, trace=trace)
+
+            # 标记 metadata
+            for result in results:
+                result.metadata["reranked"] = True
+
+            return results
+
+        except Exception:
+            # 失败时回退到原始顺序
+            for result in candidates:
+                result.metadata["rerank_fallback"] = True
+            return candidates
+```
+
+### 21.5 在查询流程中的位置
+
+```python
+# src/core/query_engine/fusion.py:266-280
+
+# 1. Dense 检索
+dense_results = self._dense_retriever.retrieve(...)
+
+# 2. Sparse 检索
+sparse_results = self._sparse_retriever.retrieve(...)
+
+# 3. RRF 融合
+fused_results = self._fusion.fuse([dense_results, sparse_results], ...)
+
+# 4. Metadata 过滤
+if filters:
+    fused_results = self._apply_metadata_filters(fused_results, filters)
+
+# 5. Rerank 重排序 ← 在这里！
+try:
+    reranked_results = self._reranker.rerank(query, fused_results, trace=trace)
+    return reranked_results[:effective_top_k]
+except Exception:
+    return fused_results[:effective_top_k]  # 失败时回退
+```
+
+**流程图**：
+
+```
+Query
+  │
+  ├──────────────┬──────────────┐
+  ▼              ▼              │
+Dense         Sparse           │
+Retriever     Retriever        │
+  │              │              │
+  ▼              ▼              │
+Dense         Sparse           │
+Results       Results          │
+  │              │              │
+  └──────┬───────┘              │
+         ▼                      │
+    RRF Fusion                  │
+         │                      │
+         ▼                      │
+   Fused Results                │
+         │                      │
+         ▼                      │
+   Metadata Filter              │
+   (可选)                       │
+         │                      │
+         ▼                      │
+┌────────────────┐              │
+│   Reranker     │◄─────────────┘
+│   重排序       │
+└───────┬────────┘
+        │
+        ▼
+  Final Top-K Results
+```
+
+### 21.6 三种后端对比
+
+| 后端 | 准确性 | 速度 | 成本 | 适用场景 |
+|------|--------|------|------|----------|
+| **none** | - | 最快 | 免费 | 不需要重排序、快速测试 |
+| **cross_encoder** | 高 | 中等 | 本地 GPU/CPU | 离线场景、高精度要求 |
+| **llm** | 最高 | 最慢 | API 调用费 | 最高精度要求、复杂语义理解 |
+
+### 21.7 配置方式
+
+```yaml
+# config/settings.yaml
+
+rerank:
+  backend: none  # none | cross_encoder | llm
+  model: cross-encoder/ms-marco-MiniLM-L-6-v2  # 仅 cross_encoder 使用
+```
+
+### 21.8 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| **Reranker 作用** | 在融合后对候选进行精细相关性重排序 |
+| **三种后端** | None（直通）、CrossEncoder（模型）、LLM（大模型） |
+| **Cross-Encoder** | 联合编码 Query-Doc，比 Bi-Encoder 更准确但更慢 |
+| **CrossEncoder 懒加载** | 首次调用时才加载模型，避免不必要的资源占用 |
+| **批量推理** | batch_size=32 可实现 25 倍加速 |
+| **Min-Max 归一化** | 将原始分数归一化到 [0, 1]，便于比较和融合 |
+| **LLM Reranker** | 最准确但最慢，通过 Prompt 让 LLM 打分 0-10 |
+| **Graceful Degradation** | 任何后端失败都回退到原始顺序 |
+| **调用时机** | RRF 融合 + Metadata 过滤之后 |
+| **工厂模式** | 通过 settings.yaml 切换后端，无需改代码 |
+
+#### 21.8.1 Q&A: Cross-Encoder 是 LLM 吗？(2026-03-21)
+
+**问**：Cross-Encoder 是什么？其本质是 LLM/大语言模型吗？和 LLM 方式有什么区别？只能用本地模型吗？
+
+**答**：
+
+**Cross-Encoder 不是生成式 LLM**，它是 **Encoder-only 架构的 BERT 类模型**。
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    模型架构分类                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│  Encoder-only (Cross-Encoder 属于此类)                              │
+│  ├─ 代表：BERT, RoBERTa, MiniLM                                     │
+│  ├─ 特点：双向注意力，擅长理解/分类/打分，不擅长生成                 │
+│  └─ 参数量：23M - 340M（小）                                         │
+│                                                                      │
+│  Decoder-only (LLM 属于此类)                                         │
+│  ├─ 代表：GPT, Claude, LLaMA, GLM                                   │
+│  ├─ 特点：单向注意力，擅长生成文本，也能理解/分类                     │
+│  └─ 参数量：7B - 175B+（大）                                         │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Cross-Encoder vs LLM Reranker 工作方式对比**：
+
+```
+Cross-Encoder:
+[CLS] Query [SEP] Document [SEP]
+    ↓ BERT Encoder (12层, 23M参数)
+[CLS]向量 → Linear → 分数(如 8.5)
+    ↓
+直接输出数值，速度快
+
+LLM Reranker:
+"请给相关性打分: Query:... Doc:..."
+    ↓ LLM (70B+参数)
+生成文本 "8"
+    ↓
+解析文本提取分数，速度慢
+```
+
+**详细对比**：
+
+| 维度 | Cross-Encoder | LLM Reranker |
+|------|---------------|--------------|
+| 模型类型 | Encoder-only (BERT) | Decoder-only (GPT/GLM) |
+| 参数量 | 23M - 340M | 7B - 175B+ |
+| 输出方式 | 直接输出数值 | 生成文本，需解析 |
+| 速度 | 快（批量推理 ~100ms） | 慢（逐个生成 ~30-60s） |
+| 成本 | 本地免费 | API 按token计费 |
+| 精度 | 高 | 最高 |
+| 部署方式 | **本地模型** | 本地或 API |
+
+**关于"只能本地部署"**：
+
+当前项目通过 `sentence_transformers.CrossEncoder` 加载模型：
+- 模型从 HuggingFace Hub 下载到本地缓存
+- 推理完全在本地执行（CPU/GPU）
+- **不支持远程 API**（未实现适配器）
+
+**为什么 Cross-Encoder 选择本地模型？**
+1. 推理量大（每 Query 需打分 50-100 候选），API 成本高
+2. 本地推理更快，无网络延迟
+3. 文档内容不发送第三方，保护隐私
+4. 模型小（23M），本地部署门槛低
+
+#### 21.8.2 Q&A: 项目是否包含粗排和精排？(2026-03-21)
+
+**问**：目前我的项目是同时包含了粗排和精排吗？粗排用的是 Bi-Encoder 吗？精排用的是 Cross-Encoder 吗？
+
+**答**：
+
+**是的，项目同时包含了粗排和精排的完整能力**（但当前配置只启用了粗排）。
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                项目的粗排 + 精排架构                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  【粗排阶段】（已启用）                                               │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ DenseRetriever (Bi-Encoder 方式)                            │    │
+│  │   ├─ Query → Embedding Model → Vector                       │    │
+│  │   ├─ Docs (预先向量化存入 ChromaDB)                         │    │
+│  │   └─ cosine(Query Vector, Doc Vector) → Top-20              │    │
+│  │                                                              │    │
+│  │ SparseRetriever (BM25，词汇匹配)                             │    │
+│  │   ├─ Query → 分词 → 关键词                                   │    │
+│  │   ├─ BM25 Index (预先构建)                                   │    │
+│  │   └─ TF-IDF + IDF → Top-20                                  │    │
+│  │                                                              │    │
+│  │ RRF Fusion → 合并两路结果 → Top-40                          │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│  【精排阶段】（当前配置为 none，未启用）                              │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ Reranker (可选: CrossEncoder / LLM / None)                  │    │
+│  │   ├─ cross_encoder: Query+Doc → 模型打分 → 重排序           │    │
+│  │   ├─ llm: Prompt → LLM → 分数 → 重排序                      │    │
+│  │   └─ none: 直接返回（当前配置）                              │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                         │                                            │
+│                         ▼                                            │
+│                   Final Top-K Results                                │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**当前配置状态** (`config/settings.yaml`)：
+
+```yaml
+# 检索配置（粗排）
+retrieval:
+  sparse_backend: bm25      # ✅ 已启用 BM25 稀疏检索
+  fusion_algorithm: rrf     # ✅ 已启用 RRF 融合
+  top_k_dense: 20           # Dense 召回 20 个
+  top_k_sparse: 20          # Sparse 召回 20 个
+  top_k_final: 10           # 最终返回 10 个
+
+# 重排配置（精排）
+rerank:
+  backend: none             # ❌ 当前未启用精排
+  model: ""                 # 未配置模型
+  top_m: 50
+```
+
+**粗排是否用 Bi-Encoder？**
+
+**是的，DenseRetriever 就是 Bi-Encoder 方式**：
+
+```
+Bi-Encoder 方式（用于粗排/召回）：
+┌─────────────────────────────────────────┐
+│  摄取阶段（离线）                        │
+│  Doc → Encoder → Vector → 存入 ChromaDB │
+│  （所有文档预先向量化）                   │
+├─────────────────────────────────────────┤
+│  查询阶段（在线）                        │
+│  Query → Encoder → Vector               │
+│  Vector Search in ChromaDB → Top-K      │
+│  （只需编码 Query，速度快）              │
+└─────────────────────────────────────────┘
+```
+
+代码位置：`src/core/query_engine/dense_retriever.py`
+
+```python
+class DenseRetriever:
+    """Dense vector retriever.
+
+    Combines an embedding client with a vector store to perform semantic search.
+    The retriever converts the query into a dense vector using the embedding
+    client, then queries the vector store for similar vectors.
+    """
+```
+
+**精排是否用 Cross-Encoder？**
+
+**是的，项目已实现 CrossEncoderReranker**，但当前配置为 `none`（未启用）。
+
+如需启用精排：
+
+```yaml
+rerank:
+  backend: cross_encoder  # 启用 Cross-Encoder 精排
+  model: cross-encoder/ms-marco-MiniLM-L-6-v2
+  top_m: 50
+```
+
+**粗排 vs 精排对比总结**：
+
+| 阶段 | 方法 | 速度 | 准确性 | 当前状态 |
+|------|------|------|--------|----------|
+| 粗排 | Dense (Bi-Encoder) + Sparse (BM25) + RRF | 快 | 中等 | ✅ 已启用 |
+| 精排 | Cross-Encoder / LLM | 慢 | 高 | ❌ 未启用 |
+
+**推荐使用场景**：
+- **粗排**：大规模召回（从百万文档召回 Top-20~100）
+- **精排**：小规模重排序（对 20-50 候选精细打分）
+
+---
+
+## 学习总结（最新更新）
+
+### 已完成阶段
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| Phase 1-6 | 基础学习 | ✅ 已完成 |
+| Phase 7 | Ingest 阶段详解 | ✅ 已完成 (2026-03-14) |
+| Phase 7.3 | Split 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4 | Transform 阶段深入 | ✅ 已完成 (2026-03-14) |
+| Phase 7.4.1 | Transform 阶段 RAG 专家视角 | ✅ 已完成 (2026-03-14) |
+| Phase 7.5 | Encode 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 7.6 | Store 阶段详解 (RAG 专家视角) | ✅ 已完成 (2026-03-14) |
+| Phase 10 | MCP Server 架构概览 | ✅ 已完成 (2026-03-13) |
+| Phase 11 | MCP Server 工具详解 | ✅ 已完成 (2026-03-14) |
+| Phase 12 | 三个工具的协作关系 | ✅ 已完成 (2026-03-14) |
+| Phase 13 | list_collections 与 query_knowledge_hub 的关系 | ✅ 已完成 (2026-03-14) |
+| Phase 14 | Collection 的创建时机与命名规则 | ✅ 已完成 (2026-03-14) |
+| Phase 15 | list_collections 应该返回什么？（设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 16 | 不指定 --collection 时的行为与智能分类设计 | ✅ 已完成 (2026-03-14) |
+| Phase 17 | Collection 是否真的必要？（深度设计分析） | ✅ 已完成 (2026-03-14) |
+| Phase 18 | IDF (Inverse Document Frequency) 详解 | ✅ 已完成 (2026-03-16) |
+| Phase 18.1 | IDF 代码注释补充 | ✅ 已完成 (2026-03-16) |
+| Phase 19 | RRF (Reciprocal Rank Fusion) 详解 | ✅ 已完成 (2026-03-18) |
+| Phase 20 | Metadata Filter (元数据过滤) 详解 | ✅ 已完成 (2026-03-18) |
+| Phase 21 | Reranker 重排序详解 | ✅ 已完成 (2026-03-19) |
+| Phase 21.1 | CrossEncoder 深入学习 | ✅ 已完成 (2026-03-21) |
