@@ -13,11 +13,15 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0.0",
     "langchain-text-splitters>=0.1.0",
-    "chromadb>=0.4.0",
+    # 锁定 chromadb 版本以避免与 protobuf 版本冲突
+    # chromadb 1.5.x 与 protobuf 4.x+ 不兼容，使用稳定的 1.4.x 版本
+    "chromadb>=0.4.0,<1.5",
     "pillow>=10.0.0",
     "markitdown[pdf]>=0.0.1",
     "reportlab>=4.0.0",
     "mcp>=1.0.0",
+    # CHM文档支持：先用 hh.exe 解压 CHM，再用 markdownify 转 Markdown
+    "markdownify>=0.11.0",
 ]
 
 [project.optional-dependencies]
@@ -26,8 +30,11 @@ dev = [
     "pytest-cov>=4.0",
 ]
 
+# 使用 src 布局，将 src 作为顶级包
+# 这样 "from src.xxx" 导入在 editable install 后可以正常工作
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["src*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
