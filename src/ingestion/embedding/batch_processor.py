@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, List, Optional, Callable
 
 from src.core.types import Chunk, ChunkRecord
 from src.core.settings import Settings
+from src.observability.logger import get_logger
 
 if TYPE_CHECKING:
     from src.core.trace.trace_context import TraceContext
@@ -98,6 +99,7 @@ class BatchProcessor:
 
         self._dense_encoder_initialized: bool = False
         self._sparse_encoder_initialized: bool = False
+        self._logger = get_logger(__name__)
 
     @property
     def dense_encoder(self) -> "DenseEncoder":
@@ -199,11 +201,31 @@ class BatchProcessor:
         results: List[BatchResult] = []
         total_start_time = time.perf_counter()
 
+        total_batches = len(batches)
+        self._logger.info(f"Starting batch processing: {len(chunks)} chunks in {total_batches} batches (batch_size={self._batch_size})")
+
         for batch_index, batch in enumerate(batches):
             batch_result = self._process_single_batch(batch, batch_index, trace=trace)
             results.append(batch_result)
 
+            # 每处理 10 个批次输出一次进度日志
+            if (batch_index + 1) % 10 == 0 or batch_index == total_batches - 1:
+                chunks_processed = (batch_index + 1) * self._batch_size
+                if batch_index == total_batches - 1:
+                    chunks_processed = len(chunks)
+                self._logger.info(
+                    f"Batch progress: {batch_index + 1}/{total_batches} batches "
+                    f"({chunks_processed}/{len(chunks)} chunks, "
+                    f"{batch_result.duration_ms:.0f}ms for last batch)"
+                )
+
         total_duration_ms = (time.perf_counter() - total_start_time) * 1000
+
+        self._logger.info(
+            f"Batch processing completed: {len(chunks)} chunks in {total_batches} batches, "
+            f"total time: {total_duration_ms/1000:.1f}s "
+            f"(avg {total_duration_ms/total_batches:.0f}ms per batch)"
+        )
 
         return BatchProcessingResult(
             total_chunks=len(chunks),
