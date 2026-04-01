@@ -38,6 +38,9 @@ class ChromaStore(BaseVectorStore):
         _collection_name: Name of the collection.
     """
 
+    # ChromaDB max batch size limit (typically ~5461), use safe threshold
+    MAX_BATCH_SIZE = 5000
+
     def __init__(self, settings: Settings, **kwargs: Any) -> None:
         """Initialize ChromaDB vector store.
 
@@ -118,13 +121,20 @@ class ChromaStore(BaseVectorStore):
             metadatas.append(metadata)
 
         try:
-            # ChromaDB's upsert is idempotent - updates if ID exists, inserts otherwise
-            self._collection.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                documents=documents,
-                metadatas=metadatas,
-            )
+            # ChromaDB has a max batch size limit (typically ~5461)
+            # Split large batches into smaller chunks to avoid ValueError
+            total_records = len(ids)
+            for i in range(0, total_records, self.MAX_BATCH_SIZE):
+                batch_start = i
+                batch_end = min(i + self.MAX_BATCH_SIZE, total_records)
+
+                # 分批插入 ChromaDB
+                self._collection.upsert(
+                    ids=ids[batch_start:batch_end],
+                    embeddings=embeddings[batch_start:batch_end],
+                    documents=documents[batch_start:batch_end],
+                    metadatas=metadatas[batch_start:batch_end],
+                )
         except Exception as e:
             raise RuntimeError(f"ChromaDB upsert failed: {e}") from e
 
