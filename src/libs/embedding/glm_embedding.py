@@ -34,8 +34,14 @@ class GLMEmbedding(BaseEmbedding):
 
     DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 
+    # GLM Embedding 模型维度对照表
+    # embedding-2: 1024 维
+    # embedding-3: 1024 维（基础版）
+    # embedding-3-pro: 2048 维（专业版，更高精度）
     MODEL_DIMENSIONS = {
         "embedding-2": 1024,
+        "embedding-3": 1024,
+        "embedding-3-pro": 2048,
     }
 
     def __init__(self, settings: Settings, **kwargs: Any):
