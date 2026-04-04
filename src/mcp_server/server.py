@@ -96,7 +96,7 @@ class MCPServer:
         @self.server.call_tool()
         async def handle_call_tool(
             name: str, arguments: dict
-        ) -> list[TextContent | dict]:
+        ) -> list[TextContent]:
             """处理工具调用。"""
             logger.info("Calling tool: %s with arguments: %s", name, arguments)
 
