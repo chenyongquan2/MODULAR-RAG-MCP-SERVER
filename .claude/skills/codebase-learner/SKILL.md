@@ -7,7 +7,33 @@ description: "Guide users through learning and understanding the current codebas
 
 ## Overview
 
-Guide users through a structured learning journey to understand the current codebase. This skill provides progressive learning paths, architecture explanations, and hands-on exercises tailored to the user's experience level.
+**Purpose**: 引导开发者系统化地理解当前代码库的架构、设计模式和核心模块，提供渐进式学习路径和实践练习。
+
+**Target Audience**:
+- 新加入项目的开发者（快速上手）
+- 想深入理解代码结构的学习者（深度学习）
+- 需要掌握特定模块的工程师（精准聚焦）
+
+**Key Features**:
+1. **自适应学习路径**：根据用户经验水平（初级/中级/高级）定制深度和进度
+2. **进度持久化**：自动追踪学习进度到 `learning-journey.md`，支持断点续学
+3. **结构化知识体系**：覆盖项目概览、架构设计、核心模块、配置系统、测试策略等完整维度
+4. **实践导向**：每阶段包含代码示例、动手练习和思考题
+5. **知识索引**：学习记录支持压缩整理，生成核心知识索引便于快速查阅
+
+**Typical Use Cases**:
+- 新成员 Onboarding：快速了解项目结构和编码规范
+- 代码审查前：深入理解模块设计和数据流
+- 功能开发前：掌握相关组件的接口和用法
+- 知识沉淀：定期整理学习记录形成项目知识库
+
+**Outcome**:
+用户将能够：
+- 清晰描述项目的整体架构和数据流
+- 理解可插拔架构的设计原理和实现方式
+- 熟练使用配置系统切换组件提供者
+- 独立阅读和修改代码库中的模块
+- 拥有结构化的学习笔记供后续查阅
 
 ## Trigger
 
