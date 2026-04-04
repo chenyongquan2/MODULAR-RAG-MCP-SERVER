@@ -1,7 +1,12 @@
-"""主检索工具 - query_knowledge_hub。"""
+"""主检索工具 - query_knowledge_hub。
+
+基于混合检索（Dense + Sparse + RRF + Rerank）查询知识库，
+支持纯检索模式和 LLM 总结模式。
+"""
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict
 
 from mcp.types import TextContent
@@ -21,19 +26,22 @@ class QueryKnowledgeHubTool:
 
     这是 MCP Server 的核心工具，负责：
     1. 调用 HybridSearch 进行混合检索（Dense + Sparse + RRF + Rerank）
-    2. 调用 ResponseBuilder 生成响应（LLM + 引用）
-    3. 返回结构化的响应内容（Markdown + Citations）
+    2. 支持纯检索模式和 LLM 总结模式（通过 use_llm 参数控制）
+    3. 纯检索模式返回格式化的检索结果，不调用 LLM
+    4. LLM 总结模式调用 ResponseBuilder 生成响应（LLM + 引用）
 
     Design Principles Applied:
     - Pluggable: 所有组件通过注入提供
     - Fail-Fast: 验证输入参数
     - Graceful Degradation: 检索失败时返回友好提示
+    - 职责清晰: 检索层和生成层通过参数解耦
 
     Example:
         >>> tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
-        >>> result = await tool.execute({"query": "How to configure LLM?", "top_k": 5})
-        >>> result[0].text  # Markdown 内容
-        >>> result[1]  # citations 结构
+        >>> # 纯检索模式
+        >>> result = await tool.execute({"query": "HistoryRequest", "top_k": 5, "use_llm": False})
+        >>> # LLM 总结模式
+        >>> result = await tool.execute({"query": "What is RAG?", "top_k": 5, "use_llm": True})
     """
 
     def __init__(
@@ -58,17 +66,19 @@ class QueryKnowledgeHubTool:
         self._hybrid_search = hybrid_search
         self._response_builder = response_builder
 
-    async def execute(self, arguments: Dict[str, Any]) -> list[TextContent | dict[str, Any]]:
+    async def execute(self, arguments: Dict[str, Any]) -> list[TextContent]:
         """执行知识库查询。
 
         Args:
             arguments: 工具参数，包含：
                 - query (str, required): 用户查询
                 - top_k (int, optional): 返回结果数量，默认 10
+                - use_llm (bool, optional): 是否启用 LLM 生成，默认 False（纯检索模式）
                 - filters (dict, optional): 元数据过滤条件
 
         Returns:
-            包含 Markdown 内容和引用列表的响应
+            use_llm=True 时: 包含 Markdown 内容和引用列表的响应
+            use_llm=False 时: 格式化的检索结果
 
         Raises:
             ValueError: 如果参数无效
@@ -82,12 +92,15 @@ class QueryKnowledgeHubTool:
         if not isinstance(top_k, int) or top_k <= 0:
             raise ValueError("top_k must be a positive integer")
 
+        use_llm: bool = bool(arguments.get("use_llm", False))
+
         filters: Dict[str, Any] = arguments.get("filters", {})
 
         logger.info(
-            "Executing query_knowledge_hub: query='%s', top_k=%d, filters=%s",
+            "Executing query_knowledge_hub: query='%s', top_k=%d, use_llm=%s, filters=%s",
             query,
             top_k,
+            use_llm,
             filters,
         )
 
@@ -111,40 +124,56 @@ class QueryKnowledgeHubTool:
                     )
                 ]
 
-            # 3. 构建响应（LLM 生成 + 引用）
-            structured_content: StructuredContent = self._response_builder.build(
-                query=query,
-                results=results,
-                trace=None,
-            )
+            # 3. 根据模式决定返回内容
+            if use_llm:
+                # LLM 总结模式：调用 LLM 生成响应
+                structured_content: StructuredContent = self._response_builder.build(
+                    query=query,
+                    results=results,
+                    trace=None,
+                )
 
-            logger.info(
-                "Response built: %d characters, %d citations",
-                len(structured_content.markdown),
-                len(structured_content.citations),
-            )
+                logger.info(
+                    "Response built: %d characters, %d citations",
+                    len(structured_content.markdown),
+                    len(structured_content.citations),
+                )
 
-            # 4. 构建返回格式
-            # MCP 工具返回格式：[TextContent, dict(citations)]
-            return [
-                TextContent(
-                    type="text",
-                    text=structured_content.markdown,
-                ),
-                {
-                    "citations": [
-                        {
-                            "id": c.id,
-                            "source": c.source,
-                            "page": c.page,
-                            "chunk_id": c.chunk_id,
-                            "score": c.score,
-                            "text": c.text,
-                        }
-                        for c in structured_content.citations
-                    ]
-                },
-            ]
+                # 将 citations 信息附加到文本末尾
+                citations_text = "\n\n=== Citations ===\n"
+                for c in structured_content.citations:
+                    citations_text += f"\n[{c.id}] Source: {c.source}\n"
+                    if c.page is not None:
+                        citations_text += f"Page: {c.page}\n"
+                    citations_text += f"Chunk ID: {c.chunk_id}\n"
+                    citations_text += f"Score: {c.score:.4f}\n"
+                    citations_text += f"Text: {c.text[:100]}...\n"
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=structured_content.markdown + citations_text,
+                    ),
+                ]
+            else:
+                # 纯检索模式：直接返回格式化的检索结果
+                formatted: str = self._format_search_results(results)
+
+                logger.info("Formatted search results: %d characters", len(formatted))
+
+                # MCP 协议要求返回值必须是 TextContent 或其他 Content 类型
+                # 将 raw_results 作为 JSON 字符串附加到文本末尾
+                raw_results_json = self._serialize_results(results)
+                formatted_with_json = (
+                    formatted + "\n\n=== Raw Results (JSON) ===\n" + json.dumps(raw_results_json, ensure_ascii=False, indent=2)
+                )
+
+                return [
+                    TextContent(
+                        type="text",
+                        text=formatted_with_json,
+                    ),
+                ]
 
         except ValueError:
             # 重新抛出参数验证错误
@@ -158,6 +187,46 @@ class QueryKnowledgeHubTool:
                     text=f"查询过程中发生错误：{str(e)}。请稍后重试。",
                 )
             ]
+
+    def _format_search_results(self, results: list[RetrievalResult]) -> str:
+        """格式化检索结果（类似 CLI 输出格式）。
+
+        Args:
+            results: 检索结果列表
+
+        Returns:
+            格式化的文本字符串
+        """
+        lines = []
+        for i, r in enumerate(results, 1):
+            lines.append(f"[{i}] Score: {r.score:.4f}")
+            lines.append(f"    Chunk ID: {r.chunk_id}")
+            if r.metadata.get("collection"):
+                lines.append(f"    Collection: {r.metadata['collection']}")
+            # 文本预览：最多显示 200 字符
+            preview = r.text[:200] + "..." if len(r.text) > 200 else r.text
+            lines.append(f"    Text: {preview}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _serialize_results(self, results: list[RetrievalResult]) -> list[dict]:
+        """序列化检索结果为 JSON 列表。
+
+        Args:
+            results: 检索结果列表
+
+        Returns:
+            序列化后的字典列表
+        """
+        return [
+            {
+                "chunk_id": r.chunk_id,
+                "text": r.text,
+                "score": r.score,
+                "metadata": r.metadata,
+            }
+            for r in results
+        ]
 
     @staticmethod
     def get_tool_definition() -> Dict[str, Any]:
@@ -203,6 +272,16 @@ class QueryKnowledgeHubTool:
                         "default": 10,
                         "minimum": 1,
                         "maximum": 50,
+                    },
+                    "use_llm": {
+                        "type": "boolean",
+                        "description": (
+                            "是否启用 LLM 生成总结："
+                            "false = 仅返回检索结果（纯检索模式），"
+                            "true = 调用 LLM 生成答案（LLM 总结模式）。"
+                            "默认 false，适合需要原始检索结果或快速响应的场景。"
+                        ),
+                        "default": False,
                     },
                     "filters": {
                         "type": "object",
