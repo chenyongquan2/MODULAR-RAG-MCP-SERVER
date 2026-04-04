@@ -70,12 +70,14 @@ class GLMLLM(BaseLLM):
     def chat(
         self,
         messages: List[dict[str, str]],
+        trace: Optional[Any] = None,
         **kwargs: Any,
     ) -> str:
         """Generate a chat completion using GLM API.
 
         Args:
             messages: List of message dictionaries with 'role' and 'content'.
+            trace: Optional TraceContext for observability (reserved).
             **kwargs: Additional parameters (temperature, max_tokens, etc.).
 
         Returns:
@@ -84,6 +86,10 @@ class GLMLLM(BaseLLM):
         Raises:
             RuntimeError: If the API call fails.
         """
+        # trace is reserved for observability, not passed to API
+        # Use pop() to remove and capture the value if present
+        _ = kwargs.pop("trace", None)
+
         try:
             response = self._client.chat.completions.create(
                 model=self.model,
