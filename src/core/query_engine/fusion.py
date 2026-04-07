@@ -84,6 +84,7 @@ class Fusion:
         chunk_scores: Dict[str, float] = {}
         chunk_data: Dict[str, RetrievalResult] = {}
 
+        #这里的result_lists=[sparse_result, dense_result]，每个result_list都是一个List[RetrievalResult]
         for result_list in result_lists:
             if not result_list:
                 continue
