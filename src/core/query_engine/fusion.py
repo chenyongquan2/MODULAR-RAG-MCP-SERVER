@@ -87,7 +87,13 @@ class Fusion:
         for result_list in result_lists:
             if not result_list:
                 continue
-
+            
+            # start=1 只影响 enumerate 产生的序号（index / rank）从几开始，不会影响遍历元素本身的顺序或起始位置。
+            # enumerate() 用来在遍历列表的同时拿到“索引/序号”
+            # enumerate(iterable, start=1) 的本质是：给你遍历到的每个元素配一个“计数器”，
+            # 这个计数器从 1 开始递增，但元素仍然是按原来的顺序从第一个元素开始取。
+            # rank在这里就是index的位置，从1开始递增，表示当前元素在这个列表中的排名位置。
+            # rank=1 表示"第1名"，人类容易理解
             for rank, result in enumerate(result_list, start=1):
                 if not result.chunk_id:
                     continue
@@ -95,10 +101,8 @@ class Fusion:
                 rrf_score = 1.0 / (self._k + rank)
 
                 if result.chunk_id in chunk_scores:
+                    # 同一 chunk_id 的 text/metadata 在 dense/sparse 中相同，无需更新
                     chunk_scores[result.chunk_id] += rrf_score
-                    existing = chunk_data[result.chunk_id]
-                    if result.score > existing.score:
-                        chunk_data[result.chunk_id] = result
                 else:
                     chunk_scores[result.chunk_id] = rrf_score
                     chunk_data[result.chunk_id] = result
