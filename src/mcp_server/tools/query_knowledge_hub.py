@@ -11,7 +11,7 @@ from typing import Any, Dict
 
 from mcp.types import TextContent
 
-from src.core.query_engine.fusion import HybridSearch
+from src.core.query_engine.hybrid_search import HybridSearch
 from src.core.response.response_builder import ResponseBuilder
 from src.core.response.citation_generator import StructuredContent
 from src.core.types import RetrievalResult

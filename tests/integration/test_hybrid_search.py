@@ -3,7 +3,8 @@
 import pytest
 from unittest.mock import Mock, MagicMock
 
-from src.core.query_engine.fusion import Fusion, HybridSearch
+from src.core.query_engine.fusion import Fusion
+from src.core.query_engine.hybrid_search import HybridSearch
 from src.core.query_engine.query_processor import QueryProcessor
 from src.core.types import RetrievalResult
 

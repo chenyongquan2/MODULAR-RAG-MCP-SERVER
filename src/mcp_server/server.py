@@ -15,7 +15,7 @@ from mcp.types import (
 )
 
 from src.core.settings import load_settings, SettingsError
-from src.core.query_engine.fusion import HybridSearch
+from src.core.query_engine.hybrid_search import HybridSearch
 from src.core.response.response_builder import ResponseBuilder
 from src.mcp_server.tools.query_knowledge_hub import QueryKnowledgeHubTool
 from src.mcp_server.tools.list_collections import ListCollectionsTool

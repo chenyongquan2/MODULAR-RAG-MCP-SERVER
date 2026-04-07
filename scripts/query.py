@@ -23,7 +23,7 @@ import sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from src.core.settings import load_settings
-from src.core.query_engine.fusion import HybridSearch
+from src.core.query_engine.hybrid_search import HybridSearch
 from src.observability.logger import get_logger
 
 logger = get_logger(__name__)

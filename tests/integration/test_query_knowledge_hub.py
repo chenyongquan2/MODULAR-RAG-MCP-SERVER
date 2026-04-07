@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock
 
 from src.core.types import RetrievalResult
-from src.core.query_engine.fusion import HybridSearch
+from src.core.query_engine.hybrid_search import HybridSearch
 from src.core.response.response_builder import ResponseBuilder
 from src.core.response.citation_generator import StructuredContent
 from src.mcp_server.tools.query_knowledge_hub import QueryKnowledgeHubTool
@@ -58,7 +58,7 @@ class TestQueryKnowledgeHubTool:
 
     @pytest.mark.asyncio
     async def test_execute_with_valid_query(self):
-        """测试有效查询的执行。"""
+        """测试有效查询的执行（纯检索模式）。"""
         hybrid_search = MockHybridSearch()
         response_builder = MockResponseBuilder()
         tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
@@ -68,23 +68,37 @@ class TestQueryKnowledgeHubTool:
             "top_k": 5,
         })
 
-        assert len(result) == 2
+        # 纯检索模式（use_llm=False）只返回一个 TextContent
+        assert len(result) == 1
         assert result[0].type == "text"
-        assert "RAG system combines retrieval and generation [1]" in result[0].text
-        assert "Hybrid search uses dense and sparse retrieval [2]" in result[0].text
+        # 验证包含格式化结果
+        assert "RAG system combines retrieval and generation" in result[0].text
+        assert "chunk_001" in result[0].text
+        assert "chunk_002" in result[0].text
+        # 验证包含 Raw Results JSON
+        assert "Raw Results (JSON)" in result[0].text
 
-        citations = result[1]["citations"]
-        assert len(citations) == 2
-        assert citations[0]["id"] == 1
-        assert citations[0]["source"] == "doc.pdf"
-        assert citations[0]["page"] == 10
-        assert citations[1]["id"] == 2
-        assert citations[1]["source"] == "doc2.pdf"
-        assert citations[1]["page"] == 20
+    @pytest.mark.asyncio
+    async def test_execute_with_llm_mode(self):
+        """测试 LLM 总结模式（use_llm=True）。"""
+        hybrid_search = MockHybridSearch()
+        response_builder = MockResponseBuilder()
+        tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
+
+        result = await tool.execute({
+            "query": "What is RAG?",
+            "top_k": 5,
+            "use_llm": True,
+        })
+
+        # LLM 模式返回一个包含 markdown 和 citations 的 TextContent
+        assert len(result) == 1
+        assert result[0].type == "text"
+        assert "Citations" in result[0].text
 
     @pytest.mark.asyncio
     async def test_execute_with_filters(self):
-        """测试带过滤条件的查询。"""
+        """测试带过滤条件的查询（纯检索模式）。"""
         hybrid_search = MockHybridSearch()
         response_builder = MockResponseBuilder()
         tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
@@ -95,14 +109,15 @@ class TestQueryKnowledgeHubTool:
             "filters": {"collection": "docs"},
         })
 
-        # Verify result structure
-        assert len(result) == 2
+        # 纯检索模式返回一个 TextContent
+        assert len(result) == 1
         assert result[0].type == "text"
-        assert "citations" in result[1]
+        # 验证返回了格式化结果
+        assert "Raw Results (JSON)" in result[0].text
 
     @pytest.mark.asyncio
     async def test_execute_with_default_top_k(self):
-        """测试使用默认 top_k 值。"""
+        """测试使用默认 top_k 值（纯检索模式）。"""
         hybrid_search = MockHybridSearch()
         response_builder = MockResponseBuilder()
         tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
@@ -111,7 +126,9 @@ class TestQueryKnowledgeHubTool:
             "query": "test query",
         })
 
-        assert len(result) == 2
+        # 纯检索模式返回单个 TextContent
+        assert len(result) == 1
+        assert result[0].type == "text"
 
     @pytest.mark.asyncio
     async def test_execute_with_empty_query_raises_error(self):
