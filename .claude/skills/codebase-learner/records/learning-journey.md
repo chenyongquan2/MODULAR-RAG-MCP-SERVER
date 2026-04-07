@@ -27,7 +27,7 @@
 | 14 | 评估系统 | 🔲 待学习 | - | - |
 | 15 | Streamlit Dashboard | 🔲 待学习 | - | - |
 
-**当前进度**: Phase 7 进行中 - Sparse 检索部分已完成
+**当前进度**: Phase 7 进行中 - Sparse 检索部分已完成，Splitter 深度分析完成（含案例+改善方案）
 **下次学习建议**: Phase 7 继续 - Dense 检索 + RRF 融合算法
 
 ---
@@ -1303,6 +1303,1943 @@ DEFAULT_SEPARATORS = [
 | 文档类型差异 | 技术文档 10-15%，代码 5-10%，对话 15-20%，法律 20% |
 | 陷阱识别 | 过度依赖 overlap、重复内容噪音 |
 | 最佳实践 | 合理设置 chunk_size + separators + overlap 三者配合 |
+
+---
+
+### 7.5 Deep Dive: Chunk 切分能否保证完整性？(2026-04-04)
+
+> **问题**: chunk 切分可以保证每个 chunk 的切分都是正确的吗？
+> **问题**: 如何确保某个本应该完整的 chunk 的内容不会被切割为两半呢？
+> **学习时长**: ~90min（包含案例分析）
+
+#### 核心回答
+
+**当前的 RecursiveSplitter 有限度地保证切分正确性，但无法完全保证语义完整性。**
+
+---
+
+#### 一、当前实现的切分策略
+
+**位置**: `src/libs/splitter/recursive_splitter.py:36-44`
+
+```python
+DEFAULT_SEPARATORS = [
+    "\n## ",      # 优先在二级标题处切分
+    "\n### ",     # 其次在三级标题处切分
+    "\n\n",       # 然后在段落之间切分
+    "\n",         # 接着在行之间切分
+    ". ",         # 然后在句子之间切分
+    " ",          # 最后在单词之间切分
+    "",           # 最坏情况按字符切分
+]
+```
+
+**工作原理**:
+1. 先尝试用最高优先级的分隔符（如 `##`）切分
+2. 如果某个 chunk 仍然超过 `chunk_size`，则**递归**地用下一优先级的分隔符继续切分
+3. 直到所有 chunk 都在 `chunk_size` 限制内
+
+#### 能保证的 ✅
+
+| 保证项 | 说明 | 示例 |
+|--------|------|------|
+| 格式完整性 | 不会把标题、段落、句子从中间切断 | `## 完整标题` 不会变成 `## 完整...` |
+| 重叠机制 | `chunk_overlap` 确保相邻 chunk 有重叠 | 缓解边界信息丢失 |
+| 递归降级 | 从高优先级到低优先级逐步降级 | 先标题 → 段落 → 句子 → 字符 |
+
+#### 不能保证的 ❌
+
+| 问题 | 原因 | 示例 |
+|------|------|------|
+| 语义边界 | 无法理解语义，只按分隔符切分 | 长代码块可能被强行切分 |
+| 逻辑单元 | 无法识别完整的逻辑块 | 一个函数定义可能被切断 |
+| 特殊格式 | 只支持预定义的 Markdown 分隔符 | 自定义格式可能失效 |
+
+#### 测试验证情况
+
+**位置**: `tests/unit/test_recursive_splitter_lib.py:151`
+
+```python
+def test_markdown_headers_not_split(default_settings: Settings, markdown_sample: str):
+    """Test that Markdown headers are preserved and not split mid-header."""
+    # 只检查标题格式是否完整，但无法保证语义完整性
+    for chunk in chunks:
+        lines = chunk.strip().split("\n")
+        for line in lines:
+            if line.startswith("#"):
+                assert " " in line  # 只是检查标题格式
+```
+
+**测试的局限性**:
+- ✅ 检查标题格式是否完整
+- ❌ 无法验证语义完整性（如代码块、表格）
+- ❌ 无法验证逻辑单元（如函数、引用块）
+
+---
+
+#### 二、实战案例分析
+
+##### 案例 1: Markdown 文档 - 章节切分 ✅
+
+**输入文档**:
+```markdown
+# 项目介绍
+
+这是一个 RAG 系统。
+
+## 核心功能
+
+### 混合检索
+支持 Dense 和 Sparse 两种检索方式。
+
+### 重排序
+使用 Reranker 提升结果质量。
+
+## 技术架构
+
+采用可插拔设计。
+```
+
+**配置**: `chunk_size=50, chunk_overlap=10, separators=["\n## ", "\n### ", "\n\n", "\n"]`
+
+**切分结果**:
+```
+Chunk 1 (45 chars):
+# 项目介绍
+
+这是一个 RAG 系统。
+
+---
+
+Chunk 2 (42 chars):
+## 核心功能
+
+### 混合检索
+支持 Dense 和 Sparse 两种检索方式。
+
+---
+
+Chunk 3 (28 chars):
+### 重排序
+使用 Reranker 提升结果质量。
+
+---
+
+Chunk 4 (18 chars):
+## 技术架构
+
+采用可插拔设计。
+```
+
+**分析**: ✅ 章节标题保持完整，在 `\n## ` 处自然切分，每个 chunk 都是独立的语义单元
+
+---
+
+##### 案例 2: 代码块 - 可能被切分 ❌
+
+**输入文档**:
+```markdown
+## 核心算法
+
+BM25 算法的核心公式如下：
+
+```python
+def bm25_score(query, doc, k1=1.2, b=0.75):
+    """计算 BM25 分数"""
+    score = 0.0
+    for term in query:
+        tf = doc.term_frequency(term)
+        df = doc.collection.df(term)
+        idf = log((N - df + 0.5) / (df + 0.5))
+        score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc.length / avg_length))
+    return score
+```
+
+这个公式考虑了词频和文档长度。
+```
+
+**配置**: `chunk_size=80, chunk_overlap=20`
+
+**切分结果**（❌ 问题场景）:
+```
+Chunk 1 (78 chars):
+## 核心算法
+
+BM25 算法的核心公式如下：
+
+```python
+def bm25_score(query, doc, k1=1.2, b=0.75):
+    """计算 BM25 分数"""
+    score = 0.0
+    for term in query:
+        tf = doc.term_frequency(term)
+
+---
+
+Chunk 2 (68 chars):
+        df = doc.collection.df(term)
+        idf = log((N - df + 0.5) / (df + 0.5))
+        score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc.length / avg_length))
+    return score
+```
+
+这个公式考虑了词频和文档长度。
+```
+
+**问题**: ❌ 函数定义被切断、`for` 循环被分开、缩进可能丢失或错乱
+
+**解决方案**: 自定义 separators，优先在代码块外切分
+```python
+CODE_AWARE_SEPARATORS = [
+    "```",           # 代码块边界（优先级最高）
+    "\n## ",
+    "\n### ",
+    "\n\n",
+    "\n",
+]
+```
+
+---
+
+##### 案例 3: 表格 - 必须保持完整 ⚠️
+
+**输入文档**:
+```markdown
+## 模型对比
+
+| 模型 | MRR@10 | Recall@100 |
+|------|--------|------------|
+| BM25 | 0.72   | 0.85       |
+| Dense | 0.78  | 0.88       |
+| Hybrid | 0.84 | 0.92       |
+
+从表格可以看出，混合检索效果最好。
+```
+
+**配置**: `chunk_size=60, chunk_overlap=15`
+
+**切分结果**（❌ 问题场景）:
+```
+Chunk 1 (58 chars):
+## 模型对比
+
+| 模型 | MRR@10 | Recall@100 |
+|------|--------|------------|
+| BM25 | 0.72   | 0.85       |
+| Dense | 0.78  | 0.88       |
+
+---
+
+Chunk 2 (58 chars):
+| Dense | 0.78  | 0.88       |
+| Hybrid | 0.84 | 0.92       |
+
+从表格可以看出，混合检索效果最好。
+```
+
+**问题**: ❌ 表格被切断，数据行重复、重复的 `Dense` 行、检索时可能返回两个结果
+
+**解决方案**: 使用 SemanticSplitter 识别表格边界
+
+---
+
+##### 案例 4: 对话记录 - 说话人完整性 ✅
+
+**输入文档**:
+```
+用户: 请解释一下什么是 RAG？
+
+助手: RAG 是检索增强生成（Retrieval-Augmented Generation）的缩写。它结合了检索系统和生成模型的优势。
+
+用户: 能举个例子吗？
+
+助手: 当然。当你问"如何配置 LLM？"时，系统会先从知识库中检索相关文档，然后用这些文档作为上下文生成答案。
+```
+
+**配置**: `chunk_size=100, chunk_overlap=30, separators=["\n\n用户:", "\n\n助手:", "\n\n", "\n"]`
+
+**切分结果**:
+```
+Chunk 1 (95 chars):
+用户: 请解释一下什么是 RAG？
+
+助手: RAG 是检索增强生成（Retrieval-Augmented Generation）的缩写。它结合了检索系统和生成模型的优势。
+
+---
+
+Chunk 2 (98 chars):
+助手: RAG 是检索增强生成（Retrieval-Augmented Generation）的缩写。它结合了检索系统和生成模型的优势。
+
+用户: 能举个例子吗？
+
+助手: 当然。当你问"如何配置 LLM？"时，系统会先从知识库中检索相关文档，然后用这些文档作为上下文生成答案。
+```
+
+**分析**: ✅ overlap 保留了前一个回答的尾部，每个对话轮次完整，上下文连贯性良好
+
+---
+
+##### 案例 5: 长段落 - 句子切分 ✅
+
+**输入文档**:
+```markdown
+检索增强生成（RAG）是一种人工智能技术。它通过从外部知识库中检索相关信息来增强大型语言模型。这种方法可以解决模型知识过时的问题。同时还能减少模型产生幻觉的情况。
+
+在实际应用中，RAG 系统包含两个主要组件。第一个是检索系统，负责找到相关文档。第二个是生成模型，负责基于检索结果生成答案。
+
+这两个组件需要紧密配合才能达到最佳效果。
+```
+
+**配置**: `chunk_size=60, chunk_overlap=15, separators=[". ", "\n\n"]`
+
+**切分结果**:
+```
+Chunk 1 (58 chars):
+检索增强生成（RAG）是一种人工智能技术。它通过从外部知识库中检索相关信息来增强大型语言模型。
+
+---
+
+Chunk 2 (58 chars):
+从外部知识库中检索相关信息来增强大型语言模型。这种方法可以解决模型知识过时的问题。
+
+---
+
+Chunk 3 (59 chars):
+可以解决模型知识过时的问题。同时还能减少模型产生幻觉的情况。
+
+在实际应用中，RAG 系统包含两个主要组件。
+```
+
+**分析**: ✅ 在句子边界（`. `）切分，overlap 确保语义连贯，每个 chunk 都是完整的句子
+
+---
+
+##### 案例 6: 中文文档 - 标点符号切分 ⚠️
+
+**输入文档**:
+```markdown
+向量数据库是专门为存储和检索向量而设计的数据库系统。与传统数据库不同，它使用余弦相似度等度量来比较向量之间的相似性。这使得向量数据库能够快速找到与查询向量最相似的向量。
+
+常见的向量数据库包括 ChromaDB、Pinecone、Weaviate 等。
+```
+
+**配置**: `chunk_size=50, chunk_overlap=10, separators=["。", "，", " ", ""]`
+
+**切分结果**:
+```
+Chunk 1 (48 chars):
+向量数据库是专门为存储和检索向量而设计的数据库系统。与传统数据库不同，它使用余弦相似度等度量来比较向量之间的相似性。
+
+---
+
+Chunk 2 (48 chars):
+与传统数据库不同，它使用余弦相似度等度量来比较向量之间的相似性。这使得向量数据库能够快速找到与查询向量最相似的向量。
+
+---
+
+Chunk 3 (27 chars):
+能够快速找到与查询向量最相似的向量。
+
+常见的向量数据库包括 ChromaDB、Pinecone、Weaviate 等。
+```
+
+**注意**: 中文没有空格分隔单词，需要使用中文标点（`。`、`，`）作为分隔符
+
+---
+
+##### 场景对比总结表
+
+| 场景 | 推荐策略 | chunk_size | chunk_overlap | 效果 |
+|------|---------|-----------|--------------|------|
+| Markdown 文档 | recursive + 标题分隔符 | 800-1000 | 150-200 | ✅ 优秀 |
+| 代码文档 | semantic（未实现） | 600-800 | 100-150 | ⚠️ 需改进 |
+| 表格 | semantic + 表格检测 | 1000+ | 200+ | ⚠️ 需改进 |
+| 对话记录 | recursive + 说话人分隔符 | 100-150 | 30-50 | ✅ 良好 |
+| 长段落 | recursive + 句子分隔符 | 300-500 | 50-100 | ✅ 良好 |
+| 中文文档 | recursive + 中文标点 | 400-600 | 80-120 | ✅ 良好 |
+
+---
+
+#### 三、改善方案详解
+
+##### 改善方案 1: 代码块感知切分 🛠️
+
+**问题**: 当前 RecursiveSplitter 会在代码块内部切分，破坏代码完整性。
+
+**解决方案**: 实现代码块感知的切分器
+
+```python
+# src/libs/splitter/code_aware_splitter.py
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+import re
+
+class CodeAwareSplitter:
+    """代码块感知的文本切分器"""
+
+    def __init__(self, chunk_size=1000, chunk_overlap=200):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.base_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=["\n\n", "\n", " ", ""]
+        )
+
+    def split_text(self, text: str) -> list[str]:
+        """切分文本，保持代码块完整"""
+        chunks = []
+
+        # 1. 先按代码块边界分割
+        parts = self._split_by_code_blocks(text)
+
+        # 2. 对每个部分分别处理
+        for part in parts:
+            if part['type'] == 'code':
+                # 代码块：如果超过 chunk_size，作为单独 chunk
+                if len(part['content']) <= self.chunk_size:
+                    chunks.append(part['content'])
+                else:
+                    # 大代码块：在非关键位置切分（如函数之间）
+                    sub_chunks = self._split_large_code(part['content'])
+                    chunks.extend(sub_chunks)
+            else:
+                # 普通文本：使用基础切分器
+                sub_chunks = self.base_splitter.split_text(part['content'])
+                chunks.extend(sub_chunks)
+
+        return chunks
+
+    def _split_by_code_blocks(self, text: str) -> list[dict]:
+        """按代码块边界分割文本"""
+        pattern = r'(```[a-zA-Z]*?\n.*?```|`[^`]+`)'
+        parts = []
+        last_end = 0
+
+        for match in re.finditer(pattern, text, re.DOTALL):
+            # 添加代码块前的普通文本
+            if match.start() > last_end:
+                parts.append({
+                    'type': 'text',
+                    'content': text[last_end:match.start()]
+                })
+            # 添加代码块
+            parts.append({
+                'type': 'code',
+                'content': match.group(0)
+            })
+            last_end = match.end()
+
+        # 添加最后的普通文本
+        if last_end < len(text):
+            parts.append({
+                'type': 'text',
+                'content': text[last_end:]
+            })
+
+        return parts
+
+    def _split_large_code(self, code: str) -> list[str]:
+        """切分大代码块（在函数/类定义之间）"""
+        # 在空行 + 缩进减少处切分
+        lines = code.split('\n')
+        chunks = []
+        current_chunk = []
+        current_length = 0
+
+        for i, line in enumerate(lines):
+            current_length += len(line) + 1  # +1 for newline
+            current_chunk.append(line)
+
+            # 检测切分点：空行且下一行缩进减少
+            if i < len(lines) - 1:
+                next_line = lines[i + 1]
+                if line.strip() == '' and not next_line.startswith((' ', '\t')):
+                    # 这是一个好的切分点
+                    if current_length >= self.chunk_size * 0.7:
+                        chunks.append('\n'.join(current_chunk))
+                        current_chunk = []
+                        current_length = 0
+
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+
+        return chunks
+```
+
+---
+
+##### 改善方案 2: 表格保持切分 📊
+
+**问题**: 表格被切分后数据重复、格式错乱。
+
+**解决方案**: 检测表格边界，确保完整切分
+
+```python
+# src/libs/splitter/table_aware_splitter.py
+import re
+
+class TableAwareSplitter:
+    """表格感知的文本切分器"""
+
+    def __init__(self, chunk_size=1000, chunk_overlap=200):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+    def split_text(self, text: str) -> list[str]:
+        """切分文本，保持表格完整"""
+        chunks = []
+        lines = text.split('\n')
+        current_chunk = []
+        current_length = 0
+        in_table = False
+
+        for line in lines:
+            line_length = len(line) + 1  # +1 for newline
+
+            # 检测是否是表格行
+            is_table_line = '|' in line and line.strip().startswith('|')
+
+            if is_table_line:
+                if not in_table:
+                    # 表格开始
+                    in_table = True
+                current_chunk.append(line)
+                current_length += line_length
+            else:
+                if in_table:
+                    # 表格结束
+                    in_table = False
+                    current_chunk.append(line)
+                    current_length += line_length
+
+                    # 表格结束后检查是否需要切分
+                    if current_length >= self.chunk_size:
+                        chunks.append('\n'.join(current_chunk))
+                        current_chunk = []
+                        current_length = 0
+                else:
+                    # 普通文本
+                    current_chunk.append(line)
+                    current_length += line_length
+
+                    # 检查是否需要切分（不在表格内时）
+                    if current_length >= self.chunk_size:
+                        # 在段落边界切分
+                        if line.strip() == '':
+                            chunks.append('\n'.join(current_chunk))
+                            current_chunk = []
+                            current_length = 0
+
+        # 添加最后一个 chunk
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+
+        return chunks
+```
+
+---
+
+##### 改善方案 3: 语义切分实现 🧠
+
+**问题**: 无法理解语义边界，可能切断相关内容。
+
+**解决方案**: 使用 embedding 计算句子相似度，在语义边界处切分
+
+```python
+# src/libs/splitter/semantic_splitter.py
+from typing import List
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+import re
+
+class SemanticSplitter:
+    """语义感知的文本切分器"""
+
+    def __init__(
+        self,
+        chunk_size=1000,
+        chunk_overlap=200,
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        similarity_threshold=0.3
+    ):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.similarity_threshold = similarity_threshold
+        self.model = SentenceTransformer(model_name)
+
+    def split_text(self, text: str) -> List[str]:
+        """基于语义相似度切分文本"""
+        # 1. 按句子分割
+        sentences = self._split_into_sentences(text)
+
+        if len(sentences) <= 1:
+            return [text]
+
+        # 2. 计算句子嵌入
+        embeddings = self.model.encode(sentences, show_progress_bar=False)
+
+        # 3. 计算相邻句子相似度
+        similarities = self._compute_adjacent_similarities(embeddings)
+
+        # 4. 在相似度骤降处标记切分点
+        split_points = self._find_split_points(similarities)
+
+        # 5. 根据切分点生成 chunks
+        chunks = self._create_chunks(sentences, split_points)
+
+        return chunks
+
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """将文本分割成句子"""
+        # 使用正则表达式按句子分割
+        sentences = re.split(r'(?<=[.!?。！？])\s+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        return sentences
+
+    def _compute_adjacent_similarities(self, embeddings: np.ndarray) -> List[float]:
+        """计算相邻句子的相似度"""
+        similarities = []
+        for i in range(len(embeddings) - 1):
+            sim = cosine_similarity(
+                [embeddings[i]],
+                [embeddings[i + 1]]
+            )[0][0]
+            similarities.append(float(sim))
+        return similarities
+
+    def _find_split_points(self, similarities: List[float]) -> List[int]:
+        """找到语义边界的切分点"""
+        split_points = [0]
+        current_chunk_sentences = []
+        current_chunk_length = 0
+
+        for i, similarity in enumerate(similarities):
+            current_chunk_sentences.append(i)
+            current_chunk_length += len(similarities[i]) + 1  # +1 for space
+
+            # 检查是否需要切分
+            needs_split = (
+                similarity < self.similarity_threshold and
+                len(current_chunk_sentences) >= 2
+            ) or current_chunk_length >= self.chunk_size
+
+            if needs_split:
+                split_points.append(i + 1)
+                current_chunk_sentences = []
+                current_chunk_length = 0
+
+        split_points.append(len(similarities))
+        return split_points
+
+    def _create_chunks(self, sentences: List[str], split_points: List[int]) -> List[str]:
+        """根据切分点创建 chunks"""
+        chunks = []
+        for i in range(len(split_points) - 1):
+            start = split_points[i]
+            end = split_points[i + 1]
+            chunk_sentences = sentences[start:end]
+            chunk = ' '.join(chunk_sentences)
+
+            # 处理 overlap
+            if i > 0 and self.chunk_overlap > 0:
+                # 从前一个 chunk 的末尾获取 overlap
+                prev_chunk = chunks[-1]
+                overlap_text = prev_chunk[-self.chunk_overlap:]
+                if len(overlap_text) > 0:
+                    chunk = overlap_text + ' ' + chunk
+
+            chunks.append(chunk)
+
+        return chunks
+```
+
+---
+
+##### 改善方案 4: 混合切分器 🔄
+
+**思路**: 结合多种切分策略的优势
+
+```python
+# src/libs/splitter/hybrid_splitter.py
+from typing import List
+
+class HybridSplitter:
+    """混合切分器：结合语义和规则"""
+
+    def __init__(
+        self,
+        chunk_size=1000,
+        chunk_overlap=200,
+        semantic_weight=0.7  # 语义切分权重
+    ):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.semantic_weight = semantic_weight
+        self.semantic_splitter = SemanticSplitter(
+            chunk_size=int(chunk_size * semantic_weight),
+            chunk_overlap=chunk_overlap // 2
+        )
+        self.code_aware_splitter = CodeAwareSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+
+    def split_text(self, text: str) -> List[str]:
+        """混合切分策略"""
+        # 步骤1: 语义切分（粗粒度）
+        semantic_chunks = self.semantic_splitter.split_text(text)
+
+        # 步骤2: 对每个语义 chunk 应用代码感知切分
+        final_chunks = []
+        for chunk in semantic_chunks:
+            code_aware_chunks = self.code_aware_splitter.split_text(chunk)
+            final_chunks.extend(code_aware_chunks)
+
+        # 步骤3: 合并过小的 chunks
+        final_chunks = self._merge_small_chunks(final_chunks)
+
+        return final_chunks
+
+    def _merge_small_chunks(self, chunks: List[str]) -> List[str]:
+        """合并过小的 chunks"""
+        min_chunk_size = self.chunk_size * 0.3  # 最小 chunk 大小
+        merged = []
+        i = 0
+
+        while i < len(chunks):
+            if len(chunks[i]) < min_chunk_size and i + 1 < len(chunks):
+                # 合并当前 chunk 和下一个 chunk
+                merged.append(chunks[i] + '\n\n' + chunks[i + 1])
+                i += 2
+            else:
+                merged.append(chunks[i])
+                i += 1
+
+        return merged
+```
+
+---
+
+##### 改善方案 5: 配置文件增强 ⚙️
+
+**在 `config/settings.yaml` 中添加切分器配置**:
+
+```yaml
+# config/settings.yaml
+splitter:
+  strategy: hybrid  # recursive | semantic | code_aware | hybrid
+  chunk_size: 800
+  chunk_overlap: 150
+
+  # SemanticSplitter 配置
+  semantic:
+    model_name: sentence-transformers/all-MiniLM-L6-v2
+    similarity_threshold: 0.3
+    batch_size: 32
+
+  # CodeAwareSplitter 配置
+  code_aware:
+    preserve_code_blocks: true
+    min_code_block_size: 100
+
+  # 自定义分隔符（针对 RecursiveSplitter）
+  separators:
+    - "```"      # 代码块边界
+    - "\n## "     # 二级标题
+    - "\n### "    # 三级标题
+    - "\n\n"      # 段落
+    - "\n"        # 行
+    - ". "        # 句子
+    - " "         # 单词
+```
+
+---
+
+#### 四、改善效果对比表
+
+| 改善方案 | 适用场景 | 优点 | 缺点 |
+|---------|---------|------|------|
+| CodeAwareSplitter | 代码文档 | 代码块完整 | 依赖正则表达式 |
+| TableAwareSplitter | 包含表格的文档 | 表格不重复 | 实现复杂 |
+| SemanticSplitter | 长文本、学术论文 | 语义边界准确 | 需要 embedding 模型 |
+| HybridSplitter | 复杂文档 | 综合多种优势 | 性能开销大 |
+| 自定义 separators | 特定格式文档 | 简单有效 | 需要手动配置 |
+
+---
+
+#### 五、最佳实践总结
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Chunk 切分最佳实践                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                              │
+│  📋 1. 根据文档类型选择策略                                  │
+│     ┌──────────────────────────────────────────────────────┐   │
+│     │ Markdown 文档 → Recursive + 标题分隔符              │   │
+│     │ 代码文档      → CodeAware + Semantic                │   │
+│     │ 表格文档      → TableAware + 大 chunk_size          │   │
+│     │ 学术论文      → Semantic + 引用感知                │   │
+│     └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ⚙️  2. 参数调优经验值                                         │
+│     • chunk_size:  文档平均段落的 2-3 倍                      │
+│     • chunk_overlap: chunk_size 的 15-20%                       │
+│     • similarity_threshold: 0.3-0.4（语义切分）              │
+│                                                              │
+│  🧪  3. 验证方法                                            │
+│     • 导入文档后，在 Dashboard 中检查切分结果                  │
+│     • 用实际查询测试，观察召回率和精确率                       │
+│     • 对比不同切分策略的效果                                   │
+│                                                              │
+│  🔄 4. 持续优化                                              │
+│     • 收集用户反馈，识别切分问题                              │
+│     • 根据文档类型动态调整策略                                │
+│     • 使用 A/B 测试对比不同切分器效果                          │
+│                                                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 六、验证代码
+
+创建测试脚本验证改善效果：
+
+```python
+# scripts/test_splitter.py
+from src.core.settings import load_settings
+from src.libs.splitter.recursive_splitter import RecursiveSplitter
+from src.libs.splitter.semantic_splitter import SemanticSplitter
+
+def test_chunk_quality(chunks):
+    """评估 chunk 质量"""
+    total_score = 0
+
+    for i, chunk in enumerate(chunks):
+        score = 0
+
+        # 检查 1: chunk 长度是否合理
+        if 100 <= len(chunk) <= 1500:
+            score += 20
+
+        # 检查 2: 是否包含完整句子
+        if not chunk.endswith(','):
+            score += 20
+
+        # 检查 3: 代码块是否完整
+        if '```' in chunk:
+            code_count = chunk.count('```')
+            if code_count % 2 == 0:
+                score += 20
+
+        # 检查 4: 表格是否完整
+        if '|' in chunk:
+            lines = [l for l in chunk.split('\n') if '|' in l]
+            if len(lines) >= 3:
+                score += 20
+
+        # 检查 5: overlap 是否合理
+        if i > 0:
+            overlap = len(set(chunks[i-1]) & set(chunk))
+            if 50 <= overlap <= 200:
+                score += 20
+
+        total_score += score
+
+    avg_score = total_score / len(chunks) if chunks else 0
+    return avg_score
+
+# 测试对比
+text = """你的测试文本..."""
+
+recursive_chunks = RecursiveSplitter(load_settings()).split_text(text)
+semantic_chunks = SemanticSplitter().split_text(text)
+
+print(f"RecursiveSplitter 质量分数: {test_chunk_quality(recursive_chunks)}")
+print(f"SemanticSplitter 质量分数: {test_chunk_quality(semantic_chunks)}")
+```
+
+---
+
+#### 七、关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| 当前实现 | RecursiveSplitter 使用优先级分隔符，能保证格式完整性 |
+| 局限性 | 无法理解语义，可能切断逻辑单元 |
+| 参数调优 | 增大 chunk_size 和 overlap 可以缓解问题 |
+| 终极方案 | 实现 SemanticSplitter 真正理解语义边界 |
+| 混合策略 | 结合 Semantic 和 Recursive 获得最佳效果 |
+| 代码感知 | 使用正则检测代码块边界，保持代码完整性 |
+| 表格感知 | 检测表格边界，确保表格不被切分 |
+| 语义切分 | 使用 embedding 计算相似度，在语义边界切分 |
+| 混合切分器 | 综合多种策略的优势，适应复杂文档 |
+
+#### 八、思考题
+
+1. **为什么 overlap 不能完全解决切分问题？**
+   - 提示: overlap 只能缓解边界问题，不能防止内部切分
+
+2. **SemanticSplitter 的性能开销如何优化？**
+   - 提示: 批量计算 embedding、缓存相似度
+
+3. **如何为特定文档类型设计自定义切分规则？**
+   - 提示: 继承 RecursiveSplitter，覆盖 separators
+
+#### 当前实现的切分策略
+
+**位置**: `src/libs/splitter/recursive_splitter.py:36-44`
+
+```python
+DEFAULT_SEPARATORS = [
+    "\n## ",      # 优先在二级标题处切分
+    "\n### ",     # 其次在三级标题处切分
+    "\n\n",       # 然后在段落之间切分
+    "\n",         # 接着在行之间切分
+    ". ",         # 然后在句子之间切分
+    " ",          # 最后在单词之间切分
+    "",           # 最坏情况按字符切分
+]
+```
+
+**工作原理**:
+1. 先尝试用最高优先级的分隔符（如 `##`）切分
+2. 如果某个 chunk 仍然超过 `chunk_size`，则**递归**地用下一优先级的分隔符继续切分
+3. 直到所有 chunk 都在 `chunk_size` 限制内
+
+#### 能保证的 ✅
+
+| 保证项 | 说明 | 示例 |
+|--------|------|------|
+| 格式完整性 | 不会把标题、段落、句子从中间切断 | `## 完整标题` 不会变成 `## 完整...` |
+| 重叠机制 | `chunk_overlap` 确保相邻 chunk 有重叠 | 缓解边界信息丢失 |
+| 递归降级 | 从高优先级到低优先级逐步降级 | 先标题 → 段落 → 句子 → 字符 |
+
+#### 不能保证的 ❌
+
+| 问题 | 原因 | 示例 |
+|------|------|------|
+| 语义边界 | 无法理解语义，只按分隔符切分 | 长代码块可能被强行切分 |
+| 逻辑单元 | 无法识别完整的逻辑块 | 一个函数定义可能被切断 |
+| 特殊格式 | 只支持预定义的 Markdown 分隔符 | 自定义格式可能失效 |
+
+#### 测试验证情况
+
+**位置**: `tests/unit/test_recursive_splitter_lib.py:151`
+
+```python
+def test_markdown_headers_not_split(default_settings: Settings, markdown_sample: str):
+    """Test that Markdown headers are preserved and not split mid-header."""
+    # 只检查标题格式是否完整，但无法保证语义完整性
+    for chunk in chunks:
+        lines = chunk.strip().split("\n")
+        for line in lines:
+            if line.startswith("#"):
+                assert " " in line  # 只是检查标题格式
+```
+
+**测试的局限性**:
+- ✅ 检查标题格式是否完整
+- ❌ 无法验证语义完整性（如代码块、表格）
+- ❌ 无法验证逻辑单元（如函数、引用块）
+
+#### 如何确保 chunk 不会被错误切分？
+
+##### 方案 1: 调整参数（简单但有限）
+
+```yaml
+# config/settings.yaml
+splitter:
+  strategy: recursive
+  chunk_size: 800          # 增大 chunk_size
+  chunk_overlap: 200       # 增大 overlap
+```
+
+**效果**:
+- ✅ 更大的 chunk 能容纳更大的逻辑单元
+- ✅ 更大的 overlap 确保边界信息不会丢失
+- ❌ 仍然无法理解语义，只是机械地按字符/行切分
+
+##### 方案 2: 使用 Semantic Splitter（语义切分）⭐
+
+**位置**: `src/libs/splitter/semantic_splitter.py`（已占位，未实现）
+
+**思路**:
+1. **嵌入计算**: 使用 embedding 模型计算每个句子的语义向量
+2. **句子相似度**: 计算相邻句子的相似度
+3. **边界检测**: 在相似度骤降的地方作为切分点
+4. **聚合 chunk**: 将语义相近的句子聚合成 chunk
+
+**优势**:
+- ✅ 语义相关的句子不会分开
+- ✅ 逻辑单元（如函数、表格）更可能保持完整
+- ✅ chunk 内的内容更加连贯
+
+**实现示例**（伪代码）:
+```python
+class SemanticSplitter(BaseSplitter):
+    def split_text(self, text: str) -> List[str]:
+        # 1. 按句子切分
+        sentences = text.split(". ")
+
+        # 2. 计算每个句子的 embedding
+        embeddings = self.encoder.encode(sentences)
+
+        # 3. 计算相邻句子的相似度
+        similarities = cosine_similarity(embeddings[:-1], embeddings[1:])
+
+        # 4. 在相似度骤降的地方切分
+        chunks = []
+        current_chunk = []
+        for i, (sentence, sim) in enumerate(zip(sentences, similarities)):
+            current_chunk.append(sentence)
+            # 如果相似度低于阈值，开始新 chunk
+            if i < len(similarities) and sim < 0.3:
+                chunks.append(". ".join(current_chunk))
+                current_chunk = []
+
+        return chunks
+```
+
+##### 方案 3: 混合策略
+
+结合 Recursive 和 Semantic 的优势:
+- 先用 Semantic 切分找到自然的语义边界
+- 再用 Recursive 确保每个 chunk 不超过 `chunk_size`
+
+```python
+class HybridSplitter(BaseSplitter):
+    def split_text(self, text: str) -> List[str]:
+        # 步骤 1: 语义切分（粗粒度）
+        semantic_chunks = self.semantic_splitter.split_text(text)
+
+        # 步骤 2: 递归切分（细粒度）
+        final_chunks = []
+        for chunk in semantic_chunks:
+            final_chunks.extend(self.recursive_splitter.split_text(chunk))
+
+        return final_chunks
+```
+
+#### 实践建议
+
+| 场景 | chunk_size | chunk_overlap | 策略 |
+|------|-----------|--------------|------|
+| 技术文档 | 800-1000 | 150-200 | recursive + Markdown separators |
+| 代码文档 | 600-800 | 100-150 | semantic（避免切断函数） |
+| 对话记录 | 400-600 | 100-200 | recursive + 语句分隔 |
+| 法律文档 | 1000-1500 | 200-300 | recursive + 条款分隔 |
+
+#### 验证切分效果
+
+```bash
+# 1. 导入文档
+python scripts/ingest.py --path ./asset/rag_test_doc.md --force
+
+# 2. 查询并观察检索结果
+python scripts/query.py --query "某个具体内容" --top-k 10
+
+# 3. 查看 Dashboard 中的切分详情
+python scripts/start_dashboard.py
+```
+
+在 Dashboard 中可以查看:
+- 每个 chunk 的长度
+- chunk 之间的重叠内容
+- 是否有被错误切分的逻辑单元
+
+#### 关键收获
+
+| 内容 | 关键收获 |
+|------|----------|
+| 当前实现 | RecursiveSplitter 使用优先级分隔符，能保证格式完整性 |
+| 局限性 | 无法理解语义，可能切断逻辑单元 |
+| 参数调优 | 增大 chunk_size 和 overlap 可以缓解问题 |
+| 终极方案 | 实现 SemanticSplitter 真正理解语义边界 |
+| 混合策略 | 结合 Semantic 和 Recursive 获得最佳效果 |
+
+#### 思考题
+
+1. **为什么 overlap 不能完全解决切分问题？**
+   - 提示: overlap 只能缓解边界问题，不能防止内部切分
+
+2. **SemanticSplitter 的性能开销如何优化？**
+   - 提示: 批量计算 embedding、缓存相似度
+
+3. **如何为特定文档类型设计自定义切分规则？**
+   - 提示: 继承 RecursiveSplitter，覆盖 separators
+
+---
+
+#### 7.6 实战案例分析 (2026-04-04)
+
+> **学习目标**: 通过具体案例理解 chunk 切分在不同场景下的表现
+> **学习时长**: ~30min
+
+##### 案例 1: Markdown 文档 - 章节切分 ✅
+
+**输入文档**:
+```markdown
+# 项目介绍
+
+这是一个 RAG 系统。
+
+## 核心功能
+
+### 混合检索
+支持 Dense 和 Sparse 两种检索方式。
+
+### 重排序
+使用 Reranker 提升结果质量。
+
+## 技术架构
+
+采用可插拔设计。
+```
+
+**配置**: `chunk_size=50, chunk_overlap=10, separators=["\n## ", "\n### ", "\n\n", "\n"]`
+
+**切分结果**:
+```
+Chunk 1 (45 chars):
+# 项目介绍
+
+这是一个 RAG 系统。
+
+---
+
+Chunk 2 (42 chars):
+## 核心功能
+
+### 混合检索
+支持 Dense 和 Sparse 两种检索方式。
+
+---
+
+Chunk 3 (28 chars):
+### 重排序
+使用 Reranker 提升结果质量。
+
+---
+
+Chunk 4 (18 chars):
+## 技术架构
+
+采用可插拔设计。
+```
+
+**分析**:
+- ✅ 章节标题保持完整
+- ✅ 在 `\n## ` 处自然切分
+- ✅ 每个 chunk 都是独立的语义单元
+
+##### 案例 2: 代码块 - 可能被切分 ❌
+
+**输入文档**:
+```markdown
+## 核心算法
+
+BM25 算法的核心公式如下：
+
+```python
+def bm25_score(query, doc, k1=1.2, b=0.75):
+    """计算 BM25 分数"""
+    score = 0.0
+    for term in query:
+        tf = doc.term_frequency(term)
+        df = doc.collection.df(term)
+        idf = log((N - df + 0.5) / (df + 0.5))
+        score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc.length / avg_length))
+    return score
+```
+
+这个公式考虑了词频和文档长度。
+```
+
+**配置**: `chunk_size=80, chunk_overlap=20`
+
+**切分结果**（❌ 问题场景）:
+```
+Chunk 1 (78 chars):
+## 核心算法
+
+BM25 算法的核心公式如下：
+
+```python
+def bm25_score(query, doc, k1=1.2, b=0.75):
+    """计算 BM25 分数"""
+    score = 0.0
+    for term in query:
+        tf = doc.term_frequency(term)
+
+---
+
+Chunk 2 (68 chars):
+        df = doc.collection.df(term)
+        idf = log((N - df + 0.5) / (df + 0.5))
+        score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * doc.length / avg_length))
+    return score
+```
+
+这个公式考虑了词频和文档长度。
+```
+
+**问题**:
+- ❌ 函数定义被切断
+- ❌ `for` 循环被分开
+- ❌ 缩进可能丢失或错乱
+
+**解决方案**:
+```python
+# 自定义 separators，优先在代码块外切分
+CODE_AWARE_SEPARATORS = [
+    "```",           # 代码块边界（优先级最高）
+    "\n## ",
+    "\n### ",
+    "\n\n",
+    "\n",
+]
+```
+
+##### 案例 3: 表格 - 必须保持完整 ⚠️
+
+**输入文档**:
+```markdown
+## 模型对比
+
+| 模型 | MRR@10 | Recall@100 |
+|------|--------|------------|
+| BM25 | 0.72   | 0.85       |
+| Dense | 0.78  | 0.88       |
+| Hybrid | 0.84 | 0.92       |
+
+从表格可以看出，混合检索效果最好。
+```
+
+**配置**: `chunk_size=60, chunk_overlap=15`
+
+**切分结果**（❌ 问题场景）:
+```
+Chunk 1 (58 chars):
+## 模型对比
+
+| 模型 | MRR@10 | Recall@100 |
+|------|--------|------------|
+| BM25 | 0.72   | 0.85       |
+| Dense | 0.78  | 0.88       |
+
+---
+
+Chunk 2 (58 chars):
+| Dense | 0.78  | 0.88       |
+| Hybrid | 0.84 | 0.92       |
+
+从表格可以看出，混合检索效果最好。
+```
+
+**问题**:
+- ❌ 表格被切断，数据行重复
+- ❌ 重复的 `Dense` 行
+- ❌ 检索时可能返回两个结果
+
+**解决方案**: 使用 SemanticSplitter 识别表格边界
+```python
+def detect_table_boundary(text, pos):
+    """检测是否在表格边界"""
+    # 表格以 | 开头，以 | 结尾
+    lines = text.split('\n')
+    if pos == 0: return False
+    current_line = lines[pos]
+    prev_line = lines[pos-1]
+    # 如果前一行和当前行都不是表格格式，可以切分
+    is_current_table = '|' in current_line
+    is_prev_table = '|' in prev_line
+    return not (is_current_table and is_prev_table)
+```
+
+##### 案例 4: 对话记录 - 说话人完整性 ✅
+
+**输入文档**:
+```
+用户: 请解释一下什么是 RAG？
+
+助手: RAG 是检索增强生成（Retrieval-Augmented Generation）的缩写。它结合了检索系统和生成模型的优势。
+
+用户: 能举个例子吗？
+
+助手: 当然。当你问"如何配置 LLM？"时，系统会先从知识库中检索相关文档，然后用这些文档作为上下文生成答案。
+```
+
+**配置**: `chunk_size=100, chunk_overlap=30, separators=["\n\n用户:", "\n\n助手:", "\n\n", "\n"]`
+
+**切分结果**:
+```
+Chunk 1 (95 chars):
+用户: 请解释一下什么是 RAG？
+
+助手: RAG 是检索增强生成（Retrieval-Augmented Generation）的缩写。它结合了检索系统和生成模型的优势。
+
+---
+
+Chunk 2 (98 chars):
+助手: RAG 是检索增强生成（Retrieval-Augmented Generation）的缩写。它结合了检索系统和生成模型的优势。
+
+用户: 能举个例子吗？
+
+助手: 当然。当你问"如何配置 LLM？"时，系统会先从知识库中检索相关文档，然后用这些文档作为上下文生成答案。
+```
+
+**分析**:
+- ✅ overlap 保留了前一个回答的尾部
+- ✅ 每个对话轮次完整
+- ✅ 上下文连贯性良好
+
+##### 案例 5: 长段落 - 句子切分 ✅
+
+**输入文档**:
+```markdown
+检索增强生成（RAG）是一种人工智能技术。它通过从外部知识库中检索相关信息来增强大型语言模型。这种方法可以解决模型知识过时的问题。同时还能减少模型产生幻觉的情况。
+
+在实际应用中，RAG 系统包含两个主要组件。第一个是检索系统，负责找到相关文档。第二个是生成模型，负责基于检索结果生成答案。
+
+这两个组件需要紧密配合才能达到最佳效果。
+```
+
+**配置**: `chunk_size=60, chunk_overlap=15, separators=[". ", "\n\n"]`
+
+**切分结果**:
+```
+Chunk 1 (58 chars):
+检索增强生成（RAG）是一种人工智能技术。它通过从外部知识库中检索相关信息来增强大型语言模型。
+
+---
+
+Chunk 2 (58 chars):
+从外部知识库中检索相关信息来增强大型语言模型。这种方法可以解决模型知识过时的问题。
+
+---
+
+Chunk 3 (59 chars):
+可以解决模型知识过时的问题。同时还能减少模型产生幻觉的情况。
+
+在实际应用中，RAG 系统包含两个主要组件。
+```
+
+**分析**:
+- ✅ 在句子边界（`. `）切分
+- ✅ overlap 确保语义连贯
+- ✅ 每个 chunk 都是完整的句子
+
+##### 案例 6: 中文文档 - 标点符号切分 ⚠️
+
+**输入文档**:
+```markdown
+向量数据库是专门为存储和检索向量而设计的数据库系统。与传统数据库不同，它使用余弦相似度等度量来比较向量之间的相似性。这使得向量数据库能够快速找到与查询向量最相似的向量。
+
+常见的向量数据库包括 ChromaDB、Pinecone、Weaviate 等。
+```
+
+**配置**: `chunk_size=50, chunk_overlap=10, separators=["。", "，", " ", ""]`
+
+**切分结果**:
+```
+Chunk 1 (48 chars):
+向量数据库是专门为存储和检索向量而设计的数据库系统。与传统数据库不同，它使用余弦相似度等度量来比较向量之间的相似性。
+
+---
+
+Chunk 2 (48 chars):
+与传统数据库不同，它使用余弦相似度等度量来比较向量之间的相似性。这使得向量数据库能够快速找到与查询向量最相似的向量。
+
+---
+
+Chunk 3 (27 chars):
+能够快速找到与查询向量最相似的向量。
+
+常见的向量数据库包括 ChromaDB、Pinecone、Weaviate 等。
+```
+
+**注意**: 中文没有空格分隔单词，需要使用中文标点（`。`、`，`）作为分隔符。
+
+##### 对比总结表
+
+| 场景 | 推荐策略 | chunk_size | chunk_overlap | 效果 |
+|------|---------|-----------|--------------|------|
+| Markdown 文档 | recursive + 标题分隔符 | 800-1000 | 150-200 | ✅ 优秀 |
+| 代码文档 | semantic（未实现） | 600-800 | 100-150 | ⚠️ 需改进 |
+| 表格 | semantic + 表格检测 | 1000+ | 200+ | ⚠️ 需改进 |
+| 对话记录 | recursive + 说话人分隔符 | 100-150 | 30-50 | ✅ 良好 |
+| 长段落 | recursive + 句子分隔符 | 300-500 | 50-100 | ✅ 良好 |
+| 中文文档 | recursive + 中文标点 | 400-600 | 80-120 | ✅ 良好 |
+
+#### 验证方法
+
+使用以下代码测试切分效果：
+
+```python
+from src.core.settings import load_settings
+from src.libs.splitter.recursive_splitter import RecursiveSplitter
+
+# 加载配置
+settings = load_settings()
+
+# 创建切分器
+splitter = RecursiveSplitter(settings)
+
+# 测试文本
+test_text = """你的测试文本..."""
+
+# 切分
+chunks = splitter.split_text(test_text)
+
+# 查看结果
+for i, chunk in enumerate(chunks, 1):
+    print(f"=== Chunk {i} (length={len(chunk)}) ===")
+    print(chunk)
+    print()
+```
+
+#### 关键收获
+
+| 场景 | 关键收获 |
+|------|----------|
+| Markdown 章节切分 | 标题分隔符效果很好，自然边界清晰 |
+| 代码块切分 | 需要特殊处理，否则会破坏代码完整性 |
+| 表格切分 | 必须保持完整，需要语义理解 |
+| 对话记录 | 说话人分隔符 + overlap 效果良好 |
+| 长段落切分 | 句子分隔符确保语义完整 |
+| 中文文档 | 使用中文标点作为分隔符 |
+
+---
+
+#### 7.7 改善方案详解 (2026-04-04)
+
+> **学习目标**: 学习如何针对不同场景改进 chunk 切分策略
+> **学习时长**: ~45min
+
+##### 改善方案 1: 代码块感知切分 🛠️
+
+**问题**: 当前 RecursiveSplitter 会在代码块内部切分，破坏代码完整性。
+
+**解决方案**: 实现代码块感知的切分器
+
+```python
+# src/libs/splitter/code_aware_splitter.py
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+import re
+
+class CodeAwareSplitter:
+    """代码块感知的文本切分器"""
+
+    def __init__(self, chunk_size=1000, chunk_overlap=200):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.base_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=["\n\n", "\n", " ", ""]
+        )
+
+    def split_text(self, text: str) -> list[str]:
+        """切分文本，保持代码块完整"""
+        chunks = []
+
+        # 1. 先按代码块边界分割
+        parts = self._split_by_code_blocks(text)
+
+        # 2. 对每个部分分别处理
+        for part in parts:
+            if part['type'] == 'code':
+                # 代码块：如果超过 chunk_size，作为单独 chunk
+                if len(part['content']) <= self.chunk_size:
+                    chunks.append(part['content'])
+                else:
+                    # 大代码块：在非关键位置切分（如函数之间）
+                    sub_chunks = self._split_large_code(part['content'])
+                    chunks.extend(sub_chunks)
+            else:
+                # 普通文本：使用基础切分器
+                sub_chunks = self.base_splitter.split_text(part['content'])
+                chunks.extend(sub_chunks)
+
+        return chunks
+
+    def _split_by_code_blocks(self, text: str) -> list[dict]:
+        """按代码块边界分割文本"""
+        pattern = r'(```[a-zA-Z]*?\n.*?```|`[^`]+`)'
+        parts = []
+        last_end = 0
+
+        for match in re.finditer(pattern, text, re.DOTALL):
+            # 添加代码块前的普通文本
+            if match.start() > last_end:
+                parts.append({
+                    'type': 'text',
+                    'content': text[last_end:match.start()]
+                })
+            # 添加代码块
+            parts.append({
+                'type': 'code',
+                'content': match.group(0)
+            })
+            last_end = match.end()
+
+        # 添加最后的普通文本
+        if last_end < len(text):
+            parts.append({
+                'type': 'text',
+                'content': text[last_end:]
+            })
+
+        return parts
+
+    def _split_large_code(self, code: str) -> list[str]:
+        """切分大代码块（在函数/类定义之间）"""
+        # 在空行 + 缩进减少处切分
+        lines = code.split('\n')
+        chunks = []
+        current_chunk = []
+        current_length = 0
+
+        for i, line in enumerate(lines):
+            current_length += len(line) + 1  # +1 for newline
+            current_chunk.append(line)
+
+            # 检测切分点：空行且下一行缩进减少
+            if i < len(lines) - 1:
+                next_line = lines[i + 1]
+                if line.strip() == '' and not next_line.startswith((' ', '\t')):
+                    # 这是一个好的切分点
+                    if current_length >= self.chunk_size * 0.7:
+                        chunks.append('\n'.join(current_chunk))
+                        current_chunk = []
+                        current_length = 0
+
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+
+        return chunks
+```
+
+**使用示例**:
+```python
+from src.libs.splitter.code_aware_splitter import CodeAwareSplitter
+
+splitter = CodeAwareSplitter(chunk_size=800, chunk_overlap=150)
+chunks = splitter.split_text(markdown_with_code)
+
+# 输出：代码块保持完整，普通文本正常切分
+```
+
+##### 改善方案 2: 表格保持切分 📊
+
+**问题**: 表格被切分后数据重复、格式错乱。
+
+**解决方案**: 检测表格边界，确保完整切分
+
+```python
+# src/libs/splitter/table_aware_splitter.py
+import re
+
+class TableAwareSplitter:
+    """表格感知的文本切分器"""
+
+    def __init__(self, chunk_size=1000, chunk_overlap=200):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+    def split_text(self, text: str) -> list[str]:
+        """切分文本，保持表格完整"""
+        chunks = []
+        lines = text.split('\n')
+        current_chunk = []
+        current_length = 0
+        in_table = False
+
+        for line in lines:
+            line_length = len(line) + 1  # +1 for newline
+
+            # 检测是否是表格行
+            is_table_line = '|' in line and line.strip().startswith('|')
+
+            if is_table_line:
+                if not in_table:
+                    # 表格开始
+                    in_table = True
+                current_chunk.append(line)
+                current_length += line_length
+            else:
+                if in_table:
+                    # 表格结束
+                    in_table = False
+                    current_chunk.append(line)
+                    current_length += line_length
+
+                    # 表格结束后检查是否需要切分
+                    if current_length >= self.chunk_size:
+                        chunks.append('\n'.join(current_chunk))
+                        current_chunk = []
+                        current_length = 0
+                else:
+                    # 普通文本
+                    current_chunk.append(line)
+                    current_length += line_length
+
+                    # 检查是否需要切分（不在表格内时）
+                    if current_length >= self.chunk_size:
+                        # 在段落边界切分
+                        if line.strip() == '':
+                            chunks.append('\n'.join(current_chunk))
+                            current_chunk = []
+                            current_length = 0
+
+        # 添加最后一个 chunk
+        if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+
+        return chunks
+```
+
+##### 改善方案 3: 语义切分实现 🧠
+
+**问题**: 无法理解语义边界，可能切断相关内容。
+
+**解决方案**: 使用 embedding 计算句子相似度，在语义边界处切分
+
+```python
+# src/libs/splitter/semantic_splitter.py
+from typing import List
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+import re
+
+class SemanticSplitter:
+    """语义感知的文本切分器"""
+
+    def __init__(
+        self,
+        chunk_size=1000,
+        chunk_overlap=200,
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        similarity_threshold=0.3
+    ):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.similarity_threshold = similarity_threshold
+        self.model = SentenceTransformer(model_name)
+
+    def split_text(self, text: str) -> List[str]:
+        """基于语义相似度切分文本"""
+        # 1. 按句子分割
+        sentences = self._split_into_sentences(text)
+
+        if len(sentences) <= 1:
+            return [text]
+
+        # 2. 计算句子嵌入
+        embeddings = self.model.encode(sentences, show_progress_bar=False)
+
+        # 3. 计算相邻句子相似度
+        similarities = self._compute_adjacent_similarities(embeddings)
+
+        # 4. 在相似度骤降处标记切分点
+        split_points = self._find_split_points(similarities)
+
+        # 5. 根据切分点生成 chunks
+        chunks = self._create_chunks(sentences, split_points)
+
+        return chunks
+
+    def _split_into_sentences(self, text: str) -> List[str]:
+        """将文本分割成句子"""
+        # 使用正则表达式按句子分割
+        sentences = re.split(r'(?<=[.!?。！？])\s+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        return sentences
+
+    def _compute_adjacent_similarities(self, embeddings: np.ndarray) -> List[float]:
+        """计算相邻句子的相似度"""
+        similarities = []
+        for i in range(len(embeddings) - 1):
+            sim = cosine_similarity(
+                [embeddings[i]],
+                [embeddings[i + 1]]
+            )[0][0]
+            similarities.append(float(sim))
+        return similarities
+
+    def _find_split_points(self, similarities: List[float]) -> List[int]:
+        """找到语义边界的切分点"""
+        split_points = [0]
+        current_chunk_sentences = []
+        current_chunk_length = 0
+
+        for i, (sentence, similarity) in enumerate(zip(similarities[:-1], similarities)):
+            current_chunk_sentences.append(i)
+            current_chunk_length += len(similarities[i]) + 1  # +1 for space
+
+            # 检查是否需要切分
+            # 条件1: 相似度低于阈值（语义突变）
+            # 条件2: chunk 长度超过限制
+            # 条件3: 句子数量足够（至少2句）
+            needs_split = (
+                similarity < self.similarity_threshold and
+                len(current_chunk_sentences) >= 2
+            ) or current_chunk_length >= self.chunk_size
+
+            if needs_split:
+                split_points.append(i + 1)
+                current_chunk_sentences = []
+                current_chunk_length = 0
+
+        split_points.append(len(similarities))
+        return split_points
+
+    def _create_chunks(self, sentences: List[str], split_points: List[int]) -> List[str]:
+        """根据切分点创建 chunks"""
+        chunks = []
+        for i in range(len(split_points) - 1):
+            start = split_points[i]
+            end = split_points[i + 1]
+            chunk_sentences = sentences[start:end]
+            chunk = ' '.join(chunk_sentences)
+
+            # 处理 overlap
+            if i > 0 and self.chunk_overlap > 0:
+                # 从前一个 chunk 的末尾获取 overlap
+                prev_chunk = chunks[-1]
+                overlap_text = prev_chunk[-self.chunk_overlap:]
+                if len(overlap_text) > 0:
+                    chunk = overlap_text + ' ' + chunk
+
+            chunks.append(chunk)
+
+        return chunks
+```
+
+**使用示例**:
+```python
+from src.libs.splitter.semantic_splitter import SemanticSplitter
+
+splitter = SemanticSplitter(
+    chunk_size=800,
+    chunk_overlap=150,
+    similarity_threshold=0.3
+)
+chunks = splitter.split_text(long_text)
+
+# 输出：语义相关的句子被聚合成 chunk
+```
+
+##### 改善方案 4: 混合切分器 🔄
+
+**思路**: 结合多种切分策略的优势
+
+```python
+# src/libs/splitter/hybrid_splitter.py
+from typing import List
+
+class HybridSplitter:
+    """混合切分器：结合语义和规则"""
+
+    def __init__(
+        self,
+        chunk_size=1000,
+        chunk_overlap=200,
+        semantic_weight=0.7  # 语义切分权重
+    ):
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.semantic_weight = semantic_weight
+        self.semantic_splitter = SemanticSplitter(
+            chunk_size=int(chunk_size * semantic_weight),
+            chunk_overlap=chunk_overlap // 2
+        )
+        self.code_aware_splitter = CodeAwareSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+
+    def split_text(self, text: str) -> List[str]:
+        """混合切分策略"""
+        # 步骤1: 语义切分（粗粒度）
+        semantic_chunks = self.semantic_splitter.split_text(text)
+
+        # 步骤2: 对每个语义 chunk 应用代码感知切分
+        final_chunks = []
+        for chunk in semantic_chunks:
+            code_aware_chunks = self.code_aware_splitter.split_text(chunk)
+            final_chunks.extend(code_aware_chunks)
+
+        # 步骤3: 合并过小的 chunks
+        final_chunks = self._merge_small_chunks(final_chunks)
+
+        return final_chunks
+
+    def _merge_small_chunks(self, chunks: List[str]) -> List[str]:
+        """合并过小的 chunks"""
+        min_chunk_size = self.chunk_size * 0.3  # 最小 chunk 大小
+        merged = []
+        i = 0
+
+        while i < len(chunks):
+            if len(chunks[i]) < min_chunk_size and i + 1 < len(chunks):
+                # 合并当前 chunk 和下一个 chunk
+                merged.append(chunks[i] + '\n\n' + chunks[i + 1])
+                i += 2
+            else:
+                merged.append(chunks[i])
+                i += 1
+
+        return merged
+```
+
+##### 改善方案 5: 配置文件增强 ⚙️
+
+**在 `config/settings.yaml` 中添加切分器配置**:
+
+```yaml
+# config/settings.yaml
+splitter:
+  strategy: hybrid  # recursive | semantic | code_aware | hybrid
+  chunk_size: 800
+  chunk_overlap: 150
+
+  # SemanticSplitter 配置
+  semantic:
+    model_name: sentence-transformers/all-MiniLM-L6-v2
+    similarity_threshold: 0.3
+    batch_size: 32
+
+  # CodeAwareSplitter 配置
+  code_aware:
+    preserve_code_blocks: true
+    min_code_block_size: 100
+
+  # 自定义分隔符（针对 RecursiveSplitter）
+  separators:
+    - "```"      # 代码块边界
+    - "\n## "     # 二级标题
+    - "\n### "    # 三级标题
+    - "\n\n"      # 段落
+    - "\n"        # 行
+    - ". "        # 句子
+    - " "         # 单词
+```
+
+##### 改善效果对比表
+
+| 改善方案 | 适用场景 | 优点 | 缺点 |
+|---------|---------|------|------|
+| CodeAwareSplitter | 代码文档 | 代码块完整 | 依赖正则表达式 |
+| TableAwareSplitter | 包含表格的文档 | 表格不重复 | 实现复杂 |
+| SemanticSplitter | 长文本、学术论文 | 语义边界准确 | 需要 embedding 模型 |
+| HybridSplitter | 复杂文档 | 综合多种优势 | 性能开销大 |
+| 自定义 separators | 特定格式文档 | 简单有效 | 需要手动配置 |
+
+#### 最佳实践总结
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Chunk 切分最佳实践                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                              │
+│  📋 1. 根据文档类型选择策略                                  │
+│     ┌──────────────────────────────────────────────────────┐   │
+│     │ Markdown 文档 → Recursive + 标题分隔符              │   │
+│     │ 代码文档      → CodeAware + Semantic                │   │
+│     │ 表格文档      → TableAware + 大 chunk_size          │   │
+│     │ 学术论文      → Semantic + 引用感知                │   │
+│     └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ⚙️  2. 参数调优经验值                                         │
+│     • chunk_size:  文档平均段落的 2-3 倍                      │
+│     • chunk_overlap: chunk_size 的 15-20%                       │
+│     • similarity_threshold: 0.3-0.4（语义切分）              │
+│                                                              │
+│  🧪  3. 验证方法                                            │
+│     • 导入文档后，在 Dashboard 中检查切分结果                  │
+│     • 用实际查询测试，观察召回率和精确率                       │
+│     • 对比不同切分策略的效果                                   │
+│                                                              │
+│  🔄 4. 持续优化                                              │
+│     • 收集用户反馈，识别切分问题                              │
+│     • 根据文档类型动态调整策略                                │
+│     • 使用 A/B 测试对比不同切分器效果                          │
+│                                                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 验证代码
+
+创建测试脚本验证改善效果：
+
+```python
+# scripts/test_splitter.py
+from src.core.settings import load_settings
+from src.libs.splitter.recursive_splitter import RecursiveSplitter
+from src.libs.splitter.semantic_splitter import SemanticSplitter
+
+def test_chunk_quality(chunks):
+    """评估 chunk 质量"""
+    total_score = 0
+
+    for i, chunk in enumerate(chunks):
+        score = 0
+
+        # 检查 1: chunk 长度是否合理
+        if 100 <= len(chunk) <= 1500:
+            score += 20
+
+        # 检查 2: 是否包含完整句子
+        if not chunk.endswith(','):
+            score += 20
+
+        # 检查 3: 代码块是否完整
+        if '```' in chunk:
+            code_count = chunk.count('```')
+            if code_count % 2 == 0:
+                score += 20
+
+        # 检查 4: 表格是否完整
+        if '|' in chunk:
+            lines = [l for l in chunk.split('\n') if '|' in l]
+            if len(lines) >= 3:
+                score += 20
+
+        # 检查 5: overlap 是否合理
+        if i > 0:
+            overlap = len(set(chunks[i-1]) & set(chunk))
+            if 50 <= overlap <= 200:
+                score += 20
+
+        total_score += score
+
+    avg_score = total_score / len(chunks) if chunks else 0
+    return avg_score
+
+# 测试对比
+text = """你的测试文本..."""
+
+recursive_chunks = RecursiveSplitter(load_settings()).split_text(text)
+semantic_chunks = SemanticSplitter().split_text(text)
+
+print(f"RecursiveSplitter 质量分数: {test_chunk_quality(recursive_chunks)}")
+print(f"SemanticSplitter 质量分数: {test_chunk_quality(semantic_chunks)}")
+```
+
+#### 关键收获
+
+| 改善方案 | 关键收获 |
+|----------|----------|
+| CodeAwareSplitter | 通过正则检测代码块边界，保持代码完整性 |
+| TableAwareSplitter | 检测表格边界，确保表格不被切分 |
+| SemanticSplitter | 使用 embedding 计算相似度，在语义边界切分 |
+| HybridSplitter | 综合多种策略的优势，适应复杂文档 |
+| 参数调优 | 根据文档类型和内容特点调整 chunk_size 和 overlap |
 
 ---
 

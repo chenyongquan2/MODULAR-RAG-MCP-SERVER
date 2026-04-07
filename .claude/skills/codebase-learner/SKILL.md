@@ -1,6 +1,6 @@
 ---
 name: codebase-learner
-description: "Guide users through learning and understanding the current codebase. Provides structured learning paths, architecture explanations, and hands-on exercises. Use when user says 'learn codebase', '学习代码', 'understand project', '代码入门', or wants to explore the codebase systematically."
+description: "Guide users through learning and understanding the current codebase. Provides structured learning paths, architecture explanations, and hands-on exercises. Use when user says '项目学习','学习项目','learn codebase', '学习代码', 'understand project', '代码入门', or wants to explore the codebase systematically."
 ---
 
 # Codebase Learner
