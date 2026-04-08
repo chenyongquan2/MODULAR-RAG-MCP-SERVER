@@ -132,35 +132,90 @@ class HybridSearch:
         if effective_top_k <= 0:
             raise ValueError("top_k must be a positive integer")
 
+        # 1) Query 预处理阶段打点
+        if trace is not None:
+            trace.start_stage("query_processing")
+
         processed_query = self._query_processor.process(query)
         keywords = processed_query.keywords
+
+        if trace is not None:
+            trace.finish_stage(
+                "query_processing",
+                {
+                    "method": "query_processor",
+                    "query": query,
+                    "keywords": keywords,
+                },
+            )
 
         dense_results: List[RetrievalResult] = []
         sparse_results: List[RetrievalResult] = []
         dense_error: Optional[str] = None
         sparse_error: Optional[str] = None
 
+        # 2) Dense 检索阶段打点
+        if trace is not None:
+            trace.start_stage("dense_retrieval")
         try:
             dense_results = self._dense_retriever.retrieve(
                 query, top_k=effective_top_k, filters=filters, trace=trace
             )
         except Exception as e:
             dense_error = str(e)
+        finally:
+            if trace is not None:
+                trace.finish_stage(
+                    "dense_retrieval",
+                    {
+                        "method": self._dense_retriever.__class__.__name__,
+                        "count": len(dense_results),
+                        "error": dense_error,
+                    },
+                )
 
+        # 3) Sparse 检索阶段打点
+        if trace is not None:
+            trace.start_stage("sparse_retrieval")
         try:
             sparse_results = self._sparse_retriever.retrieve(
                 keywords, top_k=effective_top_k, trace=trace
             )
         except Exception as e:
             sparse_error = str(e)
+        finally:
+            if trace is not None:
+                trace.finish_stage(
+                    "sparse_retrieval",
+                    {
+                        "method": self._sparse_retriever.__class__.__name__,
+                        "count": len(sparse_results),
+                        "error": sparse_error,
+                    },
+                )
 
         if not dense_results and not sparse_results:
             return []
+
+        # 4) Fusion 阶段打点
+        if trace is not None:
+            trace.start_stage("fusion")
 
         fused_results = self._fusion.fuse(
             [dense_results, sparse_results],
             top_k=effective_top_k * 2,
         )
+
+        if trace is not None:
+            trace.finish_stage(
+                "fusion",
+                {
+                    "method": self._fusion.__class__.__name__,
+                    "input_dense": len(dense_results),
+                    "input_sparse": len(sparse_results),
+                    "output_count": len(fused_results),
+                },
+            )
 
         if filters:
             fused_results = self._apply_metadata_filters(fused_results, filters)

@@ -2036,7 +2036,7 @@ dashboard:
 |---------|---------|------|---------|------|
 | F1 | TraceContext 增强（finish + 耗时统计 + trace_type） | [x] | 2026-04-07 | trace_context.py + trace_collector.py |
 | F2 | 结构化日志 logger（JSON Lines） | [x] | 2026-04-08 | logger.py + test_jsonl_logger.py |
-| F3 | 在 Query 链路打点 | [ ] | - |  |
+| F3 | 在 Query 链路打点 | [x] | 2026-04-08 | hybrid_search.py + reranker.py + test_hybrid_search.py |
 | F4 | 在 Ingestion 链路打点 | [ ] | - |  |
 | F5 | Pipeline 进度回调 (on_progress) | [ ] | - |  |
 

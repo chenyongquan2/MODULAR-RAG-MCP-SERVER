@@ -6,6 +6,7 @@ from unittest.mock import Mock, MagicMock
 from src.core.query_engine.fusion import Fusion
 from src.core.query_engine.hybrid_search import HybridSearch
 from src.core.query_engine.query_processor import QueryProcessor
+from src.core.trace.trace_context import TraceContext
 from src.core.types import RetrievalResult
 
 
@@ -190,3 +191,44 @@ class TestHybridSearch:
 
         with pytest.raises(ValueError, match="top_k must be a positive integer"):
             hybrid.search("test", top_k=0)
+
+    def test_search_with_trace(self):
+        """测试 trace 能记录 query 链路的各阶段信息。"""
+        dense_results = [
+            RetrievalResult(chunk_id="1", score=0.9, text="text1", metadata={"source": "dense"}),
+        ]
+        sparse_results = [
+            RetrievalResult(chunk_id="2", score=0.7, text="text2", metadata={"source": "sparse"}),
+        ]
+
+        dense_retriever = MockDenseRetriever(dense_results)
+        sparse_retriever = MockSparseRetriever(sparse_results)
+        fusion = Fusion()
+        reranker = MockReranker()
+
+        hybrid = HybridSearch(
+            settings=None,
+            dense_retriever=dense_retriever,
+            sparse_retriever=sparse_retriever,
+            fusion=fusion,
+            reranker=reranker,
+        )
+
+        trace = TraceContext(trace_type="query")
+        results = hybrid.search("test query", top_k=3, trace=trace)
+        trace.finish()
+        trace_dict = trace.to_dict()
+
+        assert len(results) > 0
+        assert trace_dict["trace_type"] == "query"
+
+        stages = trace_dict["stages"]
+        stage_names = [stage["name"] for stage in stages]
+        assert "query_processing" in stage_names
+        assert "dense_retrieval" in stage_names
+        assert "sparse_retrieval" in stage_names
+        assert "fusion" in stage_names
+
+        for stage in stages:
+            assert stage["duration_ms"] is not None
+            assert "method" in stage["data"]

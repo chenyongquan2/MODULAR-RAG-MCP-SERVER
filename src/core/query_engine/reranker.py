@@ -82,6 +82,9 @@ class Reranker:
         if not query or not query.strip():
             return candidates
 
+        if trace is not None:
+            trace.start_stage("rerank")
+
         candidates_dicts: List[Dict[str, Any]] = [
             {
                 "id": r.chunk_id,
@@ -91,6 +94,9 @@ class Reranker:
             }
             for r in candidates
         ]
+
+        rerank_output_count = len(candidates)
+        fallback = False
 
         try:
             reranked_dicts = self._reranker.rerank(query, candidates_dicts, trace=trace)
@@ -113,9 +119,22 @@ class Reranker:
                         )
                     )
 
+            rerank_output_count = len(results)
             return results
 
         except Exception:
+            fallback = True
             for result in candidates:
                 result.metadata["rerank_fallback"] = True
             return candidates
+        finally:
+            if trace is not None:
+                trace.finish_stage(
+                    "rerank",
+                    {
+                        "method": self._reranker.__class__.__name__,
+                        "input_count": len(candidates),
+                        "output_count": rerank_output_count,
+                        "fallback": fallback,
+                    },
+                )
