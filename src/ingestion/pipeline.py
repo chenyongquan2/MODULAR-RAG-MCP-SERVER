@@ -15,7 +15,7 @@
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Dict, Any
+from typing import TYPE_CHECKING, Callable, List, Optional, Dict, Any
 
 from src.core.settings import Settings
 from src.core.types import Document, Chunk, ChunkRecord, ImageReference
@@ -211,6 +211,7 @@ class IngestionPipeline:
         file_path: str,
         force: bool = False,
         trace: Optional["TraceContext"] = None,
+        on_progress: Optional[Callable[[str, int, int], None]] = None,
     ) -> Dict[str, Any]:
         """运行完整的 Ingestion Pipeline。
 
@@ -226,6 +227,11 @@ class IngestionPipeline:
             file_path: 源文件路径
             force: 是否强制重新处理（忽略完整性检查）
             trace: 可选的追踪上下文
+            on_progress: 进度回调函数，签名：on_progress(stage_name, current, total)
+                         - stage_name: 当前阶段名称（integrity/load/split/transform/encode/store）
+                         - current: 当前处理进度（0=开始，1=完成）
+                         - total: 总数（固定为 1，表示整个阶段）
+                         当 on_progress 为 None 时，不影响现有行为
 
         Returns:
             Dict[str, Any]: 处理结果，包含各阶段统计信息
@@ -257,22 +263,46 @@ class IngestionPipeline:
 
         try:
             # Stage 1: Integrity Check
+            if on_progress is not None:
+                on_progress("integrity", 0, 1)
             self._stage_integrity(file_path, force, result, trace)
+            if on_progress is not None:
+                on_progress("integrity", 1, 1)
 
             # Stage 2: Load
+            if on_progress is not None:
+                on_progress("load", 0, 1)
             document = self._stage_load(file_path, result, trace)
+            if on_progress is not None:
+                on_progress("load", 1, 1)
 
             # Stage 3: Split
+            if on_progress is not None:
+                on_progress("split", 0, 1)
             chunks = self._stage_split(document, result, trace)
+            if on_progress is not None:
+                on_progress("split", 1, 1)
 
             # Stage 4: Transform
+            if on_progress is not None:
+                on_progress("transform", 0, 1)
             chunks = self._stage_transform(chunks, document, result, trace)
+            if on_progress is not None:
+                on_progress("transform", 1, 1)
 
             # Stage 5: Encode
+            if on_progress is not None:
+                on_progress("encode", 0, 1)
             records = self._stage_encode(chunks, result, trace)
+            if on_progress is not None:
+                on_progress("encode", 1, 1)
 
             # Stage 6: Store
+            if on_progress is not None:
+                on_progress("store", 0, 1)
             self._stage_store(records, result, trace)
+            if on_progress is not None:
+                on_progress("store", 1, 1)
 
             # Mark as success
             self._mark_success(file_path, result)
