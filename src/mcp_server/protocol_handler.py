@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict
 
 from mcp.types import Tool, TextContent
 
-from observability.logger import get_logger
+from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 

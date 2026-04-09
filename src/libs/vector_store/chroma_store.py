@@ -250,6 +250,51 @@ class ChromaStore(BaseVectorStore):
         """
         return "chromadb"
 
+    def get_collection_stats(self, collection_name: str | None = None) -> Dict[str, Any]:
+        """Get statistics for a specific collection or all collections.
+
+        Args:
+            collection_name: Name of collection to get stats for.
+                If None, returns aggregated stats for all collections.
+
+        Returns:
+            Dict with collection statistics:
+            - 'count': Number of vectors in collection
+            - 'name': Collection name
+            - If collection_name is None, returns list of all collection stats
+
+        Raises:
+            RuntimeError: If operation fails.
+        """
+        try:
+            if collection_name:
+                # Get stats for specific collection
+                collection = self._client.get_or_create_collection(
+                    name=collection_name,
+                    metadata={"hnsw:space": "cosine"},
+                )
+                count = collection.count()
+                return {
+                    "name": collection_name,
+                    "count": count,
+                }
+            else:
+                # Get stats for all collections
+                collections = self._client.list_collections()
+                stats = []
+                for col in collections:
+                    stats.append({
+                        "name": col.name,
+                        "count": col.count(),
+                    })
+                return {
+                    "collections": stats,
+                    "total_collections": len(stats),
+                    "total_vectors": sum(s["count"] for s in stats),
+                }
+        except Exception as e:
+            raise RuntimeError(f"Failed to get collection stats: {e}") from e
+
     def get_collection_names(self) -> List[str]:
         """Get all collection names in the ChromaDB instance.
 

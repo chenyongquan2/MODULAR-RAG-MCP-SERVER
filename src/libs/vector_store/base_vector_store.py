@@ -196,3 +196,71 @@ class BaseVectorStore(ABC):
             'Hello world'
         """
         pass
+
+    def get_collection_stats(
+        self, collection_name: str | None = None
+    ) -> dict[str, Any]:
+        """Get statistics for a specific collection or all collections.
+
+        Args:
+            collection_name: Name of collection to get stats for.
+                If None, returns aggregated stats for all collections.
+
+        Returns:
+            Dict with collection statistics:
+            - If collection_name is provided: {'name': str, 'count': int}
+            - If collection_name is None: {'collections': list, 'total_collections': int, 'total_vectors': int}
+
+        Raises:
+            RuntimeError: If operation fails.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement get_collection_stats() method"
+        )
+
+    def get_collection_names(self) -> list[str]:
+        """Get all collection names in the vector store.
+
+        Returns:
+            List of collection names.
+
+        Raises:
+            RuntimeError: If operation fails.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement get_collection_names() method"
+        )
+
+    def delete(
+        self,
+        doc_ids: list[str],
+        trace: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Delete records by document IDs.
+
+        Args:
+            doc_ids: List of document IDs to delete.
+            trace: Optional TraceContext for observability.
+            **kwargs: Backend-specific parameters.
+
+        Raises:
+            ValueError: If doc_ids is empty.
+            RuntimeError: If delete operation fails.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement delete() method"
+        )
+
+    def clear_collection(self, collection_name: str) -> None:
+        """Clear all records from a collection.
+
+        Args:
+            collection_name: Name of the collection to clear.
+
+        Raises:
+            RuntimeError: If clear operation fails.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement clear_collection() method"
+        )

@@ -50,6 +50,8 @@ class TestSmokeImports:
     def test_import_observability(self) -> None:
         """Observability 层可导入。"""
         import observability  # noqa: F401
-        import observability.logger  # noqa: F401
-        import observability.dashboard  # noqa: F401
-        import observability.evaluation  # noqa: F401
+        import src.observability.logger  # noqa: F401
+        import src.observability.dashboard  # noqa: F401
+        import src.observability.dashboard.services  # noqa: F401
+        import src.observability.dashboard.pages  # noqa: F401
+        import src.observability.evaluation  # noqa: F401

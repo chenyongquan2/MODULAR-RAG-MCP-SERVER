@@ -22,6 +22,8 @@ dependencies = [
     "mcp>=1.0.0",
     # CHM文档支持：先用 hh.exe 解压 CHM，再用 markdownify 转 Markdown
     "markdownify>=0.11.0",
+    # Dashboard UI 框架
+    "streamlit>=1.28.0",
 ]
 
 [project.optional-dependencies]
