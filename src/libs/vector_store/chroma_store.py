@@ -339,7 +339,6 @@ class ChromaStore(BaseVectorStore):
             results = self._collection.get(ids=ids)
 
             output: List[Dict[str, Any]] = []
-            id_to_index = {id_: idx for idx, id_ in enumerate(ids)}
 
             if not results["ids"]:
                 return []
@@ -356,3 +355,85 @@ class ChromaStore(BaseVectorStore):
 
         except Exception as e:
             raise RuntimeError(f"ChromaDB get_by_ids failed: {e}") from e
+
+    def delete_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> int:
+        """Delete records by matching metadata.
+
+        This method queries records that match the given metadata filters
+        and deletes them all. Useful for batch deletion of all chunks
+        belonging to a specific document.
+
+        Args:
+            metadata_filters: Metadata filters (ChromaDB where clause format).
+                Example: {"doc_id": "abc123"} or {"source_path": "path/to/file.pdf"}
+            trace: Optional TraceContext for observability.
+            **kwargs: Backend-specific parameters.
+
+        Returns:
+            Number of records deleted.
+
+        Raises:
+            ValueError: If filters are empty.
+            RuntimeError: If operation fails.
+        """
+        if not metadata_filters:
+            raise ValueError("metadata_filters cannot be empty")
+
+        try:
+            # Query records that match the metadata filter
+            # Use a large limit to get all matching records
+            results = self._collection.get(
+                where=metadata_filters,
+                limit=10000,  # ChromaDB default max
+            )
+
+            if not results["ids"]:
+                return 0
+
+            # Delete the matching IDs
+            self._collection.delete(ids=results["ids"])
+            deleted_count = len(results["ids"])
+
+            return deleted_count
+
+        except Exception as e:
+            raise RuntimeError(f"ChromaDB delete_by_metadata failed: {e}") from e
+
+    def get_ids_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Get record IDs by matching metadata.
+
+        Args:
+            metadata_filters: Metadata filters (ChromaDB where clause format).
+            trace: Optional TraceContext for observability.
+            **kwargs: Backend-specific parameters.
+
+        Returns:
+            List of chunk IDs that match the filters.
+
+        Raises:
+            ValueError: If filters are empty.
+            RuntimeError: If operation fails.
+        """
+        if not metadata_filters:
+            raise ValueError("metadata_filters cannot be empty")
+
+        try:
+            results = self._collection.get(
+                where=metadata_filters,
+                limit=10000,
+            )
+
+            return results["ids"] or []
+
+        except Exception as e:
+            raise RuntimeError(f"ChromaDB get_ids_by_metadata failed: {e}") from e

@@ -264,3 +264,56 @@ class BaseVectorStore(ABC):
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement clear_collection() method"
         )
+
+    def delete_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> int:
+        """Delete records by matching metadata.
+
+        This method queries records that match the given metadata filters
+        and deletes them all. Useful for batch deletion of all chunks
+        belonging to a specific document.
+
+        Args:
+            metadata_filters: Metadata filters to apply.
+                Example: {"doc_id": "abc123"} or {"source_path": "path/to/file.pdf"}
+            trace: Optional TraceContext for observability.
+            **kwargs: Backend-specific parameters.
+
+        Returns:
+            Number of records deleted.
+
+        Raises:
+            ValueError: If filters are empty.
+            RuntimeError: If operation fails.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement delete_by_metadata() method"
+        )
+
+    def get_ids_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Get record IDs by matching metadata.
+
+        Args:
+            metadata_filters: Metadata filters to apply.
+            trace: Optional TraceContext for observability.
+            **kwargs: Backend-specific parameters.
+
+        Returns:
+            List of chunk IDs that match the filters.
+
+        Raises:
+            ValueError: If filters are empty.
+            RuntimeError: If operation fails.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement get_ids_by_metadata() method"
+        )

@@ -481,6 +481,16 @@ class BM25Indexer:
         self._total_documents = len(self._doc_lengths)
         self._avg_doc_length = sum(self._doc_lengths.values()) / self._total_documents if self._total_documents > 0 else 0.0
 
+    def remove_document(self, chunk_ids: Set[str]) -> None:
+        """从索引中移除指定文档（别名方法）。
+
+        该方法是 remove_documents 的别名，保持命名一致性。
+
+        Args:
+            chunk_ids: 要移除的 chunk_id 集合
+        """
+        self.remove_documents(chunk_ids)
+
     @property
     def _avg_doc_length_value(self) -> float:
         return self._avg_doc_length

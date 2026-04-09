@@ -89,6 +89,30 @@ class BaseImageStorage(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete_by_doc_hash(self, doc_hash: str) -> int:
+        """删除指定文档的所有图片。
+
+        Args:
+            doc_hash: 文档哈希
+
+        Returns:
+            int: 删除的图片数量
+        """
+        pass
+
+    @abstractmethod
+    def delete_image(self, image_id: str) -> bool:
+        """删除指定 ID 的图片。
+
+        Args:
+            image_id: 图片 ID
+
+        Returns:
+            bool: 是否删除成功
+        """
+        pass
+
 
 class SQLiteImageStorage(BaseImageStorage):
     """基于 SQLite 的图片存储与索引。
@@ -284,6 +308,108 @@ class SQLiteImageStorage(BaseImageStorage):
             )
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def delete_by_doc_hash(self, doc_hash: str) -> int:
+        """删除指定文档的所有图片。
+
+        Args:
+            doc_hash: 文档哈希
+
+        Returns:
+            int: 删除的图片数量
+        """
+        conn = self._get_connection()
+        try:
+            # 先查询该文档的所有图片记录
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT image_id, file_path FROM image_index WHERE doc_hash = ?",
+                (doc_hash,)
+            )
+            rows = cursor.fetchall()
+
+            if not rows:
+                return 0
+
+            # 删除数据库记录
+            cursor.execute(
+                "DELETE FROM image_index WHERE doc_hash = ?",
+                (doc_hash,)
+            )
+            conn.commit()
+
+            # 删除图片文件
+            deleted_count = 0
+            for row in rows:
+                image_path = row["file_path"]
+                file_path = Path(image_path)
+                if file_path.exists():
+                    try:
+                        file_path.unlink()
+                        deleted_count += 1
+                    except Exception as e:
+                        # 文件删除失败不影响数据库删除的原子性
+                        # 但会留下孤立的文件
+                        from src.observability.logger import get_logger
+                        logger = get_logger(__name__)
+                        logger.error("Failed to delete image file %s: %s", image_path, e)
+
+            return deleted_count
+
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to delete images by doc_hash {doc_hash}: {e}") from e
+        finally:
+            conn.close()
+
+    def delete_image(self, image_id: str) -> bool:
+        """删除指定 ID 的图片。
+
+        Args:
+            image_id: 图片 ID
+
+        Returns:
+            bool: 是否删除成功
+        """
+        conn = self._get_connection()
+        try:
+            # 先查询图片文件路径
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT file_path FROM image_index WHERE image_id = ?",
+                (image_id,)
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return False
+
+            file_path = row["file_path"]
+
+            # 删除数据库记录
+            cursor.execute(
+                "DELETE FROM image_index WHERE image_id = ?",
+                (image_id,)
+            )
+            conn.commit()
+
+            # 删除图片文件
+            path = Path(file_path)
+            if path.exists():
+                try:
+                    path.unlink()
+                except Exception as e:
+                    from src.observability.logger import get_logger
+                    logger = get_logger(__name__)
+                    logger.error("Failed to delete image file %s: %s", file_path, e)
+
+            return True
+
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to delete image {image_id}: {e}") from e
         finally:
             conn.close()
 
