@@ -34,7 +34,7 @@ from src.ingestion.embedding.batch_processor import BatchProcessor
 from src.ingestion.storage.vector_upserter import VectorUpserter
 from src.ingestion.storage.bm25_indexer import BM25Indexer
 from src.ingestion.storage.image_storage import SQLiteImageStorage
-from src.observability.logger import get_logger
+from src.observability.logger import get_logger, write_trace
 
 if TYPE_CHECKING:
     from src.core.trace.trace_context import TraceContext
@@ -243,6 +243,18 @@ class IngestionPipeline:
             "stages": {},
         }
 
+        owns_trace = False
+        if trace is None:
+            # F4 打点：如果外部未传入 trace，则自动创建 ingestion trace
+            from src.core.trace.trace_context import TraceContext
+
+            trace = TraceContext(trace_type="ingestion")
+            owns_trace = True
+
+        # 增加基础元数据，便于 dashboard 和日志分析
+        trace.metadata.setdefault("file_path", file_path)
+        trace.metadata.setdefault("collection", self._collection)
+
         try:
             # Stage 1: Integrity Check
             self._stage_integrity(file_path, force, result, trace)
@@ -272,11 +284,25 @@ class IngestionPipeline:
             )
 
         except Exception as e:
-            result["status"] = "failed"
-            result["error"] = str(e)
-            self._mark_failed(file_path, str(e))
-            logger.error(f"Ingestion pipeline failed: {file_path} - {str(e)}")
-            raise
+            if str(e).startswith("SKIP:"):
+                result["status"] = "skipped"
+                result["error"] = str(e)
+            else:
+                result["status"] = "failed"
+                result["error"] = str(e)
+                self._mark_failed(file_path, str(e))
+                logger.error(f"Ingestion pipeline failed: {file_path} - {str(e)}")
+                raise
+        finally:
+            if trace is not None and owns_trace:
+                # F4 打点：在 run() 末尾完成 trace 并持久化
+                trace.finish(
+                    {
+                        "status": result.get("status", "unknown"),
+                        "stage_count": len(trace.stages),
+                    }
+                )
+                write_trace(trace.to_dict())
 
         return result
 
@@ -329,37 +355,67 @@ class IngestionPipeline:
         logger.debug(f"Stage 2: Loading document from {file_path}")
 
         loader = self._get_loader(file_path)
-        document = loader.load(file_path)
-        document.metadata["collection"] = self._collection
+        method_name = loader.__class__.__name__
+        if trace is not None:
+            # F4 打点：记录加载阶段开始
+            trace.start_stage("load")
 
-        # 存储文档中的图片
-        doc_hash = document.id.replace("doc_", "")  # 从 doc_id 提取 hash
-        if document.metadata.get("images"):
-            try:
-                updated_images = self._store_document_images(
-                    document=document,
-                    collection=self._collection,
-                    doc_hash=doc_hash,
+        doc_id_for_trace = ""
+        text_length_for_trace = 0
+        image_count_for_trace = 0
+        stage_error: Optional[str] = None
+
+        try:
+            document = loader.load(file_path)
+            document.metadata["collection"] = self._collection
+
+            # 存储文档中的图片
+            doc_hash = document.id.replace("doc_", "")  # 从 doc_id 提取 hash
+            if document.metadata.get("images"):
+                try:
+                    updated_images = self._store_document_images(
+                        document=document,
+                        collection=self._collection,
+                        doc_hash=doc_hash,
+                    )
+                    document.metadata["images"] = updated_images
+                    logger.info(f"Stored {len(updated_images)} images for document {document.id}")
+
+                    # 清理临时目录（图片已持久化存储）
+                    if hasattr(loader, 'cleanup_temp_dirs'):
+                        loader.cleanup_temp_dirs()
+                except Exception as e:
+                    logger.warning(f"Failed to store images: {e}")
+                    # 清理临时目录（即使存储失败也要清理）
+                    if hasattr(loader, 'cleanup_temp_dirs'):
+                        loader.cleanup_temp_dirs()
+
+            result["stages"]["load"] = {
+                "doc_id": document.id,
+                "text_length": len(document.text),
+                "image_count": len(document.metadata.get("images", [])),
+            }
+
+            doc_id_for_trace = document.id
+            text_length_for_trace = len(document.text)
+            image_count_for_trace = len(document.metadata.get("images", []))
+            return document
+        except Exception as e:
+            stage_error = str(e)
+            raise
+        finally:
+            if trace is not None:
+                # F4 打点：记录加载阶段结束与关键细节
+                trace.finish_stage(
+                    "load",
+                    {
+                        "method": method_name,
+                        "doc_id": doc_id_for_trace,
+                        "text_length": text_length_for_trace,
+                        "image_count": image_count_for_trace,
+                        "error": stage_error,
+                    },
                 )
-                document.metadata["images"] = updated_images
-                logger.info(f"Stored {len(updated_images)} images for document {document.id}")
-
-                # 清理临时目录（图片已持久化存储）
-                if hasattr(loader, 'cleanup_temp_dirs'):
-                    loader.cleanup_temp_dirs()
-            except Exception as e:
-                logger.warning(f"Failed to store images: {e}")
-                # 清理临时目录（即使存储失败也要清理）
-                if hasattr(loader, 'cleanup_temp_dirs'):
-                    loader.cleanup_temp_dirs()
-
-        result["stages"]["load"] = {
-            "doc_id": document.id,
-            "text_length": len(document.text),
-            "image_count": len(document.metadata.get("images", [])),
-        }
-
-        return document
 
     def _stage_split(
         self,
@@ -379,13 +435,37 @@ class IngestionPipeline:
         """
         logger.debug(f"Stage 3: Splitting document {document.id}")
 
-        chunks = self.chunker.split_document(document, trace=trace)
+        if trace is not None:
+            # F4 打点：记录切分阶段开始
+            trace.start_stage("split")
 
-        result["stages"]["split"] = {
-            "chunk_count": len(chunks),
-        }
+        chunk_count_for_trace = 0
+        stage_error: Optional[str] = None
 
-        return chunks
+        try:
+            chunks = self.chunker.split_document(document, trace=trace)
+
+            result["stages"]["split"] = {
+                "chunk_count": len(chunks),
+            }
+
+            chunk_count_for_trace = len(chunks)
+            return chunks
+        except Exception as e:
+            stage_error = str(e)
+            raise
+        finally:
+            if trace is not None:
+                # F4 打点：记录切分阶段结束与关键细节
+                trace.finish_stage(
+                    "split",
+                    {
+                        "method": self.chunker.__class__.__name__,
+                        "doc_id": document.id,
+                        "chunk_count": chunk_count_for_trace,
+                        "error": stage_error,
+                    },
+                )
 
     def _stage_transform(
         self,
@@ -407,35 +487,57 @@ class IngestionPipeline:
         """
         logger.debug(f"Stage 4: Transforming {len(chunks)} chunks")
 
+        if trace is not None:
+            # F4 打点：记录转换阶段开始
+            trace.start_stage("transform")
+
         transformed_chunks = chunks
+        stage_error: Optional[str] = None
 
         try:
-            transformed_chunks = self.transform.transform(transformed_chunks, trace=trace)
-        except Exception as e:
-            logger.warning(f"ChunkRefiner failed, using original chunks: {e}")
-
-        try:
-            transformed_chunks = self.metadata_enricher.transform(transformed_chunks, trace=trace)
-        except Exception as e:
-            logger.warning(f"MetadataEnricher failed, continuing: {e}")
-
-        if document.metadata.get("images"):
             try:
-                transformed_chunks = self.image_captioner.transform(transformed_chunks, trace=trace)
+                transformed_chunks = self.transform.transform(transformed_chunks, trace=trace)
             except Exception as e:
-                logger.warning(f"ImageCaptioner failed, continuing: {e}")
+                logger.warning(f"ChunkRefiner failed, using original chunks: {e}")
 
-        # 文本增强：将图片描述融合到正文
-        try:
-            transformed_chunks = self.text_enricher.transform(transformed_chunks, trace=trace)
+            try:
+                transformed_chunks = self.metadata_enricher.transform(transformed_chunks, trace=trace)
+            except Exception as e:
+                logger.warning(f"MetadataEnricher failed, continuing: {e}")
+
+            if document.metadata.get("images"):
+                try:
+                    transformed_chunks = self.image_captioner.transform(transformed_chunks, trace=trace)
+                except Exception as e:
+                    logger.warning(f"ImageCaptioner failed, continuing: {e}")
+
+            # 文本增强：将图片描述融合到正文
+            try:
+                transformed_chunks = self.text_enricher.transform(transformed_chunks, trace=trace)
+            except Exception as e:
+                logger.warning(f"TextEnricher failed, continuing: {e}")
+
+            result["stages"]["transform"] = {
+                "chunk_count": len(transformed_chunks),
+            }
+
+            return transformed_chunks
         except Exception as e:
-            logger.warning(f"TextEnricher failed, continuing: {e}")
-
-        result["stages"]["transform"] = {
-            "chunk_count": len(transformed_chunks),
-        }
-
-        return transformed_chunks
+            stage_error = str(e)
+            raise
+        finally:
+            if trace is not None:
+                # F4 打点：记录转换阶段结束与关键细节
+                trace.finish_stage(
+                    "transform",
+                    {
+                        "method": self.transform.__class__.__name__,
+                        "input_count": len(chunks),
+                        "output_count": len(transformed_chunks),
+                        "has_images": bool(document.metadata.get("images")),
+                        "error": stage_error,
+                    },
+                )
 
     def _stage_encode(
         self,
@@ -455,19 +557,43 @@ class IngestionPipeline:
         """
         logger.debug(f"Stage 5: Encoding {len(chunks)} chunks")
 
-        dense_records = self.dense_encoder.encode(chunks, trace=trace)
+        if trace is not None:
+            # F4 打点：记录编码阶段开始
+            trace.start_stage("embed")
 
-        sparse_records = self.sparse_encoder.encode(chunks, trace=trace)
+        record_count_for_trace = 0
+        stage_error: Optional[str] = None
 
-        for i, record in enumerate(dense_records):
-            if i < len(sparse_records):
-                record.sparse_vector = sparse_records[i].sparse_vector
+        try:
+            dense_records = self.dense_encoder.encode(chunks, trace=trace)
 
-        result["stages"]["encode"] = {
-            "record_count": len(dense_records),
-        }
+            sparse_records = self.sparse_encoder.encode(chunks, trace=trace)
 
-        return dense_records
+            for i, record in enumerate(dense_records):
+                if i < len(sparse_records):
+                    record.sparse_vector = sparse_records[i].sparse_vector
+
+            result["stages"]["encode"] = {
+                "record_count": len(dense_records),
+            }
+
+            record_count_for_trace = len(dense_records)
+            return dense_records
+        except Exception as e:
+            stage_error = str(e)
+            raise
+        finally:
+            if trace is not None:
+                # F4 打点：记录编码阶段结束与关键细节
+                trace.finish_stage(
+                    "embed",
+                    {
+                        "method": self.dense_encoder.__class__.__name__,
+                        "input_count": len(chunks),
+                        "record_count": record_count_for_trace,
+                        "error": stage_error,
+                    },
+                )
 
     def _stage_store(
         self,
@@ -484,16 +610,40 @@ class IngestionPipeline:
         """
         logger.debug(f"Stage 6: Storing {len(records)} records")
 
-        self.vector_upserter.upsert(records, trace=trace)
+        if trace is not None:
+            # F4 打点：记录存储阶段开始
+            trace.start_stage("upsert")
 
-        self.bm25_indexer.build(records, collection=self._collection)
-        index_path = self.bm25_indexer.save(collection=self._collection)
-        logger.debug(f"BM25 index saved to: {index_path}")
+        index_path = None
+        stage_error: Optional[str] = None
 
-        result["stages"]["store"] = {
-            "chunk_count": len(records),
-            "bm25_index_path": str(index_path),
-        }
+        try:
+            self.vector_upserter.upsert(records, trace=trace)
+
+            self.bm25_indexer.build(records, collection=self._collection)
+            index_path = self.bm25_indexer.save(collection=self._collection)
+            logger.debug(f"BM25 index saved to: {index_path}")
+
+            result["stages"]["store"] = {
+                "chunk_count": len(records),
+                "bm25_index_path": str(index_path),
+            }
+        except Exception as e:
+            stage_error = str(e)
+            raise
+        finally:
+            if trace is not None:
+                # F4 打点：记录存储阶段结束与关键细节
+                trace.finish_stage(
+                    "upsert",
+                    {
+                        "method": self.vector_upserter.__class__.__name__,
+                        "collection": self._collection,
+                        "chunk_count": len(records),
+                        "bm25_index_path": str(index_path) if index_path is not None else None,
+                        "error": stage_error,
+                    },
+                )
 
     def _mark_success(self, file_path: str, result: Dict[str, Any]) -> None:
         """标记文件处理成功。
