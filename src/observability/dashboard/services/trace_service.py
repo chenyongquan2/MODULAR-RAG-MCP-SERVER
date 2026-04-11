@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.trace.trace_context import TraceContext
+from src.core.trace.trace_context import TraceContext
 
 
 class TraceRecord:
