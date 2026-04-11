@@ -95,7 +95,7 @@ def write_trace(trace_dict: Dict[str, Any]) -> None:
 
     Example:
         >>> from core.trace.trace_context import TraceContext
-        >>> from observability.logger import write_trace
+        >>> from src.observability.logger import write_trace
         >>> trace = TraceContext(trace_type="query")
         >>> trace.start_stage("search")
         >>> trace.finish()

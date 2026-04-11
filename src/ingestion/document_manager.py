@@ -13,10 +13,9 @@
 4. 错误透明：操作失败时返回详细的错误信息，便于排查
 """
 
-from typing import Dict, List, Optional, Set, Any
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from pathlib import Path
-from datetime import datetime
 
 from src.core.types import ChunkRecord
 from src.libs.loader.file_integrity import FileIntegrityChecker
@@ -260,7 +259,10 @@ class DocumentManager:
                 # 从向量库中查询该文档的 chunk 数量
                 # 使用 metadata 过滤：{"doc_id": doc_id} 或 {"source_path": source_path}
                 # 注意：ChromaDB 的 metadata 格式取决于存储时的定义
-                chunk_count = self._get_chunk_count_by_doc_id(doc_id)
+                chunk_count = self._get_chunk_count_by_doc_id(
+                    doc_id=doc_id,
+                    source_path=source_path,
+                )
 
                 # 从图片存储中查询该文档的图片数量
                 images = self._image_storage.get_images_by_doc_hash(doc_id)
@@ -289,19 +291,24 @@ class DocumentManager:
             logger.error("Failed to list documents: %s", e)
             raise RuntimeError(f"Failed to list documents: {e}") from e
 
-    def _get_chunk_count_by_doc_id(self, doc_id: str) -> int:
+    def _get_chunk_count_by_doc_id(
+        self,
+        doc_id: str,
+        source_path: Optional[str] = None,
+    ) -> int:
         """根据 doc_id 获取 chunk 数量。
 
         Args:
             doc_id: 文档 ID
+            source_path: 文档源路径（用于兼容旧数据回退）
 
         Returns:
             chunk 数量
         """
         try:
-            # 使用 ChromaStore 的 get_ids_by_metadata 方法查询该文档的所有 chunk IDs
-            chunk_ids = self._chroma_store.get_ids_by_metadata(
-                metadata_filters={"doc_id": doc_id}
+            chunk_ids = self._query_chunk_ids(
+                doc_id=doc_id,
+                source_path=source_path,
             )
             return len(chunk_ids)
         except Exception:
@@ -345,31 +352,32 @@ class DocumentManager:
         try:
             # 从 FileIntegrity 获取文档基本信息
             records = self._file_integrity.list_processed(status="success")
-            doc_record = None
-            for record in records:
-                if record["file_hash"] == doc_id:
-                    doc_record = record
-                    break
+            doc_record = self._resolve_doc_record(records=records, doc_id=doc_id)
 
             if not doc_record:
                 raise ValueError(f"Document not found: {doc_id}")
 
             # 获取该文档的所有 chunks
-            chunks = self._get_chunks_by_doc_id(doc_id)
+            canonical_doc_id = doc_record["file_hash"]
+            source_path = doc_record["file_path"]
+            chunks = self._get_chunks_by_doc_id(
+                doc_id=canonical_doc_id,
+                source_path=source_path,
+            )
 
             # 获取该文档的所有图片
-            images = self._image_storage.get_images_by_doc_hash(doc_id)
+            images = self._image_storage.get_images_by_doc_hash(canonical_doc_id)
 
             # 构造 DocumentDetail
             detail = DocumentDetail(
-                doc_id=doc_id,
-                source_path=doc_record["file_path"],
+                doc_id=canonical_doc_id,
+                source_path=source_path,
                 collection=self._default_collection,  # 需要从实际 metadata 获取
                 chunk_count=len(chunks),
                 image_count=len(images),
                 ingested_at=doc_record["processed_at"],
                 file_size=doc_record["file_size"] or 0,
-                doc_type=self._infer_doc_type(doc_record["file_path"]),
+                doc_type=self._infer_doc_type(source_path),
                 status=doc_record["status"],
                 chunks=chunks,
                 images=images,
@@ -384,19 +392,59 @@ class DocumentManager:
             logger.error("Failed to get document detail for %s: %s", doc_id, e)
             raise RuntimeError(f"Failed to get document detail: {e}") from e
 
-    def _get_chunks_by_doc_id(self, doc_id: str) -> List[Dict[str, Any]]:
+    def _resolve_doc_record(
+        self,
+        records: List[Dict[str, Any]],
+        doc_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """从完整性记录中解析唯一文档记录。
+
+        支持输入格式：
+        - 64 位 file_hash
+        - doc_<hash/prefix>
+        - 直接 hash 前缀（兼容场景）
+        """
+        if not doc_id:
+            return None
+
+        # 归一化输入，兼容 doc_<hash> 形式
+        normalized = doc_id[4:] if doc_id.startswith("doc_") else doc_id
+
+        # 优先精确匹配，避免前缀误命中
+        exact_matches = [r for r in records if r.get("file_hash") == normalized]
+        if len(exact_matches) == 1:
+            return exact_matches[0]
+        if len(exact_matches) > 1:
+            raise ValueError(f"Ambiguous document identifier: {doc_id}")
+
+        # 回退到前缀匹配（用于旧的短 doc_id）
+        prefix_matches = [r for r in records if str(r.get("file_hash", "")).startswith(normalized)]
+        if not prefix_matches:
+            return None
+        if len(prefix_matches) > 1:
+            raise ValueError(
+                f"Ambiguous document identifier: {doc_id} matched {len(prefix_matches)} documents"
+            )
+        return prefix_matches[0]
+
+    def _get_chunks_by_doc_id(
+        self,
+        doc_id: str,
+        source_path: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """根据 doc_id 获取所有 chunks。
 
         Args:
             doc_id: 文档 ID
+            source_path: 文档源路径（用于兼容旧数据回退）
 
         Returns:
             chunk 信息列表
         """
         try:
-            # 使用 ChromaStore 的 get_ids_by_metadata 方法查询该文档的所有 chunk IDs
-            chunk_ids = self._chroma_store.get_ids_by_metadata(
-                metadata_filters={"doc_id": doc_id}
+            chunk_ids = self._query_chunk_ids(
+                doc_id=doc_id,
+                source_path=source_path,
             )
 
             if not chunk_ids:
@@ -407,6 +455,69 @@ class DocumentManager:
             return chunks
         except Exception:
             return []
+
+    def _build_doc_id_candidates(self, doc_id: str) -> List[str]:
+        """构建可能的 doc_id 候选值（兼容历史数据格式）。"""
+        candidates: List[str] = []
+
+        def _add(value: str) -> None:
+            if value and value not in candidates:
+                candidates.append(value)
+
+        _add(doc_id)
+        if doc_id.startswith("doc_"):
+            stripped = doc_id[4:]
+            _add(stripped)
+            if len(stripped) == 64:
+                _add(f"doc_{stripped[:16]}")
+        else:
+            _add(f"doc_{doc_id}")
+            if len(doc_id) == 64:
+                _add(f"doc_{doc_id[:16]}")
+
+        return candidates
+
+    def _query_chunk_ids(
+        self,
+        doc_id: str,
+        source_path: Optional[str] = None,
+    ) -> List[str]:
+        """按多种兼容条件查询 chunk IDs。
+
+        查询优先级：
+        1. doc_id 精确/变体匹配（兼容 doc_xxx 与纯 hash）
+        2. source_path 回退匹配（兼容历史缺失 doc_id 元数据）
+        """
+        all_ids: List[str] = []
+        seen = set()
+
+        def _merge(ids: List[str]) -> None:
+            for chunk_id in ids:
+                if chunk_id not in seen:
+                    seen.add(chunk_id)
+                    all_ids.append(chunk_id)
+
+        # 优先使用 doc_id 变体查询
+        for candidate in self._build_doc_id_candidates(doc_id):
+            try:
+                ids = self._chroma_store.get_ids_by_metadata(
+                    metadata_filters={"doc_id": candidate}
+                )
+            except Exception:
+                ids = []
+            _merge(ids)
+
+        # 历史数据可能没有 doc_id 字段，回退到 source_path
+        if source_path:
+            try:
+                ids = self._chroma_store.get_ids_by_metadata(
+                    metadata_filters={"source_path": source_path}
+                )
+            except Exception:
+                ids = []
+            _merge(ids)
+
+        return all_ids
 
     def delete_document(
         self,
@@ -444,7 +555,7 @@ class DocumentManager:
             # 2. 查询该文档的所有 chunk IDs
             # 注意：这里需要 ChromaStore 支持按 metadata 查询
             # 暂时假设可以查询，实际可能需要添加方法
-            chunk_ids = self._get_chunk_ids_by_doc_id(doc_id)
+            chunk_ids = self._get_chunk_ids_by_doc_id(doc_id, source_path=source_path)
 
             chunks_deleted = 0
             images_deleted = 0
@@ -501,19 +612,24 @@ class DocumentManager:
                 error=str(e),
             )
 
-    def _get_chunk_ids_by_doc_id(self, doc_id: str) -> List[str]:
+    def _get_chunk_ids_by_doc_id(
+        self,
+        doc_id: str,
+        source_path: Optional[str] = None,
+    ) -> List[str]:
         """根据 doc_id 获取所有 chunk IDs。
 
         Args:
             doc_id: 文档 ID
+            source_path: 文档源路径（用于兼容旧数据回退）
 
         Returns:
             chunk ID 列表
         """
         try:
-            # 使用 ChromaStore 的 get_ids_by_metadata 方法查询该文档的所有 chunk IDs
-            chunk_ids = self._chroma_store.get_ids_by_metadata(
-                metadata_filters={"doc_id": doc_id}
+            chunk_ids = self._query_chunk_ids(
+                doc_id=doc_id,
+                source_path=source_path,
             )
             return chunk_ids
         except Exception:
@@ -551,7 +667,10 @@ class DocumentManager:
                 for record in records:
                     doc_id = record["file_hash"]
                     # 获取 chunk 数量
-                    total_chunks += self._get_chunk_count_by_doc_id(doc_id)
+                    total_chunks += self._get_chunk_count_by_doc_id(
+                        doc_id=doc_id,
+                        source_path=record["file_path"],
+                    )
                     # 获取图片数量
                     images = self._image_storage.get_images_by_doc_hash(doc_id)
                     total_images += len(images)

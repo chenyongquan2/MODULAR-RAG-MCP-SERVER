@@ -163,13 +163,11 @@ class OpenAIEmbedding(BaseEmbedding):
 
                 if trace:
                     trace.record_stage(
-                        stage_name="openai_embedding",
-                        data={
-                            "provider": "openai",
-                            "model": self.model,
-                            "batch_size": len(batch),
-                            "total_texts": len(texts),
-                        },
+                        "openai_embedding",
+                        provider="openai",
+                        model=self.model,
+                        batch_size=len(batch),
+                        total_texts=len(texts),
                     )
 
             elapsed = time.perf_counter() - start_time

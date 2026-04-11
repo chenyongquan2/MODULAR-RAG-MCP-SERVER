@@ -119,8 +119,15 @@ class TestDataService:
             },
         ]
 
-        # Mock chunk 数量查询
-        service._vector_store.get_ids_by_metadata.side_effect = [["chunk1", "chunk2"], ["chunk3"]]
+        # Mock chunk 数量查询（兼容查询会多次按不同 metadata 条件调用）
+        def _mock_get_ids_by_metadata(*, metadata_filters):
+            if metadata_filters == {"doc_id": "hash1"}:
+                return ["chunk1", "chunk2"]
+            if metadata_filters == {"doc_id": "hash2"}:
+                return ["chunk3"]
+            return []
+
+        service._vector_store.get_ids_by_metadata.side_effect = _mock_get_ids_by_metadata
 
         docs = service.list_documents()
 

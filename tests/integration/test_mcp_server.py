@@ -132,7 +132,7 @@ class TestStdioConstraints:
         import io
         import sys
 
-        from observability.logger import get_logger
+        from src.observability.logger import get_logger
 
         logger = get_logger("test_logger")
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from observability.logger import JSONFormatter, get_trace_logger, write_trace
+from src.observability.logger import JSONFormatter, get_trace_logger, write_trace
 
 
 class TestJSONFormatter:

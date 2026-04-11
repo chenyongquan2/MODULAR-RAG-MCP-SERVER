@@ -155,13 +155,12 @@ class BGEEmbedding(BaseEmbedding):
 
                 if trace:
                     trace.record_stage(
-                        stage_name="bge_embedding",
-                        data={
-                            "provider": "bge",
-                            "model": self.model,
-                            "batch_size": len(batch),
-                            "total_texts": len(texts),
-                        },
+                        "bge_embedding",
+                        provider="bge",
+                        model=self.model,
+                        batch_size=len(batch),
+                        total_texts=len(texts),
+                        device=self.device,
                     )
 
             logger.debug(

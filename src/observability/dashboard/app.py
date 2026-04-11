@@ -62,15 +62,16 @@ def render_main_app() -> None:
     # 定义所有页面（使用 st.pages）
     # 注意：这是 Streamlit 1.28+ 的推荐做法
     # 页面顺序将决定导航栏中的显示顺序
+    # url_path 确保每个页面的 URL 路径名唯一，避免推断冲突
 
     # Overview 页面已完整实现，其他页面为占位实现
     pages = [
-        st.Page(overview.render, title="系统总览", icon="📊"),
-        st.Page(data_browser.render, title="数据浏览", icon="📁"),
-        st.Page(ingestion_manager.render, title="摄取管理", icon="📥"),
-        st.Page(query_traces.render, title="查询追踪", icon="🔍"),
-        st.Page(ingestion_traces.render, title="摄取追踪", icon="📊"),
-        st.Page(evaluation_panel.render, title="评估面板", icon="📈"),
+        st.Page(overview.render, title="系统总览", icon="📊", url_path="overview"),
+        st.Page(data_browser.render, title="数据浏览", icon="📁", url_path="data_browser"),
+        st.Page(ingestion_manager.render, title="摄取管理", icon="📥", url_path="ingestion_manager"),
+        st.Page(query_traces.render, title="查询追踪", icon="🔍", url_path="query_traces"),
+        st.Page(ingestion_traces.render, title="摄取追踪", icon="📊", url_path="ingestion_traces"),
+        st.Page(evaluation_panel.render, title="评估面板", icon="📈", url_path="evaluation_panel"),
     ]
 
     # 创建导航对象

@@ -68,6 +68,26 @@ class TraceContext:
                 return stage
         return None
 
+    def record_stage(self, name: str, **kwargs: Any) -> None:
+        """记录一个已完成的阶段（便捷方法）。
+
+        这个方法用于快速记录一个已完成阶段的信息，适用于不需要精确计时的场景。
+        它会创建一个新的阶段，自动设置开始和结束时间为当前时间，并将传入的
+        键值对参数存储到阶段的数据中。
+
+        Args:
+            name: 阶段名称（位置参数）
+            **kwargs: 要记录的阶段数据（method, provider, chunk_count, data 等）
+
+        Example:
+            >>> trace.record_stage("split", method="recursive", provider="langchain", chunk_count=10)
+            >>> trace.record_stage("embed", data={"provider": "openai", "model": "text-embedding-3-small"})
+        """
+        import time
+        now = time.time()
+        stage = TraceStage(name=name, start_time=now, end_time=now, data=kwargs)
+        self.stages.append(stage)
+
     def finish(self, data: Optional[Dict[str, Any]] = None) -> None:
         """标记整个 trace 完成，计算总耗时。
 

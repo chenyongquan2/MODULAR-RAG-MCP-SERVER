@@ -13,10 +13,19 @@ Design Principles Applied:
 
 import subprocess
 import sys
+import io
 from pathlib import Path
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
+
+# 设置标准输出编码为 UTF-8，支持 emoji 字符
+stdout_encoding = (sys.stdout.encoding or "").lower()
+stderr_encoding = (sys.stderr.encoding or "").lower()
+if stdout_encoding != "utf-8" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if stderr_encoding != "utf-8" and hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 
 def main() -> None:
@@ -28,6 +37,7 @@ def main() -> None:
     app_path = PROJECT_ROOT / "src" / "observability" / "dashboard" / "app.py"
 
     # 构造 streamlit 运行命令
+    # 使用 -m streamlit 代替直接调用 streamlit，确保使用当前 Python 环境
     cmd = [
         sys.executable,
         "-m",

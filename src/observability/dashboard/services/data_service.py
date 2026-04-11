@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from src.core.settings import Settings
 from src.libs.vector_store.vector_store_factory import VectorStoreFactory
 from src.libs.vector_store.base_vector_store import BaseVectorStore
-from src.libs.loader.file_integrity import FileIntegrityChecker
+from src.libs.loader.file_integrity import FileIntegrityChecker, SQLiteIntegrityChecker
 from src.ingestion.storage.bm25_indexer import BM25Indexer
 from src.ingestion.storage.image_storage import BaseImageStorage
 from src.ingestion.storage.image_storage import SQLiteImageStorage
@@ -110,7 +110,8 @@ class DataService:
             文件完整性检查器实例。
         """
         if self._file_integrity is None:
-            self._file_integrity = FileIntegrityChecker()
+            # 使用 SQLite 实现（具体实现类）
+            self._file_integrity = SQLiteIntegrityChecker()
         return self._file_integrity
 
     def _get_bm25_indexer(self) -> BM25Indexer:

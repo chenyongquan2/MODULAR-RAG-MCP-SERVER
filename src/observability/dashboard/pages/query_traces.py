@@ -15,13 +15,10 @@ from src.observability.dashboard.services.trace_service import TraceService
 
 
 def render() -> None:
-    """渲染查询追踪页面。"""
-    st.set_page_config(
-        page_title="查询追踪",
-        page_icon="🔍",
-        layout="wide",
-    )
+    """渲染查询追踪页面。
 
+    注意：页面配置在 app.py 中统一设置，此处不再调用 st.set_page_config()
+    """
     st.title("🔍 查询追踪")
     st.markdown("---")
 

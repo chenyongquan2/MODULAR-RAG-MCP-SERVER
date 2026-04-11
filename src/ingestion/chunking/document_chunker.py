@@ -127,7 +127,9 @@ class DocumentChunker:
                 source_ref=document.id,
             )
 
+            # 添加 chunk 特有元数据
             chunk.metadata["chunk_index"] = idx
+            chunk.metadata["doc_id"] = document.id  # 添加 doc_id 字段，便于 DocumentManager 查询
 
             chunks.append(chunk)
 

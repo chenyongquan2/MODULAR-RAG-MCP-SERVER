@@ -10,9 +10,6 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-
 from src.libs.vector_store.base_vector_store import BaseVectorStore
 
 if TYPE_CHECKING:
@@ -60,6 +57,10 @@ class ChromaStore(BaseVectorStore):
         ephemeral = kwargs.get("ephemeral", False)
 
         try:
+            # 延迟导入：避免仅导入模块时触发 chromadb/protobuf 依赖错误
+            import chromadb
+            from chromadb.config import Settings as ChromaSettings
+
             if ephemeral:
                 # In-memory mode for testing
                 self._client = chromadb.Client(
@@ -80,7 +81,14 @@ class ChromaStore(BaseVectorStore):
                 metadata={"hnsw:space": "cosine"},  # Use cosine similarity
             )
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize ChromaDB: {e}") from e
+            error_msg = f"Failed to initialize ChromaDB: {e}"
+            if "Descriptors cannot be created directly" in str(e):
+                error_msg += (
+                    " (Detected protobuf/chromadb compatibility issue. "
+                    "Please install dependencies with pyproject constraints, "
+                    "or run: pip install 'protobuf>=3.20.0,<4')"
+                )
+            raise RuntimeError(error_msg) from e
 
     def upsert(
         self,
@@ -114,10 +122,27 @@ class ChromaStore(BaseVectorStore):
             # ChromaDB requires a document text for each embedding
             documents.append(record.get("text", ""))
             # Ensure metadata is a non-empty dict (ChromaDB requirement)
-            # If metadata is empty, add a placeholder
+            # ChromaDB 只接受基本类型的 metadata 值：str, int, float, bool, None
+            # 需要过滤掉列表等非基本类型的值
             metadata = record.get("metadata", {})
             if not metadata:
                 metadata = {"__placeholder": "empty"}
+            else:
+                # 过滤非基本类型的 metadata 值
+                filtered_metadata = {}
+                for key, value in metadata.items():
+                    # 只保留基本类型的值：str, int, float, bool, None
+                    if value is None or isinstance(value, (str, int, float, bool)):
+                        filtered_metadata[key] = value
+                    else:
+                        # 对于列表等非基本类型，转换为 JSON 字符串
+                        import json
+                        try:
+                            filtered_metadata[key] = json.dumps(value, ensure_ascii=False)
+                        except (TypeError, ValueError):
+                            # 如果转换失败，跳过该字段
+                            pass
+                metadata = filtered_metadata if filtered_metadata else {"__placeholder": "empty"}
             metadatas.append(metadata)
 
         try:

@@ -16,6 +16,9 @@ dependencies = [
     # 锁定 chromadb 版本以避免与 protobuf 版本冲突
     # chromadb 1.5.x 与 protobuf 4.x+ 不兼容，使用稳定的 1.4.x 版本
     "chromadb>=0.4.0,<1.5",
+    # 显式约束 protobuf，避免 chromadb 导入时报
+    # "Descriptors cannot be created directly" 兼容性错误
+    "protobuf>=3.20.0,<4",
     "pillow>=10.0.0",
     "markitdown[pdf]>=0.0.1",
     "reportlab>=4.0.0",

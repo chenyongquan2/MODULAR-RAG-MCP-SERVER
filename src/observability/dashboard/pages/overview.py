@@ -105,13 +105,10 @@ def render_system_status_section(config_service: ConfigService) -> None:
 
 
 def render() -> None:
-    """渲染系统总览页面。"""
-    st.set_page_config(
-        page_title="系统总览",
-        page_icon="📊",
-        layout="wide",
-    )
+    """渲染系统总览页面。
 
+    注意：页面配置在 app.py 中统一设置，此处不再调用 st.set_page_config()
+    """
     st.title("📊 系统总览")
     st.markdown("---")
 

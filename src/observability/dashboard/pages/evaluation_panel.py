@@ -11,13 +11,10 @@ import streamlit as st
 
 
 def render() -> None:
-    """渲染评估面板占位页面。"""
-    st.set_page_config(
-        page_title="评估面板",
-        page_icon="📈",
-        layout="wide",
-    )
+    """渲染评估面板占位页面。
 
+    注意：页面配置在 app.py 中统一设置，此处不再调用 st.set_page_config()
+    """
     st.title("📈 评估面板")
     st.markdown("---")
 

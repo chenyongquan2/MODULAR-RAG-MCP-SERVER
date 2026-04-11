@@ -132,13 +132,11 @@ class OllamaEmbedding(BaseEmbedding):
 
                 if trace:
                     trace.record_stage(
-                        stage_name="ollama_embedding",
-                        data={
-                            "provider": "ollama",
-                            "model": self.model,
-                            "text_index": i,
-                            "total_texts": len(texts),
-                        },
+                        "ollama_embedding",
+                        provider="ollama",
+                        model=self.model,
+                        text_index=i,
+                        total_texts=len(texts),
                     )
 
             logger.debug(

@@ -51,6 +51,9 @@ pip install -e .
 pip install -e ".[dev]"
 ```
 
+> 若遇到 ChromaDB 导入报错 `Descriptors cannot be created directly`，请执行：
+> `pip install "protobuf>=3.20.0,<4"`，然后重新运行测试。
+
 ### Ingest阶段
 ```
 python scripts/ingest.py --path ./asset/rag_test_doc.md --force

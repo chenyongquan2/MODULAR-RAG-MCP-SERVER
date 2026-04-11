@@ -148,14 +148,12 @@ class AzureEmbedding(BaseEmbedding):
 
                 if trace:
                     trace.record_stage(
-                        stage_name="azure_embedding",
-                        data={
-                            "provider": "azure",
-                            "model": self.model,
-                            "endpoint": self.azure_endpoint,
-                            "batch_size": len(batch),
-                            "total_texts": len(texts),
-                        },
+                        "azure_embedding",
+                        provider="azure",
+                        model=self.model,
+                        endpoint=self.azure_endpoint,
+                        batch_size=len(batch),
+                        total_texts=len(texts),
                     )
 
             logger.debug(

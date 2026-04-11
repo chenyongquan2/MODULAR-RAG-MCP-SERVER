@@ -127,8 +127,8 @@ class TestListDocuments:
         assert doc.status == "success"
         assert doc.doc_type == "markdown"
 
-        # 验证调用了正确的方法
-        mock_vector_store.get_ids_by_metadata.assert_called_once_with(metadata_filters={"doc_id": doc_hash})
+        # 验证调用了 doc_id 查询（兼容模式下会有多次查询）
+        mock_vector_store.get_ids_by_metadata.assert_any_call(metadata_filters={"doc_id": doc_hash})
         mock_image_storage.get_images_by_doc_hash.assert_called_once_with(doc_hash)
 
     def test_list_multiple_documents(self, document_manager, sample_document, mock_vector_store, mock_image_storage):
@@ -270,6 +270,32 @@ class TestGetDocumentDetail:
         with pytest.raises(ValueError, match="Document not found"):
             document_manager.get_document_detail("nonexistent_hash")
 
+    def test_get_detail_ambiguous_prefix_raises_error(self, document_manager, mock_vector_store):
+        """测试短前缀匹配多个文档时抛出歧义错误。"""
+        document_manager._file_integrity.list_processed = MagicMock(
+            return_value=[
+                {
+                    "file_hash": "abcd111122223333444455556666777788889999aaaabbbbccccddddeeeeffff",
+                    "file_path": "/tmp/doc1.md",
+                    "processed_at": "2026-04-10T10:00:00",
+                    "file_size": 100,
+                    "status": "success",
+                },
+                {
+                    "file_hash": "abcd9999000011112222333344445555666677778888aaaabbbbccccddddeeee",
+                    "file_path": "/tmp/doc2.md",
+                    "processed_at": "2026-04-10T10:05:00",
+                    "file_size": 120,
+                    "status": "success",
+                },
+            ]
+        )
+
+        with pytest.raises(ValueError, match="Ambiguous document identifier"):
+            document_manager.get_document_detail("doc_abcd")
+
+        mock_vector_store.get_by_ids.assert_not_called()
+
     def test_get_detail_with_no_chunks(self, document_manager, sample_document, mock_vector_store, mock_image_storage):
         """测试获取没有 chunks 的文档详细信息。"""
         # 设置 mock 返回值
@@ -338,7 +364,7 @@ class TestDeleteDocument:
         assert result.error is None
 
         # 验证所有存储后端都被正确调用
-        mock_vector_store.get_ids_by_metadata.assert_called_with(metadata_filters={"doc_id": doc_hash})
+        mock_vector_store.get_ids_by_metadata.assert_any_call(metadata_filters={"doc_id": doc_hash})
         mock_vector_store.delete.assert_called_once_with(doc_ids=chunk_ids)
         mock_bm25_indexer.remove_documents.assert_called_once_with(set(chunk_ids))
         mock_image_storage.get_images_by_doc_hash.assert_called_with(doc_hash)
@@ -520,6 +546,42 @@ class TestGetCollectionStats:
         stats = document_manager.get_collection_stats(collection="my_collection")
 
         assert stats.collection == "my_collection"
+
+
+class TestLegacyChunkLookupFallback:
+    """测试历史数据兼容查询（缺失 doc_id 时回退 source_path）。"""
+
+    def test_get_chunks_fallback_to_source_path(
+        self,
+        document_manager,
+        sample_document,
+        mock_vector_store,
+        mock_image_storage,
+    ):
+        """当 metadata 不含 doc_id 时，仍可通过 source_path 查询到 chunk。"""
+        # 3 次 doc_id 变体查询都失败，第 4 次 source_path 查询成功
+        mock_vector_store.get_ids_by_metadata.side_effect = [
+            [],
+            [],
+            [],
+            ["legacy_chunk_001"],
+        ]
+        mock_vector_store.get_by_ids.return_value = [
+            {"id": "legacy_chunk_001", "text": "legacy text", "metadata": {"source_path": sample_document}},
+        ]
+        mock_image_storage.get_images_by_doc_hash.return_value = []
+
+        doc_hash = document_manager._file_integrity.compute_sha256(sample_document)
+        file_size = Path(sample_document).stat().st_size
+        document_manager._file_integrity.mark_success(doc_hash, sample_document, file_size, chunk_count=1)
+
+        detail = document_manager.get_document_detail(doc_hash)
+
+        assert detail.chunk_count == 1
+        assert detail.chunks[0]["id"] == "legacy_chunk_001"
+        mock_vector_store.get_ids_by_metadata.assert_any_call(
+            metadata_filters={"source_path": sample_document}
+        )
 
 
 class TestDataclasses:

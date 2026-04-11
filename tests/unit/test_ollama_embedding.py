@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 import requests
 
+from src.core.trace.trace_context import TraceContext
 from src.libs.embedding.ollama_embedding import OllamaEmbedding
 
 
@@ -242,9 +243,30 @@ class TestOllamaEmbedding:
         # Verify trace was recorded
         trace.record_stage.assert_called_once()
         call_args = trace.record_stage.call_args
-        assert call_args[1]["stage_name"] == "ollama_embedding"
-        assert call_args[1]["data"]["provider"] == "ollama"
-        assert call_args[1]["data"]["model"] == "nomic-embed-text"
+        assert call_args[0][0] == "ollama_embedding"
+        assert call_args[1]["provider"] == "ollama"
+        assert call_args[1]["model"] == "nomic-embed-text"
+
+    @patch("requests.post")
+    def test_embed_with_real_trace_context(self, mock_post):
+        """Should work with real TraceContext object."""
+        settings = MagicMock()
+        settings.embedding.base_url = "http://localhost:11434"
+        settings.embedding.model = "nomic-embed-text"
+
+        mock_response = Mock()
+        mock_response.json.return_value = {"embedding": [0.1, 0.2, 0.3]}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        trace = TraceContext()
+        embedding = OllamaEmbedding(settings)
+        vectors = embedding.embed(["Test"], trace=trace)
+
+        assert len(vectors) == 1
+        assert len(trace.stages) == 1
+        assert trace.stages[0].name == "ollama_embedding"
+        assert trace.stages[0].data["provider"] == "ollama"
 
     def test_get_model_name(self):
         """Should return configured model name."""

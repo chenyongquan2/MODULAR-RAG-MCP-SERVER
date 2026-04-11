@@ -55,7 +55,7 @@ python scripts/query.py --query "What is RAG?"
 
 ## Best Practices
 
-1. **Use logger, not print**: Import `from observability.logger import get_logger`
+1. **Use logger, not print**: Import `from src.observability.logger import get_logger`
 2. **Type hints**: Add type annotations to all functions
 3. **Argparse**: Use `argparse` for CLI parameters
 4. **Error handling**: Catch specific exceptions, provide helpful error messages
