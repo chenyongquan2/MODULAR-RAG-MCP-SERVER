@@ -1,0 +1,14 @@
+{
+  "test_cases": [
+    {
+      "query": "如何配置 Azure OpenAI？",
+      "expected_chunk_ids": ["chunk_azure_001", "chunk_azure_002"],
+      "expected_sources": ["config_guide.pdf"]
+    },
+    {
+      "query": "RAG 检索流程包括哪些阶段？",
+      "expected_chunk_ids": ["chunk_retrieval_001"],
+      "expected_sources": ["rag_overview.md"]
+    }
+  ]
+}

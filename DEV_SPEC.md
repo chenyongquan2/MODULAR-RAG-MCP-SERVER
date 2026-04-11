@@ -2057,7 +2057,7 @@ dashboard:
 |---------|---------|------|---------|------|
 | H1 | RagasEvaluator 实现 | [x] | 2026-04-12 |  |
 | H2 | CompositeEvaluator 实现 | [x] | 2026-04-12 |  |
-| H3 | EvalRunner + Golden Test Set | [ ] | - |  |
+| H3 | EvalRunner + Golden Test Set | [x] | 2026-04-12 |  |
 | H4 | 评估面板页面 | [ ] | - |  |
 | H5 | Recall 回归测试（E2E） | [ ] | - |  |
 
