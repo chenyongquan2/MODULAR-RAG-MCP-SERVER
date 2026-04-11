@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from src.libs.evaluator.base_evaluator import BaseEvaluator
+from src.observability.evaluation.composite_evaluator import CompositeEvaluator
 
 if TYPE_CHECKING:
     from src.core.settings import Settings
@@ -80,46 +81,52 @@ class EvaluatorFactory:
             ...     golden_ids=["chunk_1"]
             ... )
         """
-        # Extract provider name from settings
+        # Extract provider names from settings
         try:
-            # Get first backend from list (support for multiple backends in future)
             backends = settings.evaluation.backends
             if not backends:
                 raise ValueError(
                     "Missing required configuration: settings.evaluation.backends "
                     "list is empty. Please specify at least one backend."
                 )
-            provider_name = backends[0].lower()
+            normalized_backends = [backend.lower() for backend in backends]
         except AttributeError as e:
             raise ValueError(
                 "Missing required configuration: settings.evaluation.backends. "
                 "Please ensure 'evaluation.backends' is specified in settings.yaml"
             ) from e
 
-        # Look up provider class in registry
-        provider_class = cls._PROVIDERS.get(provider_name)
+        evaluators: list[BaseEvaluator] = []
+        for provider_name in normalized_backends:
+            provider_class = cls._PROVIDERS.get(provider_name)
 
-        if provider_class is None:
-            available = (
-                ", ".join(sorted(cls._PROVIDERS.keys()))
-                if cls._PROVIDERS
-                else "none"
-            )
-            raise ValueError(
-                f"Unsupported Evaluator provider: '{provider_name}'. "
-                f"Available providers: {available}"
-            )
+            if provider_class is None:
+                available = (
+                    ", ".join(sorted(cls._PROVIDERS.keys()))
+                    if cls._PROVIDERS
+                    else "none"
+                )
+                raise ValueError(
+                    f"Unsupported Evaluator provider: '{provider_name}'. "
+                    f"Available providers: {available}"
+                )
 
-        # Instantiate the provider
-        try:
-            return provider_class(settings=settings, **override_kwargs)
-        except ImportError:
-            raise
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to instantiate Evaluator provider "
-                f"'{provider_name}': {e}"
-            ) from e
+            try:
+                evaluators.append(
+                    provider_class(settings=settings, **override_kwargs)
+                )
+            except ImportError:
+                raise
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to instantiate Evaluator provider "
+                    f"'{provider_name}': {e}"
+                ) from e
+
+        if len(evaluators) == 1:
+            return evaluators[0]
+
+        return CompositeEvaluator(evaluators=evaluators)
 
     @classmethod
     def list_providers(cls) -> list[str]:

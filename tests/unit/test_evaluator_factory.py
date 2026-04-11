@@ -6,6 +6,7 @@ from src.libs.evaluator.evaluator_factory import EvaluatorFactory
 from src.libs.evaluator.base_evaluator import BaseEvaluator
 from src.libs.evaluator.custom_evaluator import CustomEvaluator
 from src.observability.evaluation.ragas_evaluator import RagasEvaluator
+from src.observability.evaluation.composite_evaluator import CompositeEvaluator
 from src.core.settings import Settings, EvaluationSettings
 
 
@@ -102,6 +103,48 @@ class TestEvaluatorFactory:
 
         assert isinstance(evaluator, BaseEvaluator)
         assert isinstance(evaluator, RagasEvaluator)
+
+    def test_create_composite_evaluator_when_multiple_backends(self):
+        """Factory should return CompositeEvaluator for multi-backend config."""
+        settings = Settings(
+            llm=None,
+            embedding=None,
+            vision_llm=None,
+            vector_store=None,
+            evaluation=EvaluationSettings(backends=["custom", "ragas"]),
+        )
+
+        evaluator = EvaluatorFactory.create(settings)
+
+        assert isinstance(evaluator, CompositeEvaluator)
+
+    def test_composite_evaluator_returns_merged_metrics(self):
+        """Composite evaluator from factory should merge metrics from backends."""
+        settings = Settings(
+            llm=None,
+            embedding=None,
+            vision_llm=None,
+            vector_store=None,
+            evaluation=EvaluationSettings(backends=["custom", "ragas"]),
+        )
+
+        evaluator = EvaluatorFactory.create(settings)
+        metrics = evaluator.evaluate(
+            query="what is rag?",
+            retrieved_ids=["chunk_1", "chunk_2"],
+            golden_ids=["chunk_2"],
+            mock_metrics={
+                "faithfulness": 0.9,
+                "answer_relevancy": 0.8,
+                "context_precision": 0.7,
+            },
+        )
+
+        assert "hit_rate" in metrics
+        assert "mrr" in metrics
+        assert "faithfulness" in metrics
+        assert "answer_relevancy" in metrics
+        assert "context_precision" in metrics
 
     def test_register_provider(self):
         """Test manual provider registration."""
