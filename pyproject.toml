@@ -24,6 +24,8 @@ dependencies = [
     "markdownify>=0.11.0",
     # Dashboard UI 框架
     "streamlit>=1.28.0",
+    "plotly>=5.0.0",
+    "pandas>=2.0.0",
 ]
 
 [project.optional-dependencies]
