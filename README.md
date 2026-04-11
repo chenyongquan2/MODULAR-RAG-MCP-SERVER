@@ -38,6 +38,19 @@
 
 ## 如何运行
 
+### 环境准备
+```bash
+# 进入项目根目录
+cd C:\workspace\MODULAR-RAG-MCP-SERVER
+
+# 激活虚拟环境（Windows PowerShell）
+.venv\Scripts\Activate.ps1
+
+# 安装依赖（首次或依赖更新后）
+pip install -e .
+pip install -e ".[dev]"
+```
+
 ### Ingest阶段
 ```
 python scripts/ingest.py --path ./asset/rag_test_doc.md --force
@@ -47,6 +60,13 @@ python scripts/ingest.py --path ./asset/rag_test_doc.md
 ```
 python scripts/query.py --query "北极星’到底是什么？"
 ```
+
+### Dashboard 启动
+```bash
+python scripts/start_dashboard.py
+```
+
+启动后在终端输出的 Streamlit 地址访问（通常为 `http://localhost:8501`）。
 
 ---
 
