@@ -79,7 +79,7 @@ def verify():
         print("\n" + "-"*60)
         print("Fix:")
         print("  1. Update DEV_SPEC.md with correct task statuses")
-        print("  2. Run: python .github/skills/auto-coder/scripts/sync_spec.py --force")
+        print("  2. Run: python .codex/skills/auto-coder/scripts/sync_all_skills.py --force")
         print("  3. Re-run this script to verify")
         print("="*60 + "\n")
         sys.exit(1)
