@@ -5,6 +5,7 @@ import pytest
 from src.libs.evaluator.evaluator_factory import EvaluatorFactory
 from src.libs.evaluator.base_evaluator import BaseEvaluator
 from src.libs.evaluator.custom_evaluator import CustomEvaluator
+from src.observability.evaluation.ragas_evaluator import RagasEvaluator
 from src.core.settings import Settings, EvaluationSettings
 
 
@@ -84,7 +85,23 @@ class TestEvaluatorFactory:
 
         assert isinstance(providers, list)
         assert "custom" in providers
+        assert "ragas" in providers
         assert providers == sorted(providers)  # Should be sorted
+
+    def test_create_ragas_evaluator(self):
+        """Test creating ragas evaluator via factory."""
+        settings = Settings(
+            llm=None,
+            embedding=None,
+            vision_llm=None,
+            vector_store=None,
+            evaluation=EvaluationSettings(backends=["ragas"]),
+        )
+
+        evaluator = EvaluatorFactory.create(settings)
+
+        assert isinstance(evaluator, BaseEvaluator)
+        assert isinstance(evaluator, RagasEvaluator)
 
     def test_register_provider(self):
         """Test manual provider registration."""

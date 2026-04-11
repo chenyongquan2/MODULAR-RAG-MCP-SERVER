@@ -113,6 +113,8 @@ class EvaluatorFactory:
         # Instantiate the provider
         try:
             return provider_class(settings=settings, **override_kwargs)
+        except ImportError:
+            raise
         except Exception as e:
             raise RuntimeError(
                 f"Failed to instantiate Evaluator provider "
@@ -138,6 +140,13 @@ def _register_builtin_providers() -> None:
         EvaluatorFactory.register_provider("custom", CustomEvaluator)
     except ImportError:
         pass  # Custom provider not available
+
+    try:
+        from src.observability.evaluation.ragas_evaluator import RagasEvaluator
+
+        EvaluatorFactory.register_provider("ragas", RagasEvaluator)
+    except ImportError:
+        pass  # Ragas provider module not available
 
 
 # Register providers when module is imported

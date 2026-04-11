@@ -1,15 +1,5 @@
-"""Evaluator library module.
+"""Evaluator package.
 
-This module provides evaluator abstractions and factory for retrieval quality
-assessment. Supports multiple evaluation backends: custom metrics, Ragas, DeepEval.
+Avoid importing provider modules at package import time to prevent circular
+dependencies during factory auto-registration.
 """
-
-from src.libs.evaluator.base_evaluator import BaseEvaluator
-from src.libs.evaluator.custom_evaluator import CustomEvaluator
-from src.libs.evaluator.evaluator_factory import EvaluatorFactory
-
-__all__ = [
-    "BaseEvaluator",
-    "CustomEvaluator",
-    "EvaluatorFactory",
-]
