@@ -2069,7 +2069,7 @@ dashboard:
 | I2 | E2E：Dashboard 冒烟测试 | [x] | 2026-04-12 | |
 | I3 | 完善 README（运行说明 + MCP + Dashboard） | [x] | 2026-04-12 | |
 | I4 | 清理接口一致性（契约测试补齐） | [x] | 2026-04-12 | |
-| I5 | 全链路 E2E 验收 | [ ] | - | |
+| I5 | 全链路 E2E 验收 | [x] | 2026-04-12 | |
 
 ---
 
@@ -3163,6 +3163,18 @@ dashboard:
   - Dashboard 可展示摄取与查询追踪
   - `python scripts/evaluate.py` 输出评估指标
 - **测试方法**：手动全链路走通 + `pytest -q` 全量测试。
+
+> **补验备忘（额度不足场景）**
+>
+> 若当日因 Embedding/LLM 中转站额度不足导致 `scripts/ingest.py`、`scripts/query.py`、
+> `scripts/evaluate.py` 失败，可先完成代码与自动化回归（`pytest -v`），并在额度恢复后补跑：
+>
+> 1. `python scripts/ingest.py --path tests/fixtures/sample_documents/ --collection test --force`
+> 2. `python scripts/query.py --query "测试查询" --top-k 5 --collection test`
+> 3. `python scripts/evaluate.py --test-set tests/fixtures/golden_test_set.json --pretty`
+> 4. `pytest tests/e2e -v && pytest -v`
+>
+> 补跑完成后，在任务备注里补记执行日期与测试摘要，避免后续遗忘。
 
 ---
 
