@@ -9,6 +9,16 @@
       "query": "RAG 检索流程包括哪些阶段？",
       "expected_chunk_ids": ["chunk_retrieval_001"],
       "expected_sources": ["rag_overview.md"]
+    },
+    {
+      "query": "如何开启 ingestion trace 追踪？",
+      "expected_chunk_ids": ["chunk_trace_001"],
+      "expected_sources": ["observability_guide.md"]
+    },
+    {
+      "query": "Dashboard 支持哪些页面？",
+      "expected_chunk_ids": ["chunk_dashboard_001", "chunk_dashboard_002"],
+      "expected_sources": ["dashboard_manual.md"]
     }
   ]
 }
