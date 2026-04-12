@@ -68,10 +68,9 @@ python scripts/sync_all_skills.py
 This syncs DEV_SPEC.md to all three skill directories (.claude, .cline, .github).
 
 3. Read the schedule file:
-- Read `.github/skills/auto-coder/specs/06-schedule.md` (or `.claude/skills/auto-coder/specs/06-schedule.md`)
+- Read `specs/06-schedule.md`
 
 **Task markers:**
-
 | Marker | Status |
 |--------|--------|
 | `[ ]` / `⬜` | Not started |
