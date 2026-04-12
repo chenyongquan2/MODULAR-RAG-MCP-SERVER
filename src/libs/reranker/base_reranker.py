@@ -84,11 +84,18 @@ class BaseReranker(ABC):
             raise ValueError("Query must be a non-empty string")
         if not candidates:
             raise ValueError("Candidates list cannot be empty")
+        required_fields = {"id", "text", "score"}
         for i, candidate in enumerate(candidates):
             if not isinstance(candidate, dict):
                 raise ValueError(
                     f"Candidate at index {i} is not a dict "
                     f"(type: {type(candidate).__name__})"
+                )
+            missing_fields = required_fields - set(candidate.keys())
+            if missing_fields:
+                raise ValueError(
+                    f"Candidate at index {i} is missing required fields: "
+                    f"{sorted(missing_fields)}"
                 )
 
     def get_backend_name(self) -> str:

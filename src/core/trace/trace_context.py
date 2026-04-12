@@ -46,6 +46,18 @@ class TraceContext:
     stages: List[TraceStage] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    def add_metadata(self, key: str, value: Any) -> None:
+        """添加或更新追踪元数据。
+
+        统一提供 add_metadata 接口，兼容评估模块等调用方，
+        避免业务代码直接操作 metadata 字典造成约定分散。
+
+        Args:
+            key: 元数据键。
+            value: 元数据值（需要可 JSON 序列化）。
+        """
+        self.metadata[key] = value
+
     def start_stage(self, name: str) -> TraceStage:
         """开始一个新阶段。"""
         import time
