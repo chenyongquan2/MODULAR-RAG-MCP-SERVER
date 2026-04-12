@@ -62,7 +62,7 @@ class CustomEvaluator(BaseEvaluator):
             - "mrr": Reciprocal rank of first golden ID, or 0.0 if none found
 
         Raises:
-            ValueError: If retrieved_ids or golden_ids are empty.
+            ValueError: If query/retrieved_ids/golden_ids are invalid.
 
         Example:
             >>> evaluator = CustomEvaluator(settings)
@@ -75,6 +75,11 @@ class CustomEvaluator(BaseEvaluator):
             {"hit_rate": 1.0, "mrr": 0.5}
         """
         # Input validation
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError(
+                "Missing required field: query must be a non-empty string. "
+                "Please provide a valid query text."
+            )
         if not retrieved_ids:
             raise ValueError(
                 "Missing required field: retrieved_ids cannot be empty. "
@@ -88,8 +93,8 @@ class CustomEvaluator(BaseEvaluator):
 
         # Add trace metadata if available
         if trace:
-            trace.add_metadata("evaluator_type", "custom")
-            trace.add_metadata("query", query)
+            self._add_trace_metadata(trace, "evaluator_type", "custom")
+            self._add_trace_metadata(trace, "query", query)
 
         # Calculate metrics
         golden_set = set(golden_ids)
@@ -109,6 +114,26 @@ class CustomEvaluator(BaseEvaluator):
 
         # Add trace metadata for results
         if trace:
-            trace.add_metadata("metrics", metrics)
+            self._add_trace_metadata(trace, "metrics", metrics)
 
         return metrics
+
+    def _add_trace_metadata(
+        self,
+        trace: "TraceContext",
+        key: str,
+        value: Any,
+    ) -> None:
+        """Write trace metadata with backward-compatible behavior.
+
+        优先调用 TraceContext.add_metadata（若实现），否则直接回写到
+        trace.metadata 字典，保证在不同 TraceContext 实现下都能工作。
+        """
+        add_metadata = getattr(trace, "add_metadata", None)
+        if callable(add_metadata):
+            add_metadata(key, value)
+            return
+
+        metadata = getattr(trace, "metadata", None)
+        if isinstance(metadata, dict):
+            metadata[key] = value

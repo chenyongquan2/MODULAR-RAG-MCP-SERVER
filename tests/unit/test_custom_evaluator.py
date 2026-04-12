@@ -139,6 +139,24 @@ class TestCustomEvaluator:
 
         assert "retrieved_ids cannot be empty" in str(exc_info.value)
 
+    def test_empty_query_raises_error(self, mock_settings):
+        """Test that empty query raises ValueError."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        with pytest.raises(ValueError) as exc_info:
+            evaluator.evaluate("", ["chunk_1"], ["chunk_1"])
+
+        assert "query must be a non-empty string" in str(exc_info.value)
+
+    def test_non_string_query_raises_error(self, mock_settings):
+        """Test that non-string query raises ValueError."""
+        evaluator = CustomEvaluator(settings=mock_settings)
+
+        with pytest.raises(ValueError) as exc_info:
+            evaluator.evaluate(123, ["chunk_1"], ["chunk_1"])  # type: ignore[arg-type]
+
+        assert "query must be a non-empty string" in str(exc_info.value)
+
     def test_duplicate_ids_handled_gracefully(self, mock_settings):
         """Test that duplicate IDs in inputs are handled correctly."""
         evaluator = CustomEvaluator(settings=mock_settings)
@@ -165,13 +183,12 @@ class TestCustomEvaluator:
 
         assert metrics_1 == metrics_2
 
-    @pytest.mark.skip(reason="TraceContext not yet implemented (Stage G)")
     def test_trace_context_integration(self, mock_settings):
-        """Test trace context integration (reserved for Stage F)."""
+        """Test trace context metadata writing with current TraceContext."""
         from src.core.trace.trace_context import TraceContext
 
         evaluator = CustomEvaluator(settings=mock_settings)
-        trace = TraceContext(operation="test_evaluation")
+        trace = TraceContext(trace_type="query")
 
         retrieved = ["chunk_1", "chunk_2", "chunk_3"]
         golden = ["chunk_2"]
@@ -184,4 +201,5 @@ class TestCustomEvaluator:
 
         # Verify trace context recorded metadata
         assert trace.metadata.get("evaluator_type") == "custom"
+        assert trace.metadata.get("query") == "test query"
         assert "metrics" in trace.metadata

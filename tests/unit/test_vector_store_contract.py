@@ -124,6 +124,74 @@ class FakeVectorStore(BaseVectorStore):
                 })
         return results
 
+    def delete_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> int:
+        """Delete records by metadata filters and return deleted count."""
+        if not metadata_filters:
+            raise ValueError("metadata_filters cannot be empty")
+
+        to_delete = [
+            record_id
+            for record_id, record in self._store.items()
+            if all(record.get("metadata", {}).get(k) == v for k, v in metadata_filters.items())
+        ]
+        for record_id in to_delete:
+            del self._store[record_id]
+        return len(to_delete)
+
+    def get_ids_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Get record IDs by metadata filters."""
+        if not metadata_filters:
+            raise ValueError("metadata_filters cannot be empty")
+
+        return [
+            record_id
+            for record_id, record in self._store.items()
+            if all(record.get("metadata", {}).get(k) == v for k, v in metadata_filters.items())
+        ]
+
+    def delete_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> int:
+        """Delete records that match metadata filters and return deleted count."""
+        if not metadata_filters:
+            raise ValueError("metadata_filters cannot be empty")
+
+        ids_to_delete = self.get_ids_by_metadata(metadata_filters, trace=trace)
+        for record_id in ids_to_delete:
+            self._store.pop(record_id, None)
+        return len(ids_to_delete)
+
+    def get_ids_by_metadata(
+        self,
+        metadata_filters: Dict[str, Any],
+        trace: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Return IDs of records matching metadata filters."""
+        if not metadata_filters:
+            raise ValueError("metadata_filters cannot be empty")
+
+        matched_ids: List[str] = []
+        for record_id, record in self._store.items():
+            metadata = record.get("metadata", {})
+            is_match = all(metadata.get(k) == v for k, v in metadata_filters.items())
+            if is_match:
+                matched_ids.append(record_id)
+        return matched_ids
+
 
 # ===========================================================================
 # Contract Tests: Validate input/output shape
@@ -280,6 +348,70 @@ class TestVectorStoreContract:
         )
         assert results == []
 
+    def test_delete_by_metadata_success(self):
+        """delete_by_metadata should remove matched records and return count."""
+        store = FakeVectorStore()
+        store.upsert([
+            {"id": "a", "vector": [1.0], "text": "A", "metadata": {"source": "doc1.pdf"}},
+            {"id": "b", "vector": [1.0], "text": "B", "metadata": {"source": "doc1.pdf"}},
+            {"id": "c", "vector": [1.0], "text": "C", "metadata": {"source": "doc2.pdf"}},
+        ])
+
+        deleted = store.delete_by_metadata({"source": "doc1.pdf"})
+
+        assert deleted == 2
+        assert sorted(store._store.keys()) == ["c"]
+
+    def test_delete_by_metadata_no_match(self):
+        """delete_by_metadata should return 0 when no records match."""
+        store = FakeVectorStore()
+        store.upsert([
+            {"id": "a", "vector": [1.0], "text": "A", "metadata": {"source": "doc1.pdf"}},
+        ])
+
+        deleted = store.delete_by_metadata({"source": "missing.pdf"})
+
+        assert deleted == 0
+        assert sorted(store._store.keys()) == ["a"]
+
+    def test_delete_by_metadata_empty_filters(self):
+        """delete_by_metadata with empty filters should raise ValueError."""
+        store = FakeVectorStore()
+        with pytest.raises(ValueError, match="metadata_filters cannot be empty"):
+            store.delete_by_metadata({})
+
+    def test_delete_by_metadata_deletes_matching_records(self):
+        """delete_by_metadata should remove only matched records."""
+        store = FakeVectorStore()
+        store.upsert([
+            {"id": "a", "vector": [1.0], "text": "A", "metadata": {"source": "doc1.pdf"}},
+            {"id": "b", "vector": [1.0], "text": "B", "metadata": {"source": "doc2.pdf"}},
+            {"id": "c", "vector": [1.0], "text": "C", "metadata": {"source": "doc1.pdf"}},
+        ])
+
+        deleted_count = store.delete_by_metadata({"source": "doc1.pdf"})
+
+        assert deleted_count == 2
+        assert set(store._store.keys()) == {"b"}
+
+    def test_delete_by_metadata_no_match_returns_zero(self):
+        """delete_by_metadata should return 0 when no record matches."""
+        store = FakeVectorStore()
+        store.upsert([
+            {"id": "a", "vector": [1.0], "text": "A", "metadata": {"source": "doc1.pdf"}},
+        ])
+
+        deleted_count = store.delete_by_metadata({"source": "doc2.pdf"})
+
+        assert deleted_count == 0
+        assert set(store._store.keys()) == {"a"}
+
+    def test_delete_by_metadata_empty_filters_raises_error(self):
+        """delete_by_metadata should reject empty filter dict."""
+        store = FakeVectorStore()
+        with pytest.raises(ValueError, match="metadata_filters cannot be empty"):
+            store.delete_by_metadata({})
+
 
 # ===========================================================================
 # Validation Tests
@@ -366,6 +498,25 @@ class TestBaseVectorStoreValidation:
             NotImplementedError, match="must implement get_backend_name"
         ):
             incomplete.get_backend_name()
+
+    def test_delete_by_metadata_not_implemented(self):
+        """BaseVectorStore default delete_by_metadata should raise NotImplementedError."""
+
+        class IncompleteStore(BaseVectorStore):
+            def get_by_ids(self, ids, trace=None, **kwargs):
+                return []
+
+            def upsert(self, records, trace=None, **kwargs):
+                pass
+
+            def query(self, vector, top_k=10, filters=None, trace=None, **kwargs):
+                return []
+
+        incomplete = IncompleteStore()
+        with pytest.raises(
+            NotImplementedError, match="must implement delete_by_metadata"
+        ):
+            incomplete.delete_by_metadata({"source": "test.pdf"})
 
 
 # ===========================================================================

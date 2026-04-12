@@ -169,6 +169,12 @@ class TestBaseRerankerValidation:
         with pytest.raises(ValueError, match="not a dict"):
             reranker.validate_inputs("query", ["not_a_dict"])  # type: ignore
 
+    def test_validate_inputs_missing_required_candidate_fields(self):
+        """Candidate missing id/text/score should raise ValueError."""
+        reranker = NoneReranker()
+        with pytest.raises(ValueError, match="missing required fields"):
+            reranker.validate_inputs("query", [{"id": "only_id"}])
+
     def test_get_backend_name_not_implemented(self):
         """BaseReranker without override should raise NotImplementedError."""
 
@@ -285,6 +291,30 @@ class TestRerankerFactory:
         error_message = str(exc_info.value)
         assert "Missing required configuration" in error_message
         assert "settings.rerank.backend" in error_message
+
+    def test_create_backend_is_none(self):
+        """None backend value should be treated as missing config."""
+        settings = MagicMock()
+        settings.rerank.backend = None
+
+        with pytest.raises(ValueError) as exc_info:
+            RerankerFactory.create(settings)
+
+        error_message = str(exc_info.value)
+        assert "Missing required configuration" in error_message
+        assert "settings.rerank.backend" in error_message
+
+    def test_create_backend_is_blank_string(self):
+        """Blank backend string should fail with unsupported backend error."""
+        RerankerFactory.register_provider("none", NoneReranker)
+        settings = MagicMock()
+        settings.rerank.backend = "   "
+
+        with pytest.raises(ValueError) as exc_info:
+            RerankerFactory.create(settings)
+
+        error_message = str(exc_info.value)
+        assert "Unsupported Reranker backend: '   '" in error_message
 
     def test_create_provider_instantiation_failure(self):
         """Provider constructor errors should be wrapped in RuntimeError."""
