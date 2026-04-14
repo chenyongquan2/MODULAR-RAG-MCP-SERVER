@@ -41,7 +41,13 @@ scripts/dev/
 
 ## Running Scripts
 
-As package entry point (recommended):
+Using `uv run` (recommended, keeps execution consistent with `uv.lock`):
+```bash
+uv run python -m scripts ingest --path ./docs/
+uv run python -m scripts query --query "What is RAG?"
+```
+
+As package entry point:
 ```bash
 python -m scripts ingest --path ./docs/
 python -m scripts query --query "What is RAG?"

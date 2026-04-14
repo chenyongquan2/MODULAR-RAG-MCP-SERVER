@@ -14,16 +14,54 @@
 
 ### 1. 环境准备（Windows PowerShell）
 
+推荐使用 `uv` 进行依赖管理（更快、可锁定、环境更可复现）。
+
 ```powershell
 cd C:\workspace\MODULAR-RAG-MCP-SERVER
 
-# 激活虚拟环境
+# 安装 uv（若你尚未安装）
+python -m pip install uv
+
+# 创建并激活虚拟环境
+uv venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# 安装项目和开发依赖
-pip install -e .
+# 首次生成锁文件并安装（开发环境）
+uv lock
+uv sync --extra dev
+```
+
+若你暂时不使用 `uv`，也可以继续使用 `pip`（兼容旧流程）：
+
+```powershell
+cd C:\workspace\MODULAR-RAG-MCP-SERVER
+.\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
+
+### 1.1 迁移后日常依赖工作流（推荐）
+
+日常开发建议统一使用 `uv` 命令，避免 `pip` / `uv` 混用导致环境漂移。
+
+```powershell
+# 拉取最新代码后，先同步依赖
+.\.venv\Scripts\Activate.ps1
+uv sync --extra dev
+
+# 运行项目脚本（推荐通过 uv run）
+uv run python scripts/ingest.py --path .\tests\fixtures\sample_documents --collection default
+uv run python scripts/query.py --query "北极星是什么？" --top-k 5 --collection default
+uv run pytest tests/unit -v
+```
+
+依赖变更规范：
+- 新增运行时依赖：`uv add <package>`
+- 新增开发依赖：`uv add --dev <package>`
+- 删除依赖：`uv remove <package>`
+- 升级并刷新锁文件：`uv lock --refresh && uv sync --extra dev`
+- 提交代码时，`pyproject.toml` 与 `uv.lock` 需一并提交
+
+详细说明见：[docs/DEPENDENCY_WORKFLOW.md](docs/DEPENDENCY_WORKFLOW.md)
 
 ### 2. 配置 API Key
 
@@ -259,6 +297,15 @@ pytest -v
 
 排查：
 
+使用 `uv` 时：
+
+```powershell
+uv lock --refresh
+uv sync --extra dev
+```
+
+使用 `pip` 时：
+
 ```powershell
 pip install "protobuf>=3.20.0,<4"
 pip install -e .
@@ -269,6 +316,11 @@ pip install -e .
 ```powershell
 (Get-Command python).Source
 ```
+
+若 `uv sync` 提示 `.venv` 文件被占用（Windows 常见）：
+- 先停止正在使用 `.venv` 的进程（如 `python main.py`、编辑器 Python LSP）。
+- 重新执行 `uv sync --extra dev`。
+- 若仍失败，可临时执行 `uv venv .venv_new` + `UV_PROJECT_ENVIRONMENT=.venv_new uv sync --extra dev` 验证依赖，再在空闲时切回 `.venv`。
 
 ### 3) MCP Client 连接不上
 
