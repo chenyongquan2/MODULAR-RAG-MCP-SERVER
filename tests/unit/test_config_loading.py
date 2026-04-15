@@ -97,6 +97,36 @@ class TestLoadSettings:
         settings = load_settings(str(yaml_file))
         assert settings.ingestion.chunk_refiner.use_llm is False
 
+    def test_default_mcp_server_values(self, yaml_file: Path) -> None:
+        """未在 YAML 中指定的 mcp_server section 应使用默认值。"""
+        settings = load_settings(str(yaml_file))
+        assert settings.mcp_server.transport == "stdio"
+        assert settings.mcp_server.host == "127.0.0.1"
+        assert settings.mcp_server.port == 8000
+        assert settings.mcp_server.sse_path == "/sse"
+        assert settings.mcp_server.message_path == "/messages/"
+
+    def test_custom_mcp_server_values(self, tmp_path: Path) -> None:
+        """mcp_server section 指定值应被正确加载。"""
+        yaml_text = MINIMAL_YAML + textwrap.dedent("""\
+
+            mcp_server:
+              transport: sse
+              host: 0.0.0.0
+              port: 18080
+              sse_path: /stream
+              message_path: /ingress/
+        """)
+        p = tmp_path / "settings.yaml"
+        p.write_text(yaml_text, encoding="utf-8")
+
+        settings = load_settings(str(p))
+        assert settings.mcp_server.transport == "sse"
+        assert settings.mcp_server.host == "0.0.0.0"
+        assert settings.mcp_server.port == 18080
+        assert settings.mcp_server.sse_path == "/stream"
+        assert settings.mcp_server.message_path == "/ingress/"
+
 
 # ---------------------------------------------------------------------------
 # 校验失败
@@ -176,6 +206,33 @@ class TestValidation:
         p.write_text(yaml_text, encoding="utf-8")
 
         with pytest.raises(SettingsError, match="embedding"):
+            load_settings(str(p))
+
+    def test_invalid_mcp_transport_raises(self, tmp_path: Path) -> None:
+        """mcp_server.transport 非法值应报错。"""
+        yaml_text = MINIMAL_YAML + textwrap.dedent("""\
+
+            mcp_server:
+              transport: websocket
+        """)
+        p = tmp_path / "bad.yaml"
+        p.write_text(yaml_text, encoding="utf-8")
+
+        with pytest.raises(SettingsError, match="mcp_server.transport"):
+            load_settings(str(p))
+
+    def test_invalid_mcp_port_raises(self, tmp_path: Path) -> None:
+        """mcp_server.port 超出范围应报错。"""
+        yaml_text = MINIMAL_YAML + textwrap.dedent("""\
+
+            mcp_server:
+              transport: sse
+              port: 70000
+        """)
+        p = tmp_path / "bad_port.yaml"
+        p.write_text(yaml_text, encoding="utf-8")
+
+        with pytest.raises(SettingsError, match="mcp_server.port"):
             load_settings(str(p))
 
 

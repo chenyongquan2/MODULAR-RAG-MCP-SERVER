@@ -100,11 +100,15 @@ python scripts/start_dashboard.py
 
 默认访问 `http://localhost:8501`。
 
-### 6. 启动 MCP Server（stdio）
+### 6. 启动 MCP Server（支持 stdio / SSE）
 
 ```powershell
 python main.py
 ```
+
+默认读取 `config/settings.yaml` 中的 `mcp_server.transport`：
+- `stdio`：适配 Copilot / Claude Desktop 本地子进程模式
+- `sse`：适配 HTTP/SSE 部署模式（容器、内网网关、远程调用）
 
 ## 配置说明（config/settings.yaml）
 
@@ -170,6 +174,13 @@ observability:
 evaluation:
   backends: [custom]
   golden_test_set: ./tests/fixtures/golden_test_set.json
+
+mcp_server:
+  transport: stdio         # stdio | sse
+  host: 127.0.0.1          # 仅 transport=sse 生效
+  port: 8000               # 仅 transport=sse 生效
+  sse_path: /sse           # SSE 连接端点（GET）
+  message_path: /messages/ # 消息上行端点（POST）
 ```
 
 ## MCP 配置示例
@@ -206,6 +217,61 @@ evaluation:
 说明：
 - 若你使用的是虚拟环境 Python，可把 `command` 改为 `.venv/Scripts/python.exe`（Windows）。
 - MCP 通信为 stdio，日志请查看 `logs/` 下文件，不要依赖 stdout 调试信息。
+
+### SSE 部署示例
+
+1. 修改 `config/settings.yaml`：
+
+```yaml
+mcp_server:
+  transport: sse
+  host: 0.0.0.0
+  port: 8000
+  sse_path: /sse
+  message_path: /messages/
+```
+
+2. 启动服务：
+
+```powershell
+python main.py
+```
+
+3. 服务端点：
+- SSE 握手地址（GET）：`http://<host>:<port>/sse`
+- 消息上行地址（POST）：`http://<host>:<port>/messages/?session_id=<id>`
+
+说明：
+- `message_path` 会在握手后由服务端通过 `endpoint` 事件自动告知客户端，一般不需要手工拼接。
+- 生产环境建议在反向代理层加 TLS 与鉴权，不建议直接公网裸露端口。
+
+### Codex 客户端同时配置 stdio + SSE（示例）
+
+你可以在 Codex MCP 配置中同时保留两个入口，按场景切换：
+
+```json
+{
+  "servers": {
+    "modular-rag-stdio": {
+      "type": "stdio",
+      "command": ".venv/Scripts/python.exe",
+      "args": ["main.py"],
+      "cwd": "C:/workspace/MODULAR-RAG-MCP-SERVER"
+    },
+    "modular-rag-sse": {
+      "type": "sse",
+      "url": "http://127.0.0.1:8000/sse"
+    }
+  }
+}
+```
+
+建议：
+- 本机开发联调用 `modular-rag-stdio`（启动简单，进程生命周期由客户端托管）。
+- 远程部署或多端共享用 `modular-rag-sse`（服务端常驻，便于网关治理）。
+
+仓库内也提供了可直接复制的模板文件：
+- [docs/examples/mcp.codex.example.json](C:/workspace/MODULAR-RAG-MCP-SERVER/docs/examples/mcp.codex.example.json)
 
 ## Dashboard 使用指南
 

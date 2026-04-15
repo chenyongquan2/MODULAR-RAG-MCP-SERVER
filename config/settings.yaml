@@ -68,3 +68,11 @@ evaluation:
 observability:
   enabled: true
   log_file: ./logs/traces.jsonl
+
+# MCP Server 传输配置
+mcp_server:
+  transport: stdio         # stdio | sse
+  host: 127.0.0.1          # 仅 transport=sse 生效
+  port: 8000               # 仅 transport=sse 生效
+  sse_path: /sse           # SSE 连接端点（GET）
+  message_path: /messages/ # 消息上行端点（POST）

@@ -1,6 +1,6 @@
 """MCP Server 启动入口。
 
-启动 Modular RAG MCP Server，通过 Stdio Transport 提供 MCP 协议服务。
+启动 Modular RAG MCP Server，支持通过 stdio / SSE 提供 MCP 协议服务。
 """
 
 import sys
@@ -29,10 +29,13 @@ async def main() -> None:
         settings.embedding.model,
         settings.vector_store.backend,
     )
-    logger.info("Modular RAG MCP Server - Starting on stdio transport...")
+    logger.info(
+        "Modular RAG MCP Server - Starting with transport=%s",
+        settings.mcp_server.transport,
+    )
 
     server = MCPServer()
-    await server.run()
+    await server.run_from_settings(settings)
 
 
 if __name__ == "__main__":

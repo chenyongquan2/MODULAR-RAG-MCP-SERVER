@@ -35,6 +35,7 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    "pytest-asyncio>=0.23",
 ]
 
 # 使用 src 布局，将 src 作为顶级包
@@ -52,3 +53,4 @@ markers = [
     "e2e: End-to-end tests (full pipeline)",
 ]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"

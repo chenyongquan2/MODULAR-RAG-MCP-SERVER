@@ -14,7 +14,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -178,6 +178,22 @@ class ObservabilitySettings:
     log_file: str = "./logs/traces.jsonl"
 
 
+# 允许的 transport 类型，集中定义以避免各处字符串字面量散落
+TransportType = Literal["stdio", "sse"]
+VALID_TRANSPORTS: frozenset[str] = frozenset({"stdio", "sse"})
+
+
+@dataclass
+class MCPServerSettings:
+    """MCP Server 传输层配置。"""
+
+    transport: str = "stdio"  # 见 TransportType，取值 "stdio" | "sse"
+    host: str = "127.0.0.1"
+    port: int = 8000
+    sse_path: str = "/sse"
+    message_path: str = "/messages/"
+
+
 @dataclass
 class Settings:
     """全局配置，对应 config/settings.yaml 的完整结构。"""
@@ -194,6 +210,7 @@ class Settings:
     observability: ObservabilitySettings = field(
         default_factory=ObservabilitySettings
     )
+    mcp_server: MCPServerSettings = field(default_factory=MCPServerSettings)
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +439,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
         observability=_build_sub_settings(
             raw.get("observability"), ObservabilitySettings, "observability"
         ),
+        mcp_server=_build_sub_settings(
+            raw.get("mcp_server"), MCPServerSettings, "mcp_server"
+        ),
     )
 
     validate_settings(settings)
@@ -450,3 +470,16 @@ def validate_settings(settings: Settings) -> None:
             raise SettingsError(
                 f"Required config field is missing or empty: '{dotted}'"
             )
+
+    transport = settings.mcp_server.transport
+    if transport not in VALID_TRANSPORTS:
+        raise SettingsError(
+            f"Invalid mcp_server.transport: {transport!r}. "
+            f"Expected one of: {sorted(VALID_TRANSPORTS)}"
+        )
+
+    if not (1 <= settings.mcp_server.port <= 65535):
+        raise SettingsError(
+            "Invalid mcp_server.port: "
+            f"{settings.mcp_server.port}. Expected 1-65535"
+        )

@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "modular-rag-stdio": {
+      "type": "stdio",
+      "command": ".venv/Scripts/python.exe",
+      "args": ["main.py"],
+      "cwd": "C:/workspace/MODULAR-RAG-MCP-SERVER"
+    },
+    "modular-rag-sse": {
+      "type": "sse",
+      "url": "http://127.0.0.1:8000/sse"
+    }
+  }
+}

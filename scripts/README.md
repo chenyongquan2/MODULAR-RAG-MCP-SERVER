@@ -27,7 +27,7 @@ Scripts in the root `scripts/` directory are maintained, documented, and version
 - **query.py**: Query execution CLI
 - **evaluate.py**: Evaluation suite runner
 - **start_dashboard.py**: Streamlit dashboard launcher
-- **test_mcp_connection.py**: MCP server connectivity testing
+- **test_mcp_connection.py**: MCP server connectivity testing (`stdio`/`sse`)
 
 ## Development Scripts
 
@@ -57,6 +57,15 @@ Direct execution (also works):
 ```bash
 python scripts/ingest.py --path ./docs/
 python scripts/query.py --query "What is RAG?"
+```
+
+MCP connectivity test:
+```bash
+# stdio mode (spawns local main.py)
+python scripts/test_mcp_connection.py --transport stdio
+
+# SSE mode (connects to existing server URL)
+python scripts/test_mcp_connection.py --transport sse --server-url http://127.0.0.1:8000/sse
 ```
 
 ## Best Practices
