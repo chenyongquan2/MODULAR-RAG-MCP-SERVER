@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: modular-rag
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/part-of: modular-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dashboard
+        app.kubernetes.io/part-of: modular-rag
+    spec:
+      containers:
+        - name: dashboard
+          image: modular-rag:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8501
+              name: http
+          env:
+            - name: CHROMA_HOST
+              value: "chromadb"
+            - name: CHROMA_PORT
+              value: "8000"
+          envFrom:
+            - secretRef:
+                name: modular-rag-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 20
+      volumes:
+        - name: config
+          configMap:
+            name: modular-rag-config
+        - name: logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: modular-rag
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/part-of: modular-rag
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8501
+      targetPort: 8501
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: dashboard

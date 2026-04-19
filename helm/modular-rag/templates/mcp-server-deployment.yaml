@@ -1,0 +1,52 @@
+{{- if .Values.mcpServer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "modular-rag.fullname" . }}-mcp-server
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "modular-rag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-server
+spec:
+  replicas: {{ .Values.mcpServer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "modular-rag.selectorLabels" "mcp-server" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "modular-rag.selectorLabels" "mcp-server" | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp-server
+          image: {{ include "modular-rag.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "src.mcp_server.server"]
+          env:
+            - name: CHROMA_HOST
+              value: "{{ include "modular-rag.fullname" . }}-chromadb"
+            - name: CHROMA_PORT
+              value: {{ .Values.chromadb.service.port | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "modular-rag.fullname" . }}-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+          resources:
+            {{- toYaml .Values.mcpServer.resources | nindent 12 }}
+          stdin: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "modular-rag.fullname" . }}-config
+        - name: logs
+          emptyDir: {}
+{{- end }}

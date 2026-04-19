@@ -1,0 +1,19 @@
+{{- if .Values.chromadb.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "modular-rag.fullname" . }}-chromadb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "modular-rag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: chromadb
+spec:
+  type: {{ .Values.chromadb.service.type }}
+  ports:
+    - port: {{ .Values.chromadb.service.port }}
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "modular-rag.selectorLabels" "chromadb" | nindent 4 }}
+{{- end }}

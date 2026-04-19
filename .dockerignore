@@ -1,0 +1,57 @@
+# Version control
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+tests/
+htmlcov/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Project runtime data
+data/
+logs/
+cache/
+*.log
+traces.jsonl
+
+# Secrets
+.env
+.env.*
+secrets.yaml
+
+# Docker & K8s
+docker-compose*.yml
+k8s/
+helm/
+
+# Claude Code
+.claude/
+
+# Documentation
+*.md
+!README.md
+DEV_SPEC.md

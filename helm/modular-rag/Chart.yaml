@@ -1,0 +1,14 @@
+apiVersion: v2
+name: modular-rag
+description: A Helm chart for Modular RAG MCP Server with Dashboard and ChromaDB
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - rag
+  - mcp
+  - llm
+  - chromadb
+  - streamlit
+maintainers:
+  - name: Modular RAG Team

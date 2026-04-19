@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "modular-rag.fullname" . }}-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "modular-rag.labels" . | nindent 4 }}
+data:
+  settings.yaml: |
+    llm:
+      provider: {{ .Values.settings.llm.provider | quote }}
+      model: {{ .Values.settings.llm.model | quote }}
+      deployment_name: {{ .Values.settings.llm.deploymentName | quote }}
+      azure_endpoint: {{ .Values.settings.llm.azureEndpoint | quote }}
+      api_version: {{ .Values.settings.llm.apiVersion | quote }}
+      api_key: ""
+      temperature: {{ .Values.settings.llm.temperature }}
+      max_tokens: {{ .Values.settings.llm.maxTokens }}
+
+    embedding:
+      provider: {{ .Values.settings.embedding.provider | quote }}
+      model: {{ .Values.settings.embedding.model | quote }}
+      dimensions: {{ .Values.settings.embedding.dimensions }}
+      azure_endpoint: {{ .Values.settings.embedding.azureEndpoint | quote }}
+      deployment_name: {{ .Values.settings.embedding.deploymentName | quote }}
+      api_version: {{ .Values.settings.embedding.apiVersion | quote }}
+      api_key: ""
+
+    vision_llm:
+      enabled: {{ .Values.settings.visionLlm.enabled }}
+      provider: {{ .Values.settings.visionLlm.provider | quote }}
+      model: {{ .Values.settings.visionLlm.model | quote }}
+      azure_endpoint: {{ .Values.settings.visionLlm.azureEndpoint | quote }}
+      deployment_name: {{ .Values.settings.visionLlm.deploymentName | quote }}
+      api_version: {{ .Values.settings.visionLlm.apiVersion | quote }}
+      api_key: ""
+      max_image_size: {{ .Values.settings.visionLlm.maxImageSize }}
+
+    vector_store:
+      provider: {{ .Values.settings.vectorStore.provider | quote }}
+      persist_directory: {{ .Values.settings.vectorStore.persistDirectory | quote }}
+      collection_name: {{ .Values.settings.vectorStore.collectionName | quote }}
+
+    retrieval:
+      dense_top_k: {{ .Values.settings.retrieval.denseTopK }}
+      sparse_top_k: {{ .Values.settings.retrieval.sparseTopK }}
+      fusion_top_k: {{ .Values.settings.retrieval.fusionTopK }}
+      rrf_k: {{ .Values.settings.retrieval.rrfK }}
+
+    rerank:
+      enabled: {{ .Values.settings.rerank.enabled }}
+      provider: {{ .Values.settings.rerank.provider | quote }}
+      model: {{ .Values.settings.rerank.model | quote }}
+      top_k: {{ .Values.settings.rerank.topK }}
+
+    observability:
+      log_level: {{ .Values.settings.observability.logLevel | quote }}
+      trace_enabled: {{ .Values.settings.observability.traceEnabled }}
+      trace_file: {{ .Values.settings.observability.traceFile | quote }}
+      structured_logging: {{ .Values.settings.observability.structuredLogging }}
+
+    ingestion:
+      chunk_size: {{ .Values.settings.ingestion.chunkSize }}
+      chunk_overlap: {{ .Values.settings.ingestion.chunkOverlap }}
+      splitter: {{ .Values.settings.ingestion.splitter | quote }}
+      batch_size: {{ .Values.settings.ingestion.batchSize }}
+      chunk_refiner:
+        use_llm: false
+      metadata_enricher:
+        use_llm: false

@@ -1,0 +1,150 @@
+# =============================================================================
+# Modular RAG MCP Server - Helm Chart Values
+# =============================================================================
+
+# -- Global settings
+global:
+  namespace: modular-rag
+  imageRegistry: ""  # e.g., "ghcr.io/your-org"
+
+# -- Application image
+image:
+  repository: modular-rag
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# =============================================================================
+# ChromaDB Configuration
+# =============================================================================
+chromadb:
+  enabled: true
+  image:
+    repository: chromadb/chroma
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8000
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""  # Use default StorageClass if empty
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# =============================================================================
+# Dashboard Configuration
+# =============================================================================
+dashboard:
+  enabled: true
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8501
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# =============================================================================
+# MCP Server Configuration
+# =============================================================================
+mcpServer:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# =============================================================================
+# Ingress Configuration
+# =============================================================================
+ingress:
+  enabled: false
+  className: nginx
+  host: rag-dashboard.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+  tls: []
+  #  - secretName: rag-dashboard-tls
+  #    hosts:
+  #      - rag-dashboard.example.com
+
+# =============================================================================
+# Secrets (API Keys)
+# =============================================================================
+secrets:
+  # Set these values or use --set during install
+  azureOpenaiApiKey: ""
+  openaiApiKey: ""
+
+# =============================================================================
+# RAG Settings (injected as ConfigMap)
+# =============================================================================
+settings:
+  llm:
+    provider: "azure"
+    model: "gpt-4o"
+    deploymentName: "gpt-4o"
+    azureEndpoint: ""
+    apiVersion: "2024-02-15-preview"
+    temperature: 0.0
+    maxTokens: 4096
+  embedding:
+    provider: "azure"
+    model: "text-embedding-ada-002"
+    dimensions: 1536
+    azureEndpoint: ""
+    deploymentName: "text-embedding-ada-002"
+    apiVersion: "2024-02-15-preview"
+  visionLlm:
+    enabled: true
+    provider: "azure"
+    model: "gpt-4o"
+    azureEndpoint: ""
+    deploymentName: "gpt-4o"
+    apiVersion: "2024-02-15-preview"
+    maxImageSize: 2048
+  vectorStore:
+    provider: "chroma"
+    persistDirectory: "/app/data/db/chroma"
+    collectionName: "knowledge_hub"
+  retrieval:
+    denseTopK: 20
+    sparseTopK: 20
+    fusionTopK: 10
+    rrfK: 60
+  rerank:
+    enabled: false
+    provider: "none"
+    model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    topK: 5
+  observability:
+    logLevel: "INFO"
+    traceEnabled: true
+    traceFile: "/app/logs/traces.jsonl"
+    structuredLogging: true
+  ingestion:
+    chunkSize: 1000
+    chunkOverlap: 200
+    splitter: "recursive"
+    batchSize: 100

@@ -1,0 +1,83 @@
+# =============================================================================
+# Modular RAG MCP Server - Docker Compose (Local Development)
+# =============================================================================
+# Usage:
+#   docker-compose up -d          # Start all services
+#   docker-compose up dashboard   # Start dashboard only
+#   docker-compose logs -f        # Follow logs
+#   docker-compose down -v        # Stop and remove volumes
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # ChromaDB - Vector Database
+  # ---------------------------------------------------------------------------
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: modular-rag-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/data
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Dashboard - Streamlit Web UI
+  # ---------------------------------------------------------------------------
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: modular-rag-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./config:/app/config:ro
+      - app-logs:/app/logs
+    environment:
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # MCP Server - stdio-based MCP protocol server
+  # ---------------------------------------------------------------------------
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: modular-rag-mcp-server
+    command: ["python", "-m", "src.mcp_server.server"]
+    volumes:
+      - ./config:/app/config:ro
+      - app-logs:/app/logs
+    environment:
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    stdin_open: true
+    restart: unless-stopped
+
+volumes:
+  chroma-data:
+    driver: local
+  app-logs:
+    driver: local

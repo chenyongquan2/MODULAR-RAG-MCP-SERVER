@@ -1,0 +1,65 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "modular-rag.fullname" . }}-dashboard
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "modular-rag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dashboard
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      {{- include "modular-rag.selectorLabels" "dashboard" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "modular-rag.selectorLabels" "dashboard" | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: dashboard
+          image: {{ include "modular-rag.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8501
+              name: http
+          env:
+            - name: CHROMA_HOST
+              value: "{{ include "modular-rag.fullname" . }}-chromadb"
+            - name: CHROMA_PORT
+              value: {{ .Values.chromadb.service.port | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "modular-rag.fullname" . }}-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+          resources:
+            {{- toYaml .Values.dashboard.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 20
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "modular-rag.fullname" . }}-config
+        - name: logs
+          emptyDir: {}
+{{- end }}
