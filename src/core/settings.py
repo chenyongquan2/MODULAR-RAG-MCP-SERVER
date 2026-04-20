@@ -106,9 +106,11 @@ class SplitterSettings:
 class LoaderSettings:
     """文档加载配置。"""
 
-    provider: str = "pdf"  # pdf | markdown
-    extract_images: bool = True
-    max_image_size: int = 2048
+    provider: str = "pdf"               # pdf | markdown | chm（向后兼容保留）
+    extract_images: bool = True         # 是否提取 PDF 中的图片
+    max_image_size: int = 2048          # 最大图片尺寸（像素）
+    enable_ocr: bool = False            # 是否启用 OCR（扫描版 PDF 需开启，速度约慢 5x）
+    enable_table_structure: bool = True # 是否识别表格结构并输出 Markdown 表格语法
 
 
 @dataclass
@@ -202,6 +204,7 @@ class Settings:
     embedding: EmbeddingSettings
     vision_llm: VisionLLMSettings
     vector_store: VectorStoreSettings
+    loader: LoaderSettings = field(default_factory=LoaderSettings)
     retrieval: RetrievalSettings = field(default_factory=RetrievalSettings)
     rerank: RerankSettings = field(default_factory=RerankSettings)
     splitter: SplitterSettings = field(default_factory=SplitterSettings)
@@ -422,6 +425,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
         ),
         vector_store=_build_sub_settings(
             raw.get("vector_store"), VectorStoreSettings, "vector_store"
+        ),
+        loader=_build_sub_settings(
+            raw.get("loader"), LoaderSettings, "loader"
         ),
         retrieval=_build_sub_settings(
             raw.get("retrieval"), RetrievalSettings, "retrieval"

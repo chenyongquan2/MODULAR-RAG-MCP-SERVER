@@ -21,7 +21,7 @@ from src.core.settings import Settings
 from src.core.types import Document, Chunk, ChunkRecord, ImageReference
 from src.libs.loader.file_integrity import SQLiteIntegrityChecker
 from src.libs.loader.base_loader import BaseLoader
-from src.libs.loader.pdf_loader import PdfLoader
+from src.libs.loader.loader_factory import LoaderFactory
 from src.ingestion.chunking.document_chunker import DocumentChunker
 from src.ingestion.transform.base_transform import BaseTransform
 from src.ingestion.transform.chunk_refiner import ChunkRefiner
@@ -114,19 +114,16 @@ class IngestionPipeline:
         return self._loader
 
     def _get_loader(self, file_path: str) -> BaseLoader:
-        """Get appropriate loader based on file extension."""
-        suffix = Path(file_path).suffix.lower()
-        if suffix == ".pdf":
-            return PdfLoader(collection=self._collection)
-        elif suffix in [".md", ".markdown"]:
-            from src.libs.loader.markdown_loader import MarkdownLoader
-            return MarkdownLoader(collection=self._collection)
-        elif suffix == ".chm":
-            # CHM (Compiled HTML Help) 文档加载器
-            from src.libs.loader.chm_loader import ChmLoader
-            return ChmLoader(collection=self._collection)
-        else:
-            raise ValueError(f"Unsupported file type: {suffix}")
+        """根据文件扩展名通过 LoaderFactory 创建对应的 Loader。
+
+        统一通过 LoaderFactory 路由，settings.loader 中的配置（如 enable_ocr）
+        会自动传入对应 Loader，无需在此处手动处理。
+        """
+        return LoaderFactory.create(
+            file_path=file_path,
+            settings=self._settings.loader,
+            collection=self._collection,
+        )
 
     @property
     def chunker(self) -> DocumentChunker:
