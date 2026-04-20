@@ -28,6 +28,13 @@ vector_store:
   persist_path: ./data/db/chroma
   collection_name: default   # default | mt5_docs_chinese | mt5_docs_english
 
+# 文档加载配置
+loader:
+  provider: pdf                  # 向后兼容字段（实际由 LoaderFactory 按扩展名路由）
+  extract_images: true           # 是否提取 PDF 中的图片
+  enable_ocr: false              # 是否启用 OCR（扫描版 PDF 需开启，速度约慢 5x）
+  enable_table_structure: true   # 是否识别表格结构并输出 Markdown 表格语法
+
 # 文本切分配置
 splitter:
   strategy: recursive       # recursive | semantic | fixed

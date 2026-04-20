@@ -1,10 +1,12 @@
-"""Tests for PDF Loader image extraction functionality.
+"""Tests for PDF Loader image extraction functionality (Docling 引擎版).
 
-测试 PdfLoader 从 PDF 中提取图片的功能：
-1. 提取嵌入图片并保存到临时目录
-2. 生成 ImageReference 并添加到 metadata["images"]
-3. 在文本中插入 [IMAGE: {image_id}] 占位符
-4. 处理无图片 PDF 的场景
+单元测试通过 mock Docling converter 避免下载 ML 模型。
+测试覆盖：
+1. 无图片 PDF → metadata["images"] 为空列表
+2. 图片提取后存储为 ImageReference 对象
+3. Markdown 文本中插入 [IMAGE: id] 占位符
+4. 清理临时目录功能
+5. SHA256 哈希计算
 """
 
 import pytest
@@ -14,6 +16,18 @@ from unittest.mock import patch, MagicMock
 
 from src.libs.loader.pdf_loader import PdfLoader
 from src.core.types import Document, ImageReference
+
+
+def _make_mock_result(text: str = "Hello, World!", pictures=None):
+    """构造 Docling ConversionResult 的最小 mock 对象。"""
+    mock_doc = MagicMock()
+    mock_doc.export_to_markdown.return_value = text
+    mock_doc.pages = {1: MagicMock()}
+    mock_doc.pictures = pictures or []
+
+    mock_result = MagicMock()
+    mock_result.document = mock_doc
+    return mock_result
 
 
 @pytest.fixture
@@ -29,219 +43,191 @@ def temp_image_dir():
         yield tmpdir
 
 
+def _make_simple_pdf(path: Path) -> None:
+    """创建一个包含文字的简单 PDF，供测试用。"""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=letter)
+    c.drawString(100, 750, "Hello, World!")
+    c.drawString(100, 730, "This is a test document.")
+    c.save()
+
+
 class TestPdfLoaderImageExtraction:
-    """测试 PdfLoader 图片提取功能。"""
+    """测试 PdfLoader 图片提取功能（Docling 引擎）。"""
 
-    def test_extract_images_from_pdf_with_images(self, pdf_loader, temp_image_dir):
-        """测试从包含图片的 PDF 中提取图片。"""
-        # 创建一个包含图片的模拟 PDF
-        # 由于 reportlab 创建带图片的 PDF 较复杂，我们使用 mock 来测试逻辑
-        with patch.object(pdf_loader, '_extract_images') as mock_extract:
-            # 模拟提取的图片
-            mock_image_path = Path(temp_image_dir) / "test_image.png"
-            mock_image_path.write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 100)
+    def test_pdf_without_images_returns_empty_list(self, pdf_loader, tmp_path):
+        """无图片 PDF 应返回空图片列表。"""
+        pdf_path = tmp_path / "no_image.pdf"
+        _make_simple_pdf(pdf_path)
 
-            mock_extract.return_value = [
-                {
-                    "image_id": "img_abc123_0_0",
-                    "temp_path": str(mock_image_path),
-                    "page": 0,
-                    "position": {"x0": 0, "y0": 0, "x1": 100, "y1": 100},
-                }
-            ]
-
-            # 创建一个简单的 PDF 用于测试
-            from reportlab.lib.pagesizes import letter
-            from reportlab.pdfgen import canvas
-
-            pdf_path = Path(temp_image_dir) / "test_with_image.pdf"
-            c = canvas.Canvas(str(pdf_path), pagesize=letter)
-            c.drawString(100, 750, "Test document with image placeholder.")
-            c.save()
-
-            # 加载 PDF
+        with patch.object(pdf_loader._converter, "convert", return_value=_make_mock_result()):
             doc = pdf_loader.load(str(pdf_path))
 
-            # 验证图片被提取
-            assert "images" in doc.metadata
-            assert len(doc.metadata["images"]) == 1
+        assert isinstance(doc, Document)
+        assert len(doc.text) > 0
+        images = doc.metadata.get("images", [])
+        assert isinstance(images, list)
+        assert len(images) == 0
 
-            img_ref = doc.metadata["images"][0]
-            assert isinstance(img_ref, ImageReference)
-            assert img_ref.id == "img_abc123_0_0"
-            assert img_ref.page == 0
+    def test_pdf_with_mocked_images(self, pdf_loader, tmp_path):
+        """通过 mock _extract_and_embed_images 验证图片信息正确写入 metadata。"""
+        pdf_path = tmp_path / "test.pdf"
+        _make_simple_pdf(pdf_path)
 
-    def test_pdf_without_images(self, pdf_loader, temp_image_dir):
-        """测试处理不包含图片的 PDF。"""
-        # 创建一个简单的无图片 PDF
+        img_path = tmp_path / "img_abc123_1_0.png"
+        img_path.write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 100)
+        fake_ref = ImageReference(
+            id="img_abc123_1_0",
+            path=str(img_path),
+            text_offset=0,
+            text_length=20,
+            page=1,
+            position={"bbox": {"l": 0, "t": 0, "r": 100, "b": 100}},
+        )
+
+        with patch.object(pdf_loader._converter, "convert", return_value=_make_mock_result()):
+            with patch.object(
+                pdf_loader,
+                "_extract_and_embed_images",
+                return_value=("mock text with [IMAGE: img_abc123_1_0]", [fake_ref]),
+            ):
+                doc = pdf_loader.load(str(pdf_path))
+
+        assert "images" in doc.metadata
+        assert len(doc.metadata["images"]) == 1
+        img_ref = doc.metadata["images"][0]
+        assert isinstance(img_ref, ImageReference)
+        assert img_ref.id == "img_abc123_1_0"
+        assert img_ref.page == 1
+
+    def test_image_placeholder_in_text(self, pdf_loader, tmp_path):
+        """图片占位符应出现在 Markdown 文本中。"""
+        pdf_path = tmp_path / "test.pdf"
+        _make_simple_pdf(pdf_path)
+
+        fake_ref = ImageReference(
+            id="img_test_001",
+            path=str(tmp_path / "img_test_001.png"),
+            text_offset=10,
+            text_length=22,
+            page=0,
+        )
+
+        with patch.object(pdf_loader._converter, "convert", return_value=_make_mock_result()):
+            with patch.object(
+                pdf_loader,
+                "_extract_and_embed_images",
+                return_value=("Some text\n[IMAGE: img_test_001]\n", [fake_ref]),
+            ):
+                doc = pdf_loader.load(str(pdf_path))
+
+        assert "[IMAGE: img_test_001]" in doc.text
+
+    def test_multiple_images_in_metadata(self, pdf_loader, tmp_path):
+        """多张图片应全部写入 metadata["images"]。"""
+        pdf_path = tmp_path / "multi.pdf"
+        _make_simple_pdf(pdf_path)
+
+        fake_refs = [
+            ImageReference(
+                id=f"img_hash_{i}_0",
+                path=str(tmp_path / f"img_{i}.png"),
+                text_offset=0,
+                text_length=20,
+                page=i,
+            )
+            for i in range(3)
+        ]
+
+        with patch.object(pdf_loader._converter, "convert", return_value=_make_mock_result()):
+            with patch.object(
+                pdf_loader,
+                "_extract_and_embed_images",
+                return_value=("text", fake_refs),
+            ):
+                doc = pdf_loader.load(str(pdf_path))
+
+        assert len(doc.metadata.get("images", [])) == 3
+
+    def test_image_reference_has_required_fields(self, pdf_loader, tmp_path):
+        """ImageReference 必须包含 id、path、page 字段。"""
+        pdf_path = tmp_path / "test.pdf"
+        _make_simple_pdf(pdf_path)
+
+        fake_ref = ImageReference(
+            id="img_struct_test",
+            path="/tmp/img.png",
+            text_offset=5,
+            text_length=22,
+            page=2,
+            position={"bbox": {"l": 50, "t": 100, "r": 200, "b": 300}},
+        )
+
+        with patch.object(pdf_loader._converter, "convert", return_value=_make_mock_result()):
+            with patch.object(
+                pdf_loader,
+                "_extract_and_embed_images",
+                return_value=("text", [fake_ref]),
+            ):
+                doc = pdf_loader.load(str(pdf_path))
+
+        img_ref = doc.metadata["images"][0]
+        assert img_ref.id == "img_struct_test"
+        assert img_ref.page == 2
+        assert img_ref.position is not None
+
+
+class TestPdfLoaderHashCompute:
+    """测试 _compute_hash 生成稳定文档 ID。"""
+
+    def test_hash_is_16_chars(self, pdf_loader, tmp_path):
+        """哈希值应为 16 位十六进制字符串。"""
+        pdf_path = tmp_path / "test.pdf"
+        _make_simple_pdf(pdf_path)
+
+        doc_hash = pdf_loader._compute_hash(pdf_path)
+        assert len(doc_hash) == 16
+        assert all(c in "0123456789abcdef" for c in doc_hash)
+
+    def test_same_file_same_hash(self, pdf_loader, tmp_path):
+        """同一文件两次计算哈希应一致。"""
+        pdf_path = tmp_path / "test.pdf"
+        _make_simple_pdf(pdf_path)
+
+        h1 = pdf_loader._compute_hash(pdf_path)
+        h2 = pdf_loader._compute_hash(pdf_path)
+        assert h1 == h2
+
+    def test_different_files_different_hash(self, pdf_loader, tmp_path):
+        """不同文件内容应产生不同哈希。"""
         from reportlab.lib.pagesizes import letter
         from reportlab.pdfgen import canvas
 
-        pdf_path = Path(temp_image_dir) / "test_no_image.pdf"
-        c = canvas.Canvas(str(pdf_path), pagesize=letter)
-        c.drawString(100, 750, "Hello, World!")
-        c.drawString(100, 730, "This is a test document without images.")
+        pdf1 = tmp_path / "a.pdf"
+        c = canvas.Canvas(str(pdf1), pagesize=letter)
+        c.drawString(100, 750, "Content A")
         c.save()
 
-        # 加载 PDF
-        doc = pdf_loader.load(str(pdf_path))
+        pdf2 = tmp_path / "b.pdf"
+        c = canvas.Canvas(str(pdf2), pagesize=letter)
+        c.drawString(100, 750, "Content B — different")
+        c.save()
 
-        # 验证无图片时 metadata 正常
-        assert isinstance(doc, Document)
-        assert len(doc.text) > 0
-        # images 字段应该为空列表或不存在
-        images = doc.metadata.get("images", [])
-        assert len(images) == 0
-
-    def test_image_placeholder_in_text(self, pdf_loader, temp_image_dir):
-        """测试图片占位符插入到文本中。"""
-        with patch.object(pdf_loader, '_extract_images') as mock_extract:
-            mock_image_path = Path(temp_image_dir) / "test_image.png"
-            mock_image_path.write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 100)
-
-            mock_extract.return_value = [
-                {
-                    "image_id": "img_test_001",
-                    "temp_path": str(mock_image_path),
-                    "page": 0,
-                    "position": {"x0": 0, "y0": 0, "x1": 100, "y1": 100},
-                }
-            ]
-
-            from reportlab.lib.pagesizes import letter
-            from reportlab.pdfgen import canvas
-
-            pdf_path = Path(temp_image_dir) / "test_placeholder.pdf"
-            c = canvas.Canvas(str(pdf_path), pagesize=letter)
-            c.drawString(100, 750, "Before image.")
-            c.drawString(100, 730, "After image.")
-            c.save()
-
-            doc = pdf_loader.load(str(pdf_path))
-
-            # 验证文本中包含图片占位符
-            assert "[IMAGE:" in doc.text or len(doc.metadata.get("images", [])) > 0
-
-    def test_multiple_images_extraction(self, pdf_loader, temp_image_dir):
-        """测试提取多张图片。"""
-        with patch.object(pdf_loader, '_extract_images') as mock_extract:
-            # 模拟多张图片
-            images = []
-            for i in range(3):
-                img_path = Path(temp_image_dir) / f"image_{i}.png"
-                img_path.write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 100)
-                images.append({
-                    "image_id": f"img_test_{i}",
-                    "temp_path": str(img_path),
-                    "page": i,
-                    "position": {"x0": 0, "y0": 0, "x1": 100, "y1": 100},
-                })
-
-            mock_extract.return_value = images
-
-            from reportlab.lib.pagesizes import letter
-            from reportlab.pdfgen import canvas
-
-            pdf_path = Path(temp_image_dir) / "test_multi_images.pdf"
-            c = canvas.Canvas(str(pdf_path), pagesize=letter)
-            for i in range(3):
-                c.drawString(100, 750 - i * 20, f"Page {i} content.")
-                c.showPage()
-            c.save()
-
-            doc = pdf_loader.load(str(pdf_path))
-
-            # 验证多张图片被提取
-            assert len(doc.metadata.get("images", [])) == 3
-
-    def test_image_reference_structure(self, pdf_loader, temp_image_dir):
-        """测试 ImageReference 结构正确性。"""
-        with patch.object(pdf_loader, '_extract_images') as mock_extract:
-            mock_image_path = Path(temp_image_dir) / "test_image.png"
-            mock_image_path.write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 100)
-
-            mock_extract.return_value = [
-                {
-                    "image_id": "img_structure_test",
-                    "temp_path": str(mock_image_path),
-                    "page": 2,
-                    "position": {"x0": 50, "y0": 100, "x1": 200, "y1": 300},
-                }
-            ]
-
-            from reportlab.lib.pagesizes import letter
-            from reportlab.pdfgen import canvas
-
-            pdf_path = Path(temp_image_dir) / "test_structure.pdf"
-            c = canvas.Canvas(str(pdf_path), pagesize=letter)
-            c.drawString(100, 750, "Test content.")
-            c.save()
-
-            doc = pdf_loader.load(str(pdf_path))
-
-            img_ref = doc.metadata["images"][0]
-
-            # 验证 ImageReference 字段
-            assert img_ref.id == "img_structure_test"
-            assert img_ref.page == 2
-            assert img_ref.position is not None
-            assert img_ref.position["x0"] == 50
-            assert img_ref.position["y0"] == 100
+        assert pdf_loader._compute_hash(pdf1) != pdf_loader._compute_hash(pdf2)
 
 
-class TestPdfLoaderImageIdGeneration:
-    """测试图片 ID 生成逻辑。"""
+class TestPdfLoaderCleanup:
+    """测试临时目录清理功能。"""
 
-    def test_image_id_format(self, pdf_loader):
-        """测试图片 ID 格式：{doc_hash}_{page}_{seq}。"""
-        doc_hash = "abc123def456"
-        page = 1
-        seq = 0
+    def test_cleanup_removes_temp_dirs(self, pdf_loader, tmp_path):
+        """cleanup_temp_dirs 应清空 _temp_dirs 列表并删除目录。"""
+        fake_dir = tmp_path / "fake_temp"
+        fake_dir.mkdir()
+        pdf_loader._temp_dirs.append(str(fake_dir))
 
-        image_id = pdf_loader._generate_image_id(doc_hash, page, seq)
+        pdf_loader.cleanup_temp_dirs()
 
-        assert image_id == f"img_{doc_hash}_{page}_{seq}"
-
-    def test_image_id_uniqueness(self, pdf_loader):
-        """测试不同图片生成不同 ID。"""
-        doc_hash = "test123"
-
-        id1 = pdf_loader._generate_image_id(doc_hash, 0, 0)
-        id2 = pdf_loader._generate_image_id(doc_hash, 0, 1)
-        id3 = pdf_loader._generate_image_id(doc_hash, 1, 0)
-
-        assert id1 != id2
-        assert id2 != id3
-        assert id1 != id3
-
-
-class TestPdfLoaderImageSaving:
-    """测试图片保存功能。"""
-
-    def test_save_extracted_image(self, pdf_loader, temp_image_dir):
-        """测试保存提取的图片到临时目录。"""
-        # 创建模拟图片数据
-        image_data = b'\x89PNG\r\n\x1a\n' + b'\x00' * 100
-
-        saved_path = pdf_loader._save_temp_image(
-            image_data=image_data,
-            image_id="test_save_001",
-            temp_dir=temp_image_dir
-        )
-
-        assert saved_path is not None
-        assert Path(saved_path).exists()
-        assert Path(saved_path).read_bytes() == image_data
-
-    def test_save_image_with_correct_extension(self, pdf_loader, temp_image_dir):
-        """测试根据图片类型保存正确扩展名。"""
-        # JPEG 图片头
-        jpeg_data = b'\xff\xd8\xff\xe0' + b'\x00' * 100
-
-        saved_path = pdf_loader._save_temp_image(
-            image_data=jpeg_data,
-            image_id="test_jpeg",
-            temp_dir=temp_image_dir
-        )
-
-        assert Path(saved_path).suffix in ['.jpg', '.jpeg']
+        assert len(pdf_loader._temp_dirs) == 0
+        assert not fake_dir.exists()
