@@ -203,3 +203,76 @@ class TestCustomEvaluator:
         assert trace.metadata.get("evaluator_type") == "custom"
         assert trace.metadata.get("query") == "test query"
         assert "metrics" in trace.metadata
+
+
+class TestCustomEvaluatorRecallNDCG:
+    """新增 Recall@K 和 NDCG@K 指标的测试用例。"""
+
+    def test_recall_perfect_overlap(self, mock_settings):
+        """所有 golden IDs 都被召回时，recall == 1.0。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        metrics = evaluator.evaluate("q", ["a", "b", "c"], ["a", "b"])
+        assert metrics["recall"] == pytest.approx(1.0)
+
+    def test_recall_partial_overlap(self, mock_settings):
+        """一半 golden IDs 被召回时，recall == 0.5。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        metrics = evaluator.evaluate("q", ["a", "x"], ["a", "b"])
+        assert metrics["recall"] == pytest.approx(0.5)
+
+    def test_recall_zero_when_no_overlap(self, mock_settings):
+        """没有 golden IDs 被召回时，recall == 0.0。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        metrics = evaluator.evaluate("q", ["x", "y"], ["a", "b"])
+        assert metrics["recall"] == pytest.approx(0.0)
+
+    def test_ndcg_perfect_rank(self, mock_settings):
+        """唯一 golden doc 在第 1 位时，ndcg == 1.0。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        metrics = evaluator.evaluate("q", ["gold", "x"], ["gold"])
+        assert metrics["ndcg"] == pytest.approx(1.0)
+
+    def test_ndcg_lower_rank_reduces_score(self, mock_settings):
+        """golden doc 排名越靠后，ndcg 越低。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        metrics_rank1 = evaluator.evaluate("q", ["gold", "x"], ["gold"])
+        metrics_rank2 = evaluator.evaluate("q", ["x", "gold"], ["gold"])
+        assert metrics_rank2["ndcg"] < metrics_rank1["ndcg"]
+
+    def test_ndcg_zero_when_no_hit(self, mock_settings):
+        """没有召回任何 golden doc 时，ndcg == 0.0。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        metrics = evaluator.evaluate("q", ["x", "y"], ["gold"])
+        assert metrics["ndcg"] == pytest.approx(0.0)
+
+    def test_ndcg_multiple_relevant_docs(self, mock_settings):
+        """多个相关文档时，ndcg 与手动计算结果一致。"""
+        import math
+        evaluator = CustomEvaluator(settings=mock_settings)
+        # golden "a" 在第 1 位，"b" 在第 3 位；ideal 是第 1、2 位
+        metrics = evaluator.evaluate("q", ["a", "x", "b"], ["a", "b"])
+        dcg = 1.0 / math.log2(2) + 1.0 / math.log2(4)
+        ideal_dcg = 1.0 / math.log2(2) + 1.0 / math.log2(3)
+        assert metrics["ndcg"] == pytest.approx(dcg / ideal_dcg)
+
+    def test_evaluate_returns_all_four_metric_keys(self, mock_settings):
+        """evaluate() 必须同时返回 hit_rate、mrr、recall、ndcg 四个 key。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        metrics = evaluator.evaluate("q", ["a"], ["a"])
+        assert set(metrics.keys()) == {"hit_rate", "mrr", "recall", "ndcg"}
+
+    def test_zero_metrics_returns_all_four_keys(self, mock_settings):
+        """zero_metrics() 必须返回与 evaluate() 相同的四个 key，值均为 0.0。"""
+        evaluator = CustomEvaluator(settings=mock_settings)
+        zero = evaluator.zero_metrics()
+        assert set(zero.keys()) == {"hit_rate", "mrr", "recall", "ndcg"}
+        assert all(v == 0.0 for v in zero.values())
+
+    def test_trace_records_recall_and_ndcg(self, mock_settings):
+        """TraceContext.metadata['metrics'] 必须包含 recall 和 ndcg。"""
+        from src.core.trace.trace_context import TraceContext
+        evaluator = CustomEvaluator(settings=mock_settings)
+        trace = TraceContext(trace_type="query")
+        evaluator.evaluate("q", ["a", "b"], ["a"], trace=trace)
+        assert "recall" in trace.metadata["metrics"]
+        assert "ndcg" in trace.metadata["metrics"]

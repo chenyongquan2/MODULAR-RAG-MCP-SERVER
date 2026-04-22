@@ -63,17 +63,29 @@ class EvalReport:
     source_hit_rate: float
     aggregate_metrics: dict[str, float]
     case_results: list[EvalCaseResult]
+    # 基线对比字段（由 EvaluationService.compare_with_baseline() 填充）
+    baseline_id: Optional[str] = None
+    delta_hit_rate: Optional[float] = None
+    delta_mrr: Optional[float] = None
+    delta_aggregate_metrics: Optional[dict[str, float]] = None
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典。"""
-        return {
+        result: dict[str, Any] = {
             "total_cases": self.total_cases,
             "hit_rate": self.hit_rate,
             "mrr": self.mrr,
             "source_hit_rate": self.source_hit_rate,
             "aggregate_metrics": self.aggregate_metrics,
-            "case_results": [result.to_dict() for result in self.case_results],
+            "case_results": [r.to_dict() for r in self.case_results],
         }
+        # 仅在 baseline 信息存在时才输出 delta 字段，保持向后兼容
+        if self.baseline_id is not None:
+            result["baseline_id"] = self.baseline_id
+            result["delta_hit_rate"] = self.delta_hit_rate
+            result["delta_mrr"] = self.delta_mrr
+            result["delta_aggregate_metrics"] = self.delta_aggregate_metrics
+        return result
 
 
 class EvalRunner:
@@ -278,6 +290,8 @@ class EvalRunner:
                 ) from exc
 
         # 兼容 evaluator 的"非空输入"约束：无召回时返回 0 指标，避免整体中断。
+        # 使用 evaluator.zero_metrics() 而非硬编码，保证 key 与正常评估结果一致，
+        # 防止 aggregate_metrics 聚合时因 key 缺失导致均值计算偏差。
         if retrieved_chunk_ids:
             try:
                 metrics = self._evaluator.evaluate(
@@ -294,7 +308,7 @@ class EvalRunner:
             except Exception as exc:
                 raise RuntimeError(f"failed to evaluate query '{case.query}': {exc}") from exc
         else:
-            metrics = {"hit_rate": 0.0, "mrr": 0.0}
+            metrics = self._evaluator.zero_metrics()
 
         return EvalCaseResult(
             query=case.query,

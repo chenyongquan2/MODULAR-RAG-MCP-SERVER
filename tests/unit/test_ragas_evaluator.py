@@ -192,3 +192,28 @@ class TestRagasEvaluator:
             "context_precision",
             "context_recall",
         }
+
+    def test_normalize_metrics_defaults_context_recall_to_zero(
+        self, mock_settings_ragas: Settings
+    ) -> None:
+        """mock_metrics 不含 context_recall 时，_normalize_metrics 应返回 0.0。"""
+        evaluator = RagasEvaluator(settings=mock_settings_ragas)
+        metrics = evaluator.evaluate(
+            query="q",
+            retrieved_ids=["c1"],
+            golden_ids=["c1"],
+            mock_metrics={"faithfulness": 0.9, "answer_relevancy": 0.8, "context_precision": 0.7},
+        )
+        assert "context_recall" in metrics
+        assert metrics["context_recall"] == pytest.approx(0.0)
+
+    def test_zero_metrics_returns_all_four_keys(
+        self, mock_settings_ragas: Settings
+    ) -> None:
+        """zero_metrics() 应返回 Ragas 四指标的零值模板。"""
+        evaluator = RagasEvaluator(settings=mock_settings_ragas)
+        zero = evaluator.zero_metrics()
+        assert set(zero.keys()) == {
+            "faithfulness", "answer_relevancy", "context_precision", "context_recall"
+        }
+        assert all(v == 0.0 for v in zero.values())

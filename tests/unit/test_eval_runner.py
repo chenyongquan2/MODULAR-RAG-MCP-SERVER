@@ -50,6 +50,9 @@ class _StubEvaluator(BaseEvaluator):
             "mrr": 1.0 if overlap else 0.0,
         }
 
+    def zero_metrics(self) -> dict[str, float]:
+        return {"custom_overlap": 0.0, "hit_rate": 0.0, "mrr": 0.0}
+
 
 def _build_settings() -> Settings:
     """Build minimal valid Settings for EvalRunner tests."""
@@ -143,8 +146,40 @@ def test_run_handles_empty_retrieval_results(tmp_path: Path) -> None:
     assert report.total_cases == 1
     assert report.hit_rate == 0.0
     assert report.mrr == 0.0
+    # 空检索时 metrics key 应与 zero_metrics() 对齐（非硬编码两个 key）
     assert report.case_results[0].metrics["hit_rate"] == 0.0
     assert report.case_results[0].metrics["mrr"] == 0.0
+    assert report.case_results[0].metrics["custom_overlap"] == 0.0
+
+
+def test_empty_retrieval_metric_keys_match_normal_case(tmp_path: Path) -> None:
+    """空检索 case 与正常 case 的 metric key 集合应完全一致。"""
+    test_set = tmp_path / "golden.json"
+    test_set.write_text(
+        json.dumps(
+            {
+                "test_cases": [
+                    {"query": "q1", "expected_chunk_ids": ["c1"]},
+                    {"query": "q-empty", "expected_chunk_ids": ["c1"]},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    hybrid = _StubHybridSearch(
+        mapping={
+            "q1": [RetrievalResult(chunk_id="c1", score=0.9, text="t", metadata={})],
+        }
+    )
+    runner = EvalRunner(_build_settings(), hybrid, _StubEvaluator())
+    report = runner.run(str(test_set))
+
+    keys_normal = set(report.case_results[0].metrics.keys())
+    keys_empty = set(report.case_results[1].metrics.keys())
+    assert keys_normal == keys_empty, (
+        f"Metric key 不一致: normal={keys_normal}, empty={keys_empty}"
+    )
 
 
 def test_run_raises_error_when_test_set_missing() -> None:
@@ -201,6 +236,9 @@ class _RagasStyleEvaluator(BaseEvaluator):
             "ground_truth": kwargs.get("ground_truth"),
         }
         return {"faithfulness": 0.9, "context_recall": 0.8}
+
+    def zero_metrics(self) -> dict[str, float]:
+        return {"faithfulness": 0.0, "context_recall": 0.0}
 
 
 def test_run_passes_answer_contexts_ground_truth_to_evaluator(tmp_path: Path) -> None:

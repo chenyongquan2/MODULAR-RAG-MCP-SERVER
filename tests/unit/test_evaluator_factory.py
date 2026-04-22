@@ -140,11 +140,12 @@ class TestEvaluatorFactory:
             },
         )
 
-        assert "hit_rate" in metrics
-        assert "mrr" in metrics
-        assert "faithfulness" in metrics
-        assert "answer_relevancy" in metrics
-        assert "context_precision" in metrics
+        # CompositeEvaluator 合并时加前缀：custom__hit_rate, ragas__faithfulness 等
+        assert "custom__hit_rate" in metrics
+        assert "custom__mrr" in metrics
+        assert "ragas__faithfulness" in metrics
+        assert "ragas__answer_relevancy" in metrics
+        assert "ragas__context_precision" in metrics
 
     def test_register_provider(self):
         """Test manual provider registration."""

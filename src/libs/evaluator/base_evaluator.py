@@ -68,3 +68,18 @@ class BaseEvaluator(ABC):
             1.0
         """
         pass
+
+    def zero_metrics(self) -> dict[str, float]:
+        """返回与 evaluate() 输出 key 一致的零值字典。
+
+        当 EvalRunner 检索结果为空时，会调用此方法获取零值占位，
+        保证所有 case_results 的 metric key 保持一致，避免 aggregate_metrics 聚合异常。
+
+        子类**必须**覆盖此方法，返回的 key 集合必须与 evaluate() 对齐；
+        否则会因 key 缺失导致 aggregate_metrics 均值被系统性抬高。
+        此处默认实现直接抛异常，让忘记覆盖的情况尽早失败。
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must override zero_metrics() to return a dict "
+            "whose keys match evaluate() output. See BaseEvaluator.zero_metrics docstring."
+        )

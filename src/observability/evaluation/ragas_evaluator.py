@@ -227,3 +227,12 @@ class RagasEvaluator(BaseEvaluator):
             "context_precision": _pick("context_precision"),
             "context_recall": _pick("context_recall"),
         }
+
+    def zero_metrics(self) -> dict[str, float]:
+        """返回 Ragas 标准四指标的零值模板，供空检索 fallback 使用。"""
+        return {
+            "faithfulness": 0.0,
+            "answer_relevancy": 0.0,
+            "context_precision": 0.0,
+            "context_recall": 0.0,
+        }
