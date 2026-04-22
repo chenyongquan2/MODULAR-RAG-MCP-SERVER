@@ -163,3 +163,149 @@ def test_run_raises_error_for_invalid_test_set_format(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="test_cases"):
         runner.run(str(test_set))
+
+
+class _StubResponseBuilder:
+    """Stub ResponseBuilder，用于验证 RAGAS 路径。"""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def build(self, query: str, results):  # type: ignore[no-untyped-def]
+        self.calls.append({"query": query, "num_results": len(results)})
+
+        class _Structured:
+            def __init__(self, markdown: str) -> None:
+                self.markdown = markdown
+
+        return _Structured(markdown=f"stub-answer-for:{query}")
+
+
+class _RagasStyleEvaluator(BaseEvaluator):
+    """Evaluator stub 记录收到的 answer/contexts/ground_truth。"""
+
+    def __init__(self) -> None:
+        self.last_kwargs: dict[str, object] = {}
+
+    def evaluate(
+        self,
+        query: str,
+        retrieved_ids: list[str],
+        golden_ids: list[str],
+        trace=None,
+        **kwargs,
+    ) -> dict[str, float]:
+        self.last_kwargs = {
+            "answer": kwargs.get("answer"),
+            "contexts": kwargs.get("contexts"),
+            "ground_truth": kwargs.get("ground_truth"),
+        }
+        return {"faithfulness": 0.9, "context_recall": 0.8}
+
+
+def test_run_passes_answer_contexts_ground_truth_to_evaluator(tmp_path: Path) -> None:
+    """注入 ResponseBuilder 后，evaluator 应收到真实 answer/contexts/ground_truth。"""
+    test_set = tmp_path / "golden.json"
+    test_set.write_text(
+        json.dumps(
+            {
+                "test_cases": [
+                    {
+                        "query": "q1",
+                        "expected_chunk_ids": ["c1"],
+                        "expected_sources": ["doc1.pdf"],
+                        "ground_truth": "参考答案 A",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    hybrid = _StubHybridSearch(
+        mapping={
+            "q1": [
+                RetrievalResult(
+                    chunk_id="c1",
+                    score=0.9,
+                    text="真实的检索文本片段 A",
+                    metadata={"source": "doc1.pdf"},
+                ),
+                RetrievalResult(
+                    chunk_id="c2",
+                    score=0.8,
+                    text="真实的检索文本片段 B",
+                    metadata={"source": "doc1.pdf"},
+                ),
+            ]
+        }
+    )
+    evaluator = _RagasStyleEvaluator()
+    rb = _StubResponseBuilder()
+
+    runner = EvalRunner(
+        _build_settings(),
+        hybrid,
+        evaluator,
+        response_builder=rb,
+    )
+    report = runner.run(str(test_set))
+
+    # 验证 ResponseBuilder 被调用
+    assert rb.calls == [{"query": "q1", "num_results": 2}]
+
+    # 验证 evaluator 拿到的是真实文本，而非 chunk ID
+    assert evaluator.last_kwargs["answer"] == "stub-answer-for:q1"
+    assert evaluator.last_kwargs["contexts"] == [
+        "真实的检索文本片段 A",
+        "真实的检索文本片段 B",
+    ]
+    assert evaluator.last_kwargs["ground_truth"] == "参考答案 A"
+
+    # 验证结果对象也记录了这些字段
+    case_result = report.case_results[0]
+    assert case_result.answer == "stub-answer-for:q1"
+    assert case_result.contexts == ["真实的检索文本片段 A", "真实的检索文本片段 B"]
+    assert case_result.ground_truth == "参考答案 A"
+
+
+def test_run_without_response_builder_skips_answer_generation(tmp_path: Path) -> None:
+    """不注入 ResponseBuilder 时 answer 应为空，保持向后兼容。"""
+    test_set = tmp_path / "golden.json"
+    test_set.write_text(
+        json.dumps(
+            {
+                "test_cases": [
+                    {
+                        "query": "q1",
+                        "expected_chunk_ids": ["c1"],
+                        "ground_truth": "参考答案",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    hybrid = _StubHybridSearch(
+        mapping={
+            "q1": [
+                RetrievalResult(
+                    chunk_id="c1",
+                    score=0.9,
+                    text="文本片段",
+                    metadata={"source": "doc1.pdf"},
+                )
+            ]
+        }
+    )
+    evaluator = _RagasStyleEvaluator()
+
+    runner = EvalRunner(_build_settings(), hybrid, evaluator)
+    runner.run(str(test_set))
+
+    assert evaluator.last_kwargs["answer"] == ""
+    assert evaluator.last_kwargs["contexts"] == ["文本片段"]
+    assert evaluator.last_kwargs["ground_truth"] == "参考答案"

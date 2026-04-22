@@ -14,11 +14,20 @@ from src.libs.evaluator.base_evaluator import BaseEvaluator
 
 @dataclass
 class EvalCase:
-    """单条黄金测试用例。"""
+    """单条黄金测试用例。
+
+    字段说明：
+        - ``query``：用户查询文本。
+        - ``expected_chunk_ids``：参考检索 ID，供检索类指标（Hit/MRR）使用。
+        - ``expected_sources``：参考来源文档（可选）。
+        - ``ground_truth``：参考答案文本，供 RAGAS 生成类指标
+          （context_precision / context_recall）使用；无此字段时相关指标无意义。
+    """
 
     query: str
     expected_chunk_ids: list[str]
     expected_sources: list[str] = field(default_factory=list)
+    ground_truth: str = ""
 
 
 @dataclass
@@ -34,6 +43,10 @@ class EvalCaseResult:
     reciprocal_rank: float
     source_hit: bool
     metrics: dict[str, float]
+    # RAGAS 所需的文本字段（非检索类场景可为空字符串 / 空列表）
+    answer: str = ""
+    contexts: list[str] = field(default_factory=list)
+    ground_truth: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典。"""
@@ -75,6 +88,7 @@ class EvalRunner:
         settings: Settings,
         hybrid_search: Any,
         evaluator: BaseEvaluator,
+        response_builder: Optional[Any] = None,
     ) -> None:
         """初始化评估运行器。
 
@@ -82,9 +96,12 @@ class EvalRunner:
             settings: 全局配置。
             hybrid_search: 已初始化的检索引擎，需提供 ``search()`` 方法。
             evaluator: 评估器实例（custom/ragas/composite）。
+            response_builder: 可选的响应构建器（提供 ``build(query, results)`` 方法）。
+                RAGAS 的 ``faithfulness`` / ``answer_relevancy`` 等指标依赖 LLM 生成的
+                answer；若不注入则这些指标无法计算。仅做检索类评估时可留空。
 
         Raises:
-            ValueError: 任一依赖为空时抛出。
+            ValueError: 任一必需依赖为空时抛出。
         """
         if settings is None:
             raise ValueError("settings cannot be None")
@@ -96,6 +113,7 @@ class EvalRunner:
         self._settings = settings
         self._hybrid_search = hybrid_search
         self._evaluator = evaluator
+        self._response_builder = response_builder
 
     def run(
         self,
@@ -190,6 +208,7 @@ class EvalRunner:
             query = item.get("query")
             expected_chunk_ids = item.get("expected_chunk_ids")
             expected_sources = item.get("expected_sources", [])
+            ground_truth = item.get("ground_truth", "")
 
             if not isinstance(query, str) or not query.strip():
                 raise ValueError(f"test_cases[{index}].query must be a non-empty string")
@@ -199,12 +218,17 @@ class EvalRunner:
                 )
             if not isinstance(expected_sources, list):
                 raise ValueError(f"test_cases[{index}].expected_sources must be a list")
+            if not isinstance(ground_truth, str):
+                raise ValueError(
+                    f"test_cases[{index}].ground_truth must be a string if provided"
+                )
 
             cases.append(
                 EvalCase(
                     query=query,
                     expected_chunk_ids=[str(chunk_id) for chunk_id in expected_chunk_ids],
                     expected_sources=[str(source) for source in expected_sources],
+                    ground_truth=ground_truth,
                 )
             )
 
@@ -215,9 +239,18 @@ class EvalRunner:
         case: EvalCase,
         retrieval_results: list[RetrievalResult],
     ) -> EvalCaseResult:
-        """评估单条测试用例并返回结果对象。"""
+        """评估单条测试用例并返回结果对象。
+
+        关键行为：
+            - 抽取检索结果的真实文本作为 ``contexts``（供 RAGAS 类指标使用）。
+            - 若注入了 ``response_builder``，走完整 RAG 链路生成 ``answer``。
+            - 将 ``answer`` / ``contexts`` / ``ground_truth`` 以显式 kwargs
+              方式传给 evaluator，避免"传 ID 当文本"的错误语义。
+        """
         retrieved_chunk_ids = [result.chunk_id for result in retrieval_results]
         retrieved_sources = self._extract_sources(retrieval_results)
+        # 关键修复：从检索结果抽取真实文本内容（chunk.text），而不是 ID。
+        contexts_text = [result.text for result in retrieval_results]
 
         hit, reciprocal_rank = self._compute_hit_and_rr(
             retrieved_chunk_ids=retrieved_chunk_ids,
@@ -228,7 +261,23 @@ class EvalRunner:
             expected_sources=case.expected_sources,
         )
 
-        # 这里兼容 evaluator 的“非空输入”约束：无召回时返回 0 指标，避免整体中断。
+        # 如果注入了 response_builder，走完整 RAG 链路生成 answer。
+        # 这是 RAGAS faithfulness / answer_relevancy 指标的前提条件。
+        answer_text = ""
+        if self._response_builder is not None and retrieval_results:
+            try:
+                structured = self._response_builder.build(
+                    query=case.query,
+                    results=retrieval_results,
+                )
+                # ResponseBuilder 返回 StructuredContent(markdown=..., citations=...)
+                answer_text = getattr(structured, "markdown", "") or str(structured)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"failed to build answer for query '{case.query}': {exc}"
+                ) from exc
+
+        # 兼容 evaluator 的"非空输入"约束：无召回时返回 0 指标，避免整体中断。
         if retrieved_chunk_ids:
             try:
                 metrics = self._evaluator.evaluate(
@@ -237,6 +286,10 @@ class EvalRunner:
                     golden_ids=case.expected_chunk_ids,
                     expected_sources=case.expected_sources,
                     retrieved_sources=retrieved_sources,
+                    # —— RAGAS 所需的文本字段，显式传递 ——
+                    answer=answer_text,
+                    contexts=contexts_text,
+                    ground_truth=case.ground_truth,
                 )
             except Exception as exc:
                 raise RuntimeError(f"failed to evaluate query '{case.query}': {exc}") from exc
@@ -253,6 +306,9 @@ class EvalRunner:
             reciprocal_rank=reciprocal_rank,
             source_hit=source_hit,
             metrics={key: float(value) for key, value in metrics.items()},
+            answer=answer_text,
+            contexts=contexts_text,
+            ground_truth=case.ground_truth,
         )
 
     @staticmethod

@@ -92,6 +92,7 @@ class EvaluationService:
         hybrid_search_builder: Callable[[Settings], Any] = HybridSearch,
         evaluator_builder: Optional[Callable[[Settings], BaseEvaluator]] = None,
         runner_builder: Callable[[Settings, Any, BaseEvaluator], EvalRunner] = EvalRunner,
+        response_builder_builder: Optional[Callable[[Settings], Any]] = None,
     ) -> EvalReport:
         """运行评估并返回报告。
 
@@ -104,6 +105,11 @@ class EvaluationService:
             hybrid_search_builder: HybridSearch 构造器（便于测试注入）。
             evaluator_builder: Evaluator 构造器（便于测试注入）。
             runner_builder: EvalRunner 构造器（便于测试注入）。
+                约定签名：``(settings, hybrid_search, evaluator) -> EvalRunner``。
+                若需要注入 response_builder，通过 ``response_builder_builder``
+                单独提供，由本方法在构造后附加到 runner 上。
+            response_builder_builder: 可选 ResponseBuilder 构造器。提供后将在
+                RAGAS 模式下为 EvalRunner 挂接 LLM answer 生成能力。
 
         Returns:
             EvalReport: 评估报告对象。
@@ -128,6 +134,14 @@ class EvaluationService:
             hybrid_search,
             evaluator,
         )
+
+        # 如启用了 ragas 且外部提供了 ResponseBuilder 构造器，则挂接。
+        # 保持 runner_builder 签名向后兼容（只接 3 参），此处以属性方式追加。
+        if (
+            response_builder_builder is not None
+            and "ragas" in [b.lower() for b in effective_settings.evaluation.backends]
+        ):
+            setattr(runner, "_response_builder", response_builder_builder(effective_settings))
 
         filters = {"collection": collection.strip()} if collection.strip() else None
         return runner.run(

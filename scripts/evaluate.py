@@ -7,6 +7,7 @@ import json
 import sys
 
 from src.core.query_engine.hybrid_search import HybridSearch
+from src.core.response.response_builder import ResponseBuilder
 from src.core.settings import load_settings
 from src.libs.evaluator.evaluator_factory import EvaluatorFactory
 from src.observability.evaluation.eval_runner import EvalRunner
@@ -41,6 +42,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Pretty-print report JSON",
     )
+    parser.add_argument(
+        "--generate-answers",
+        dest="generate_answers",
+        action="store_true",
+        default=None,
+        help=(
+            "Generate LLM answers via ResponseBuilder for each case (needed by "
+            "RAGAS faithfulness/answer_relevancy). Default: auto-on when 'ragas' "
+            "is configured as an evaluation backend."
+        ),
+    )
+    parser.add_argument(
+        "--no-generate-answers",
+        dest="generate_answers",
+        action="store_false",
+        help="Disable answer generation even if RAGAS is configured.",
+    )
     return parser.parse_args()
 
 
@@ -55,10 +73,23 @@ def main() -> int:
         settings = load_settings()
         hybrid_search = HybridSearch(settings=settings)
         evaluator = EvaluatorFactory.create(settings=settings)
+
+        # 是否生成 LLM answer：RAGAS 指标需要；仅检索评估时无需。
+        # 默认行为：配置启用了 ragas 则自动打开；命令行可通过 --no-generate-answers 关闭。
+        backends = [b.lower() for b in settings.evaluation.backends]
+        auto_enable = "ragas" in backends
+        should_generate = args.generate_answers if args.generate_answers is not None else auto_enable
+
+        response_builder = None
+        if should_generate:
+            logger.info("Answer generation enabled; instantiating ResponseBuilder.")
+            response_builder = ResponseBuilder(settings=settings)
+
         runner = EvalRunner(
             settings=settings,
             hybrid_search=hybrid_search,
             evaluator=evaluator,
+            response_builder=response_builder,
         )
 
         filters = {"collection": args.collection} if args.collection else None

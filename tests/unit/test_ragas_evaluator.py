@@ -94,7 +94,11 @@ class TestRagasEvaluator:
     def test_missing_ragas_dependency_raises_import_error(
         self, mock_settings_ragas: Settings
     ) -> None:
-        """Real mode should raise clear ImportError when ragas is not installed."""
+        """Real mode should raise clear ImportError when ragas is not installed.
+
+        注意：必须传入真实文本 contexts / ground_truth / answer 才能到达 import
+        路径；空值会在校验阶段先抛 ValueError，这是最佳实践要求的显式报错。
+        """
         evaluator = RagasEvaluator(settings=mock_settings_ragas)
 
         with pytest.raises(ImportError) as exc_info:
@@ -102,6 +106,89 @@ class TestRagasEvaluator:
                 query="what is rag?",
                 retrieved_ids=["chunk_1"],
                 golden_ids=["chunk_1"],
+                answer="RAG stands for Retrieval-Augmented Generation.",
+                contexts=["RAG combines retrieval with generation to ground LLM outputs."],
+                ground_truth="RAG = Retrieval-Augmented Generation.",
             )
 
         assert "pip install ragas datasets" in str(exc_info.value)
+
+    def test_missing_contexts_raises_value_error(
+        self, mock_settings_ragas: Settings
+    ) -> None:
+        """真实模式下缺失 contexts 应抛 ValueError，而不是悄悄用 chunk ID 顶替。"""
+        evaluator = RagasEvaluator(settings=mock_settings_ragas)
+
+        with pytest.raises(ValueError) as exc_info:
+            evaluator.evaluate(
+                query="what is rag?",
+                retrieved_ids=["chunk_1"],
+                golden_ids=["chunk_1"],
+                answer="irrelevant",
+                ground_truth="irrelevant",
+                # contexts 缺失
+            )
+
+        assert "contexts" in str(exc_info.value).lower()
+
+    def test_missing_ground_truth_raises_value_error(
+        self, mock_settings_ragas: Settings
+    ) -> None:
+        """真实模式下缺失 ground_truth 应抛 ValueError。"""
+        evaluator = RagasEvaluator(settings=mock_settings_ragas)
+
+        with pytest.raises(ValueError) as exc_info:
+            evaluator.evaluate(
+                query="what is rag?",
+                retrieved_ids=["chunk_1"],
+                golden_ids=["chunk_1"],
+                answer="irrelevant",
+                contexts=["some real retrieved text"],
+                # ground_truth 缺失
+            )
+
+        assert "ground_truth" in str(exc_info.value)
+
+    def test_contexts_must_be_strings_not_ids(
+        self, mock_settings_ragas: Settings
+    ) -> None:
+        """contexts 中包含非字符串或空串应报错，防止传 chunk ID。"""
+        evaluator = RagasEvaluator(settings=mock_settings_ragas)
+
+        with pytest.raises(ValueError) as exc_info:
+            evaluator.evaluate(
+                query="what is rag?",
+                retrieved_ids=["chunk_1"],
+                golden_ids=["chunk_1"],
+                answer="irrelevant",
+                contexts=["", "   "],  # 空串不合法
+                ground_truth="irrelevant",
+            )
+
+        assert "non-empty" in str(exc_info.value).lower()
+
+    def test_mock_mode_normalizes_context_recall(
+        self, mock_settings_ragas: Settings
+    ) -> None:
+        """mock 模式应返回包含 context_recall 的完整四指标。"""
+        evaluator = RagasEvaluator(settings=mock_settings_ragas)
+
+        metrics = evaluator.evaluate(
+            query="what is rag?",
+            retrieved_ids=["chunk_1"],
+            golden_ids=["chunk_1"],
+            mock_metrics={
+                "faithfulness": 0.9,
+                "answer_relevancy": 0.85,
+                "context_precision": 0.8,
+                "context_recall": 0.75,
+            },
+        )
+
+        assert metrics["context_recall"] == 0.75
+        assert set(metrics.keys()) == {
+            "faithfulness",
+            "answer_relevancy",
+            "context_precision",
+            "context_recall",
+        }

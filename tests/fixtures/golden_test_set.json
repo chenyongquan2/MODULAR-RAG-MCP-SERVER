@@ -3,22 +3,26 @@
     {
       "query": "如何配置 Azure OpenAI？",
       "expected_chunk_ids": ["chunk_azure_001", "chunk_azure_002"],
-      "expected_sources": ["config_guide.pdf"]
+      "expected_sources": ["config_guide.pdf"],
+      "ground_truth": "在 config/settings.yaml 的 llm 节点下，将 provider 设为 azure，并填写 api_key、endpoint、api_version 与 deployment 名称；api_key 支持通过环境变量 ${AZURE_OPENAI_API_KEY} 注入。"
     },
     {
       "query": "RAG 检索流程包括哪些阶段？",
       "expected_chunk_ids": ["chunk_retrieval_001"],
-      "expected_sources": ["rag_overview.md"]
+      "expected_sources": ["rag_overview.md"],
+      "ground_truth": "RAG 检索流程包括：Query 预处理 → 稠密检索 (Dense) 与稀疏检索 (Sparse) 并行执行 → 融合 (RRF) → 重排 (Rerank) → 响应构建 (Response)。"
     },
     {
       "query": "如何开启 ingestion trace 追踪？",
       "expected_chunk_ids": ["chunk_trace_001"],
-      "expected_sources": ["observability_guide.md"]
+      "expected_sources": ["observability_guide.md"],
+      "ground_truth": "在 observability.tracing 配置中将 enabled 设为 true，并指定 trace 输出路径（默认 logs/traces.jsonl）；ingestion 各阶段会按 load → split → transform → embed → upsert 顺序写入 trace。"
     },
     {
       "query": "Dashboard 支持哪些页面？",
       "expected_chunk_ids": ["chunk_dashboard_001", "chunk_dashboard_002"],
-      "expected_sources": ["dashboard_manual.md"]
+      "expected_sources": ["dashboard_manual.md"],
+      "ground_truth": "Streamlit Dashboard 共六个页面：系统概览、数据浏览、Ingestion 管理、Query Trace、Ingestion Trace、评估面板。"
     }
   ]
 }
