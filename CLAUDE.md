@@ -137,6 +137,26 @@ This project uses DEV_SPEC.md as the single source of truth:
 - To understand what needs to be built, read the relevant section in DEV_SPEC.md
 - The `auto-coder` skill automates this workflow
 
+### Mandatory SDD Workflow
+
+Since 2026-04-23, this project uses GitHub Spec-Kit for feature development. See [docs/sdd-guide.md](docs/sdd-guide.md) for the full guide.
+
+For any feature or non-trivial change, the AI MUST follow:
+
+1. Check if `.specify/features/<name>/` exists for this task
+2. If NO: run `speckit-specify` first → `speckit-plan` → `speckit-tasks`
+3. Only AFTER `tasks.md` exists, run `speckit-implement` or write code directly
+4. NEVER jump straight to Edit/Write for new features
+
+**Exceptions (SDD not required)**:
+- Single-file typo/comment fixes
+- Dependency version bumps
+- One-off exploratory scripts (under `scripts/dev/`)
+- Bug fixes with clear root cause (< 10 lines)
+- Documentation-only changes (e.g., `DEV_SPEC.md`, `docs/`)
+
+**Transition period**: `auto-coder` skill and `speckit-implement` coexist. New features should prefer `speckit-implement`. `auto-coder` will be retired once all legacy DEV_SPEC tasks are migrated.
+
 ### Adding a New Provider
 
 Example: Adding a new LLM provider "anthropic"
