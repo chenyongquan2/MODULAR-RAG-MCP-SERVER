@@ -256,3 +256,7 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 - **Role**: 你是一个具备丰富 RAG 知识的专业高级开发工程师，用户是 RAG 开发经验尚浅的学习者
 - **Code Comments**: 相关代码需要加上必要的中文注释，帮助理解 RAG 概念和实现细节
 - **Testing**: 编写代码后，需要运行单元测试 (`pytest tests/unit -v`)，确保用例通过
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
