@@ -14,6 +14,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import (
     Tool,
     TextContent,
+    ImageContent,
 )
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -24,6 +25,9 @@ import uvicorn
 from src.core.settings import Settings, load_settings, SettingsError, VALID_TRANSPORTS
 from src.core.query_engine.hybrid_search import HybridSearch
 from src.core.response.response_builder import ResponseBuilder
+from src.core.response.multimodal_assembler import MultimodalAssembler
+from src.core.trace.trace_collector import TraceCollector
+from src.ingestion.storage.image_storage import SQLiteImageStorage
 from src.mcp_server.tools.query_knowledge_hub import QueryKnowledgeHubTool
 from src.mcp_server.tools.list_collections import ListCollectionsTool
 from src.mcp_server.tools.get_document_summary import GetDocumentSummaryTool
@@ -73,7 +77,20 @@ class MCPServer:
 
             hybrid_search = HybridSearch(settings=settings)
             response_builder = ResponseBuilder(settings=settings)
-            self._query_tool = QueryKnowledgeHubTool(hybrid_search, response_builder)
+            # feature-002: 装配多模态返回链路（ImageStorage + MultimodalAssembler + TraceCollector）
+            image_storage = SQLiteImageStorage()
+            multimodal_assembler = MultimodalAssembler(image_storage=image_storage)
+            # observability.enabled=true 时启用 trace 持久化（US3）
+            trace_collector: TraceCollector | None = (
+                TraceCollector() if settings.observability.enabled else None
+            )
+            self._query_tool = QueryKnowledgeHubTool(
+                hybrid_search,
+                response_builder,
+                multimodal_assembler,
+                settings.query.max_images_per_response,
+                trace_collector,
+            )
 
             # Initialize list_collections tool
             try:
@@ -112,7 +129,7 @@ class MCPServer:
         @self.server.call_tool()
         async def handle_call_tool(
             name: str, arguments: dict
-        ) -> list[TextContent]:
+        ) -> list[TextContent | ImageContent]:
             """处理工具调用。"""
             logger.info("Calling tool: %s with arguments: %s", name, arguments)
 

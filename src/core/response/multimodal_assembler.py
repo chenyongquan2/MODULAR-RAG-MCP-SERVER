@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import mimetypes
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -72,6 +73,7 @@ class MultimodalAssembler:
         markdown: str,
         results: List[RetrievalResult],
         trace: Optional[Any] = None,
+        max_images: Optional[int] = None,
     ) -> List[TextContent | ImageContent | dict[str, Any]]:
         """组装多模态内容。
 
@@ -81,23 +83,50 @@ class MultimodalAssembler:
             markdown: Markdown 格式的响应文本（含 [IMAGE: {id}] 占位符）
             results: 检索结果列表（可能包含 image_refs）
             trace: 可选的 TraceContext 用于可观测性
+            max_images: 可选的图片数量上限。语义如下：
+                - ``None``（默认）：不限制，返回所有成功加载的图片（向后兼容）。
+                - 正整数 N：在排序后截取前 N 张。
+                - ``0``：不返回任何 ImageContent，仅返回 TextContent + 空 images dict。
+                - 负数：抛出 ``ValueError``（参数非法）。
 
         Returns:
             混合内容列表，顺序为：
             1. 文本内容（TextContent）
-            2. 图片内容（ImageContent 列表，按在文本中出现顺序）
-            3. 引用字典（dict，包含 images）
+            2. 图片内容（ImageContent 列表，按在文本中出现顺序，可能被 max_images 截断）
+            3. 引用字典（dict，包含 images，反映最终返回的图片集合）
+
+        Raises:
+            ValueError: 当 ``max_images`` 为负整数。
 
         说明：
             - 图片内容按 [IMAGE: {id}] 在 markdown 中出现顺序返回
             - 图片读取失败时记录警告并跳过该图片
             - 总是返回 TextContent（即使没有图片）
         """
+        # 参数校验：max_images 不能为负数（None 和正整数均合法）
+        if max_images is not None and max_images < 0:
+            raise ValueError(
+                f"max_images must be None or a non-negative integer, got {max_images}"
+            )
+
+        # feature-002 US3：记录 assemble_multimodal trace stage（FR-008）
+        assemble_start = time.monotonic()
+        image_count_failed = 0  # 由 _load_image 每次失败计一次
+
         # 1. 收集所有图片引用
         image_refs: List[Dict[str, Any]] = self._extract_image_refs(results)
+        image_count_requested = len(image_refs)
 
         if not image_refs:
-            # 没有图片，只返回文本和引用
+            # 没有图片，只返回文本和引用；仍要写 trace（便于诊断"为什么没图"）
+            self._record_trace_stage(
+                trace=trace,
+                requested=0,
+                returned=0,
+                failed=0,
+                max_images=max_images,
+                duration_ms=(time.monotonic() - assemble_start) * 1000,
+            )
             return [
                 TextContent(type="text", text=markdown),
                 {"images": []}
@@ -112,6 +141,9 @@ class MultimodalAssembler:
                 image_content = self._load_image(ref)
                 if image_content:
                     image_contents.append((ref["id"], image_content))
+                else:
+                    # _load_image 返回 None：文件丢失 / mime 非法 / IO 失败等
+                    image_count_failed += 1
             except Exception as e:
                 logger.warning(
                     "Failed to load image %s: %s",
@@ -119,12 +151,33 @@ class MultimodalAssembler:
                     e,
                     exc_info=True,
                 )
+                image_count_failed += 1
                 # 优雅降级：跳过失败的图片，继续处理其他图片
 
         # 3. 按在文本中的出现顺序排序
         sorted_images = self._sort_by_text_offset(image_contents, markdown)
 
-        # 4. 构建返回内容
+        # 4. 应用数量上限（spec FR-004）
+        # max_images=None 保持向后兼容（不限制）；0/正整数则按上限截取
+        if max_images is not None and len(sorted_images) > max_images:
+            logger.info(
+                "Truncating images from %d to max_images=%d",
+                len(sorted_images),
+                max_images,
+            )
+            sorted_images = sorted_images[:max_images]
+
+        # 写入 assemble_multimodal trace stage（FR-008）
+        self._record_trace_stage(
+            trace=trace,
+            requested=image_count_requested,
+            returned=len(sorted_images),
+            failed=image_count_failed,
+            max_images=max_images,
+            duration_ms=(time.monotonic() - assemble_start) * 1000,
+        )
+
+        # 5. 构建返回内容
         return [
             TextContent(type="text", text=markdown),
             *[img for _, img in sorted_images],
@@ -136,6 +189,36 @@ class MultimodalAssembler:
                 for image_id, img in sorted_images
             ]}
         ]
+
+    @staticmethod
+    def _record_trace_stage(
+        trace: Optional[Any],
+        requested: int,
+        returned: int,
+        failed: int,
+        max_images: Optional[int],
+        duration_ms: float,
+    ) -> None:
+        """写入 assemble_multimodal trace stage（feature-002 FR-008）。
+
+        若 trace 为 None（未启用 tracing）则跳过，Fail-Safe。
+        字段与 contracts/query_knowledge_hub_tool.md §5.1 对齐。
+        """
+        if trace is None:
+            return
+        # 复用 TraceContext.record_stage 的便捷 API（已被既有 dense/sparse/fusion/rerank 使用）
+        record = getattr(trace, "record_stage", None)
+        if record is None:
+            # 非 TraceContext 类型（如测试 mock）：静默跳过
+            return
+        record(
+            "assemble_multimodal",
+            image_count_requested=requested,
+            image_count_returned=returned,
+            image_count_failed=failed,
+            max_images=max_images,
+            duration_ms=round(duration_ms, 3),
+        )
 
     def _extract_image_refs(
         self,

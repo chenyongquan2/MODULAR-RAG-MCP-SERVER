@@ -85,6 +85,23 @@ class RetrievalSettings:
 
 
 @dataclass
+class QuerySettings:
+    """查询响应相关配置。
+
+    控制 MCP 工具 ``query_knowledge_hub`` 返回响应的"响应组装层"行为，
+    与 ``RetrievalSettings``（召回阶段）和 ``RerankSettings``（重排阶段）
+    相互独立。
+
+    Attributes:
+        max_images_per_response: 单次响应返回图片数量上限（正整数，默认 10）。
+            检索到的图片超过此数时，按命中 chunk 的 rerank 顺序截取前 N 张。
+            设为较大值会增加 MCP 响应体积；0 或负数在 load_settings 时会被拒绝。
+    """
+
+    max_images_per_response: int = 10
+
+
+@dataclass
 class RerankSettings:
     """重排配置。"""
 
@@ -206,6 +223,7 @@ class Settings:
     vector_store: VectorStoreSettings
     loader: LoaderSettings = field(default_factory=LoaderSettings)
     retrieval: RetrievalSettings = field(default_factory=RetrievalSettings)
+    query: QuerySettings = field(default_factory=QuerySettings)
     rerank: RerankSettings = field(default_factory=RerankSettings)
     splitter: SplitterSettings = field(default_factory=SplitterSettings)
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
@@ -432,6 +450,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
         retrieval=_build_sub_settings(
             raw.get("retrieval"), RetrievalSettings, "retrieval"
         ),
+        query=_build_sub_settings(
+            raw.get("query"), QuerySettings, "query"
+        ),
         rerank=_build_sub_settings(
             raw.get("rerank"), RerankSettings, "rerank"
         ),
@@ -488,4 +509,11 @@ def validate_settings(settings: Settings) -> None:
         raise SettingsError(
             "Invalid mcp_server.port: "
             f"{settings.mcp_server.port}. Expected 1-65535"
+        )
+
+    # 查询响应配置校验（spec feature-002 FR-004）
+    if settings.query.max_images_per_response <= 0:
+        raise SettingsError(
+            "Invalid query.max_images_per_response: "
+            f"{settings.query.max_images_per_response}. Expected a positive integer (> 0)."
         )

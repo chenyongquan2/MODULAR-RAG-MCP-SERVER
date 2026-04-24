@@ -2,18 +2,24 @@
 
 基于混合检索（Dense + Sparse + RRF + Rerank）查询知识库，
 支持纯检索模式和 LLM 总结模式。
+
+自 feature-002 起：纯检索模式同时附加命中 chunk 的图片（MCP ImageContent）。
+LLM 总结模式的图片附加由 feature-002 US2 实现（本文件 use_llm=True 分支目前仍返回纯文本）。
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from mcp.types import TextContent
+from mcp.types import ImageContent, TextContent
 
 from src.core.query_engine.hybrid_search import HybridSearch
+from src.core.response.multimodal_assembler import MultimodalAssembler
 from src.core.response.response_builder import ResponseBuilder
 from src.core.response.citation_generator import StructuredContent
+from src.core.trace.trace_collector import TraceCollector
+from src.core.trace.trace_context import TraceContext
 from src.core.types import RetrievalResult
 
 from src.observability.logger import get_logger
@@ -48,25 +54,44 @@ class QueryKnowledgeHubTool:
         self,
         hybrid_search: HybridSearch,
         response_builder: ResponseBuilder,
+        multimodal_assembler: MultimodalAssembler,
+        max_images_per_response: int,
+        trace_collector: Optional[TraceCollector] = None,
     ) -> None:
         """初始化 QueryKnowledgeHubTool。
 
         Args:
             hybrid_search: 混合检索引擎实例
             response_builder: 响应构建器实例
+            multimodal_assembler: 多模态响应组装器（feature-002 新增）
+            max_images_per_response: 单次响应附带图片数量上限（来自 settings.query.max_images_per_response）
+            trace_collector: 可选的 trace 持久化器（feature-002 US3）；
+                None 表示不 flush trace 到 jsonl（测试场景使用），
+                生产侧 server.py 应传入 TraceCollector() 实例。
 
         Raises:
-            ValueError: 如果参数为 None
+            ValueError: 如果 hybrid_search/response_builder/multimodal_assembler 为 None，
+                或 max_images_per_response <= 0
         """
         if hybrid_search is None:
             raise ValueError("hybrid_search cannot be None")
         if response_builder is None:
             raise ValueError("response_builder cannot be None")
+        if multimodal_assembler is None:
+            raise ValueError("multimodal_assembler cannot be None")
+        if not isinstance(max_images_per_response, int) or max_images_per_response <= 0:
+            raise ValueError(
+                "max_images_per_response must be a positive integer, "
+                f"got {max_images_per_response!r}"
+            )
 
         self._hybrid_search = hybrid_search
         self._response_builder = response_builder
+        self._multimodal_assembler = multimodal_assembler
+        self._max_images_per_response = max_images_per_response
+        self._trace_collector = trace_collector
 
-    async def execute(self, arguments: Dict[str, Any]) -> list[TextContent]:
+    async def execute(self, arguments: Dict[str, Any]) -> list[TextContent | ImageContent]:
         """执行知识库查询。
 
         Args:
@@ -77,8 +102,9 @@ class QueryKnowledgeHubTool:
                 - filters (dict, optional): 元数据过滤条件
 
         Returns:
-            use_llm=True 时: 包含 Markdown 内容和引用列表的响应
-            use_llm=False 时: 格式化的检索结果
+            列表，包含 TextContent 与 0~N 个 ImageContent：
+            - use_llm=True: LLM 生成的 Markdown + 引用信息（ImageContent 附加由 US2 完成，当前仍为纯文本）
+            - use_llm=False: 格式化的检索结果 + 命中 chunk 关联图片（feature-002 US1）
 
         Raises:
             ValueError: 如果参数无效
@@ -104,13 +130,20 @@ class QueryKnowledgeHubTool:
             filters,
         )
 
+        # feature-002 US3：为本次查询创建 trace 上下文，供 assembler 写入 stage；
+        # 若构造器注入了 trace_collector 则在 finally flush 到 jsonl。
+        trace = TraceContext(trace_type="query")
+        trace.add_metadata("query", query)
+        trace.add_metadata("top_k", top_k)
+        trace.add_metadata("use_llm", use_llm)
+
         try:
             # 2. 执行混合检索
             results: list[RetrievalResult] = self._hybrid_search.search(
                 query=query,
                 top_k=top_k,
                 filters=filters,
-                trace=None,
+                trace=trace,
             )
 
             logger.info("HybridSearch returned %d results", len(results))
@@ -126,11 +159,11 @@ class QueryKnowledgeHubTool:
 
             # 3. 根据模式决定返回内容
             if use_llm:
-                # LLM 总结模式：调用 LLM 生成响应
+                # LLM 总结模式：调用 LLM 生成响应（feature-002 US2：同时附加命中 chunk 关联图片）
                 structured_content: StructuredContent = self._response_builder.build(
                     query=query,
                     results=results,
-                    trace=None,
+                    trace=trace,
                 )
 
                 logger.info(
@@ -149,44 +182,85 @@ class QueryKnowledgeHubTool:
                     citations_text += f"Score: {c.score:.4f}\n"
                     citations_text += f"Text: {c.text[:100]}...\n"
 
-                return [
-                    TextContent(
-                        type="text",
-                        text=structured_content.markdown + citations_text,
-                    ),
-                ]
+                llm_markdown = structured_content.markdown + citations_text
+
+                # 调用 MultimodalAssembler 附加图片；若失败，降级为纯 TextContent（FR-006）
+                try:
+                    return self._multimodal_assembler.assemble(
+                        markdown=llm_markdown,
+                        results=results,
+                        trace=trace,
+                        max_images=self._max_images_per_response,
+                    )
+                except Exception as assemble_err:
+                    logger.error(
+                        "MultimodalAssembler.assemble failed in use_llm=True branch: %s. "
+                        "Falling back to text-only response.",
+                        assemble_err,
+                        exc_info=True,
+                    )
+                    return [
+                        TextContent(type="text", text=llm_markdown),
+                    ]
             else:
-                # 纯检索模式：直接返回格式化的检索结果
+                # 纯检索模式：返回格式化检索结果 + 命中 chunk 关联图片（feature-002 US1）
                 formatted: str = self._format_search_results(results)
 
                 logger.info("Formatted search results: %d characters", len(formatted))
 
-                # MCP 协议要求返回值必须是 TextContent 或其他 Content 类型
+                # MCP 协议要求返回值必须是 TextContent/ImageContent
                 # 将 raw_results 作为 JSON 字符串附加到文本末尾
                 raw_results_json = self._serialize_results(results)
                 formatted_with_json = (
                     formatted + "\n\n=== Raw Results (JSON) ===\n" + json.dumps(raw_results_json, ensure_ascii=False, indent=2)
                 )
 
-                return [
-                    TextContent(
-                        type="text",
-                        text=formatted_with_json,
-                    ),
-                ]
+                # 调用 MultimodalAssembler 附加图片；若 assembler 失败，降级为纯 TextContent（FR-006）
+                try:
+                    return self._multimodal_assembler.assemble(
+                        markdown=formatted_with_json,
+                        results=results,
+                        trace=trace,
+                        max_images=self._max_images_per_response,
+                    )
+                except Exception as assemble_err:
+                    logger.error(
+                        "MultimodalAssembler.assemble failed in use_llm=False branch: %s. "
+                        "Falling back to text-only response.",
+                        assemble_err,
+                        exc_info=True,
+                    )
+                    return [
+                        TextContent(type="text", text=formatted_with_json),
+                    ]
 
         except ValueError:
-            # 重新抛出参数验证错误
+            # 重新抛出参数验证错误；在 trace 里留痕以便区分"参数错误查询"与"成功查询"
+            trace.add_metadata("error_type", "ValueError")
             raise
         except Exception as e:
             # 其他错误记录日志并返回友好提示
             logger.error("Error executing query_knowledge_hub: %s", e, exc_info=True)
+            trace.add_metadata("error", str(e))
             return [
                 TextContent(
                     type="text",
                     text=f"查询过程中发生错误：{str(e)}。请稍后重试。",
                 )
             ]
+        finally:
+            # feature-002 US3：结束 trace 并（若配置了 collector）flush 到 jsonl
+            trace.finish()
+            if self._trace_collector is not None:
+                try:
+                    self._trace_collector.collect(trace)
+                except Exception as collect_err:
+                    # 观测失败不应影响主流程
+                    logger.warning(
+                        "Failed to collect query trace: %s",
+                        collect_err,
+                        exc_info=True,
+                    )
 
     def _format_search_results(self, results: list[RetrievalResult]) -> str:
         """格式化检索结果（类似 CLI 输出格式）。

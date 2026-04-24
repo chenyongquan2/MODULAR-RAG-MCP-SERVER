@@ -49,6 +49,10 @@ retrieval:
   top_k_sparse: 20          # sparse 召回数量
   top_k_final: 10           # 最终返回数量
 
+# 查询响应配置（MCP 工具 query_knowledge_hub 返回组装行为）
+query:
+  max_images_per_response: 10   # 单次响应附带图片数上限（正整数；超出时按命中 chunk 顺序取前 N 张）
+
 # 重排配置
 rerank:
   backend: none             # none | cross_encoder | llm

@@ -245,7 +245,7 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 - **Logger Usage**: Always import `from observability.logger import get_logger` and call `logger = get_logger(__name__)`
 - **PDF Loading**: Currently only PDF and Markdown formats supported via `src/libs/loader/` (uses MarkItDown for PDF → Markdown conversion)
 - **Vector Store**: ChromaDB is the only implemented backend currently
-- **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately
+- **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately. 自 feature-002 起，查询命中含图 chunk 时，`query_knowledge_hub` 工具会通过 `MultimodalAssembler` 同时返回文本与图片（MCP `ImageContent`，base64），两种模式（`use_llm=true/false`）策略一致。返图数量上限由 `query.max_images_per_response` 配置（默认 10）
 
 ## Evaluation System
 
@@ -277,6 +277,14 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 - **Code Comments**: 相关代码需要加上必要的中文注释，帮助理解 RAG 概念和实现细节
 - **Testing**: 编写代码后，需要运行单元测试 (`pytest tests/unit -v`)，确保用例通过
 <!-- SPECKIT START -->
+**Active SDD Plan**: [specs/002-multimodal-query-response/plan.md](specs/002-multimodal-query-response/plan.md)
+
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
+above (Feature-002: 多模态查询响应链路闭合). Sibling artifacts in the
+same directory: [spec.md](specs/002-multimodal-query-response/spec.md),
+[research.md](specs/002-multimodal-query-response/research.md),
+[data-model.md](specs/002-multimodal-query-response/data-model.md),
+[contracts/](specs/002-multimodal-query-response/contracts/),
+[quickstart.md](specs/002-multimodal-query-response/quickstart.md).
 <!-- SPECKIT END -->
