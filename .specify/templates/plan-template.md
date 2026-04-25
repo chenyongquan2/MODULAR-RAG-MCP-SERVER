@@ -31,7 +31,25 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+逐条标记 **PASS / VIOLATION / N/A** 并附一行说明。**NON-NEGOTIABLE** 条款不允许通过 Complexity Tracking 豁免 —— 违反则 feature 必须重设计。其他条款的偏离必须在 Complexity Tracking 区段登记理由。
+
+### 架构原则
+
+- [ ] **一、Provider 无关性** — 业务代码不 import 具体 provider;新组件经 base + factory 接入
+- [ ] **二、配置驱动** — 新增可调参数有 `settings.yaml` 字段 + `src/core/settings.py` dataclass
+- [ ] **三、快速失败校验** — 配置/输入校验在启动期或入口处完成,失败立即抛 `ValueError`
+- [ ] **四、追踪显式化** — pipeline 函数签名包含 `trace_ctx: TraceContext`,无隐式 trace 状态
+- [ ] **五、结构化日志(NON-NEGOTIABLE)** — `src/` 内零 `print()`,日志通过 `observability.logger`,输出到 stderr
+- [ ] **六、类型安全** — 所有 public 函数完整类型注解;共享类型放 `src/core/types.py`
+- [ ] **七、测试支撑变更(NON-NEGOTIABLE)** — 每个实现任务配套 unit test,提交前 `pytest tests/unit -v` 通过
+
+### SDD 纪律
+
+- [ ] **八、Spec 先行(NON-NEGOTIABLE)** — 本 feature 已有 `spec.md`,代码改动均围绕其展开
+- [ ] **九、Plan 先于 Tasks(NON-NEGOTIABLE)** — `tasks.md` 将由本 plan 推导,不脱钩生成
+- [ ] **十、可追溯性(NON-NEGOTIABLE)** — 实施期 commit message 引用 task ID(`refs T-XXX`)
+
+> 完整原则定义见 [.specify/memory/constitution.md](../../.specify/memory/constitution.md)。
 
 ## Project Structure
 
