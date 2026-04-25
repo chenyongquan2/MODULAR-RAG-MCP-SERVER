@@ -129,17 +129,22 @@ The Streamlit dashboard reads these traces and dynamically renders based on `met
 
 ## Development Workflow
 
-### Spec-Driven Development
+### Spec-Driven Development (Legacy — Transitional)
 
-This project uses DEV_SPEC.md as the single source of truth:
+> **Status**: 本节描述项目早期的自研 SDD 模式,目前处于退役过渡期。**新 feature 走 Spec-Kit**(见下节 § Mandatory SDD Workflow),legacy DEV_SPEC.md 任务迁移完后本节会移除。
+
+Originally this project used DEV_SPEC.md as the single source of truth:
 - All features are defined with detailed technical specs in DEV_SPEC.md
 - Tasks are tracked with progress status directly in DEV_SPEC.md
-- To understand what needs to be built, read the relevant section in DEV_SPEC.md
 - The `auto-coder` skill automates this workflow
+
+**新 feature 不要走这个流程** —— 直接看下一节。
 
 ### Mandatory SDD Workflow
 
 Since 2026-04-23, this project uses GitHub Spec-Kit for feature development. See [docs/sdd-guide.md](docs/sdd-guide.md) for the full guide.
+
+**Project Constitution**: 本项目硬约束在 [.specify/memory/constitution.md](.specify/memory/constitution.md)(2026-04-25 立宪 v1.0.0)。**冲突时以宪法为准**(见宪法 § Governance / Authority)。AI 在生成 plan 时必须执行 plan-template.md 的 Constitution Check 区段。
 
 For any feature or non-trivial change, the AI MUST follow:
 
@@ -148,12 +153,7 @@ For any feature or non-trivial change, the AI MUST follow:
 3. Only AFTER `tasks.md` exists, run `speckit-implement` or write code directly
 4. NEVER jump straight to Edit/Write for new features
 
-**Exceptions (SDD not required)**:
-- Single-file typo/comment fixes
-- Dependency version bumps
-- One-off exploratory scripts (under `scripts/dev/`)
-- Bug fixes with clear root cause (< 10 lines)
-- Documentation-only changes (e.g., `DEV_SPEC.md`, `docs/`)
+**Exceptions (SDD not required)**: 见宪法 [Rule VIII 的例外清单](.specify/memory/constitution.md)(避免本文件与宪法漂移)。
 
 **Transition period**: `auto-coder` skill and `speckit-implement` coexist. New features should prefer `speckit-implement`. `auto-coder` will be retired once all legacy DEV_SPEC tasks are migrated.
 
@@ -261,6 +261,8 @@ Configure via `evaluation.backends` in settings.yaml.
 
 ## Working with DEV_SPEC.md
 
+> **过渡期说明**:DEV_SPEC.md 现仅作**高层技术设计参考**(类似 ADR);新 feature 的任务追踪在 `.specify/features/<name>/tasks.md`,**不在** DEV_SPEC.md。本节描述的是 legacy 流程,留作历史参考与 legacy 任务定位。
+
 DEV_SPEC.md contains the complete technical specification organized as:
 - Section 1-2: Project overview and design principles
 - Section 3: Detailed technical design (RAG pipeline, pluggable architecture, tracing, evaluation)
@@ -276,6 +278,11 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 - **Role**: 你是一个具备丰富 RAG 知识的专业高级开发工程师，用户是 RAG 开发经验尚浅的学习者
 - **Code Comments**: 相关代码需要加上必要的中文注释，帮助理解 RAG 概念和实现细节
 - **Testing**: 编写代码后，需要运行单元测试 (`pytest tests/unit -v`)，确保用例通过
+
+## Active Feature (Spec-Kit managed — do not edit manually)
+
+> 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->` 与 `<!-- SPECKIT END -->` 之间的内容。
+
 <!-- SPECKIT START -->
 **Active SDD Plan**: [specs/002-multimodal-query-response/plan.md](specs/002-multimodal-query-response/plan.md)
 
