@@ -196,3 +196,17 @@ Task: "T006 新建 test_multimodal_assembler_limit.py"
 - 每个 User Story 完成后建议 git commit 一次（粒度 = 完整可跑的 story 增量）
 - T021 中 TraceContext 的处理方式若发现项目基础设施尚未支持，可**保守降级为 logger.info JSON 行**，并在 research.md 追加 D-4 增补段记录此折中
 - 避免：跨 story 的隐式耦合（除 execute() 同文件顺序之外）、测试与实现放在不同 commit
+
+---
+
+## Deferred Backlog（用户决定延后执行）
+
+> 记录于 2026-04-24。本 feature 的代码/自动化测试全部完成（48/48 feature 相关用例 + 154/154 查询管线回归绿），仅以下项延后到后续迭代。
+
+### 手工 e2e 验收（用户亲自操作）
+
+| 编号 | 任务 | 参考 | 触发时机 |
+|------|------|------|---------|
+| T015 | Claude Desktop 以 `use_llm=false` 调用 `query_knowledge_hub`，确认 ImageContent 渲染 | [quickstart.md](./quickstart.md) Step 1~4.2 | 下次有时间接入 Claude Desktop 做端到端验收时 |
+| T019 | Claude Desktop 以 `use_llm=true` 调用，确认 LLM Markdown + 图片共存 | [quickstart.md](./quickstart.md) Step 4.3 | 同上 |
+| T024 | Dashboard 查看 `stage=assemble_multimodal` trace；改 `query.max_images_per_response` 重启验证；SC-004 时延对比 | [quickstart.md](./quickstart.md) Step 5 | 同上 |
