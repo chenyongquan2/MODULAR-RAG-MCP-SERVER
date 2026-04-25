@@ -43,6 +43,112 @@ RAGAS 的核心思想：**用 LLM 做 Judge**（LLM-as-judge），让一个强�
 
 **两者互补，缺一不可。** 检索不准，生成再好也没用；检索准了，生成不忠实（幻觉）也是灾难。
 
+> 注：这里的"两层"指**评估器维度**（检索器 vs 生成器）。还有另一个正交的"两层"——**业务回归层（Layer A）vs 能力诊断层（Layer B）**——指的是**测试集来源维度**（业务自合成 vs 公开 benchmark），详见 [docs/rag-acceptance-plan.md § 评估架构：双层视角](rag-acceptance-plan.md)。两个"两层"是不同坐标轴，互相独立。
+
+### 1.4 RAG 语料 vs Golden Test Set：必须区分的两个概念
+
+> **2026-04-25 增补**：本节是 RAG 学习者最容易混淆的概念之一，先讲清楚再往下看 RAGAS 数据流。
+
+刚接触 RAG 评估时，很多人会把"语料"和"测试集"混作一谈，问出"有没有通用 RAG 数据集供我评估系统？"。两者完全是不同性质的资源：
+
+| 概念 | 指什么 | 在管线里的角色 | 例子（本项目） |
+|------|--------|--------------|------------|
+| **语料**（corpus） | 被检索的知识库本体 | 摄取阶段灌进 ChromaDB 的内容 | MT5 中英文手册（PDF / Markdown） |
+| **基线数据 / Golden Test Set** | 用来评估系统好坏的 (question, ground_truth, expected_chunks) 三元组 | 评估阶段输入到 evaluator 的"答案册" | [tests/fixtures/golden_test_set.json](../tests/fixtures/golden_test_set.json) |
+
+#### 为什么两者都不存在"通用"版本
+
+**语料层面**：RAG 的价值就在"用你自己的私有/垂直/最新知识增强 LLM"。如果用通用语料（如英文 Wikipedia），LLM 本身预训练时已经看过——RAG 反而成为多余环节。所以你的**业务语料就是你的语料**（MT5 手册无可替代），不该追求"通用"。
+
+**测试集层面**：公开 RAG 测试集（MS MARCO / HotpotQA / RGB / DuReader 等）的题目都是基于自己的语料编的，跟你的业务语料错位——直接拿来用，要么把它的语料也摄入进系统（本质等于"换一个领域重跑一遍"，跟你业务无关），要么期望你的 RAG 能答出语料里没有的内容（必然 100% 答错）。
+
+**结论**：业务效果验收**只能**用业务自合成 + 人工精修的 Golden Set。这是为什么 [Feature-001 spec.md](../specs/001-rag-acceptance/spec.md) 走"自合成 + 人工精修中英各 40-50 条"路径。
+
+#### 公开测试集的合理用法（Layer B 能力诊断）
+
+公开数据集**不能做主验收**，但可以做**能力指纹**——告诉你系统的零部件能力（多跳推理 / 表格 QA / 抗噪声 / 长上下文）在业内标准基准下是什么水平。这是另一个独立维度，详见 [rag-acceptance-plan.md § 评估架构：双层视角](rag-acceptance-plan.md) 的完整说明。
+
+### 1.5 RAGAS 的输入与评估对象
+
+> **2026-04-25 增补**：理解 RAGAS"吃什么、评什么"是用好它的第一步。
+
+#### 1.5.1 RAGAS 评估的对象：是"运行时产物"，不是"静态资源"
+
+```
+                  RAG 系统（你的整套 pipeline）
+                        ↓
+        ┌──────────────┴──────────────┐
+        ↓                              ↓
+   检索阶段产出                    生成阶段产出
+   contexts（命中的             answer（LLM 基
+   知识片段文本）                于 contexts 写
+                                 出的回答）
+        └──────────────┬──────────────┘
+                        ↓
+                    RAGAS 在这里
+                    打分（用 Judge LLM）
+```
+
+**关键洞察**：RAGAS **不直接看语料库、不直接看测试集**——它看的是"测试集里的题目喂给你的 RAG 系统后，系统跑出来的答卷"。
+
+#### 1.5.2 RAGAS 输入的四元组
+
+每条评估用例必须凑齐 4 个字段：
+
+| 字段 | 含义 | 来源 | 谁负责提供 |
+|------|------|------|-----------|
+| **question** | 用户的提问 | golden set | 测试集 |
+| **contexts** | RAG 系统检索到的知识片段（**真实文本**，非 chunk ID） | 运行时 | 你的检索器 |
+| **answer** | RAG 系统给出的回答 | 运行时 | 你的生成器（ResponseBuilder） |
+| **ground_truth** | 题目的"标准答案" | golden set | 测试集 |
+
+**关键约束**：`contexts` 必须是**可读知识片段文本**（[Feature-001 spec.md](../specs/001-rag-acceptance/spec.md) 的 FR-003 与 [src/observability/evaluation/ragas_evaluator.py](../src/observability/evaluation/ragas_evaluator.py) 约 L132 都强制校验这一点）——RAGAS 内部要让 Judge LLM 阅读这段文本做语义对比，给 chunk ID 它读不懂。
+
+#### 1.5.3 4 个 RAGAS 指标各自需要哪些字段
+
+不同指标对四元组的依赖不同：
+
+| 指标 | question | contexts | answer | ground_truth | 评估什么 |
+|------|:---:|:---:|:---:|:---:|---------|
+| **faithfulness** | ✓ | ✓ | ✓ | ✗ | answer 是不是只基于 contexts，没有幻觉 |
+| **answer_relevancy** | ✓ | ✗ | ✓ | ✗ | answer 是不是真的回答了 question |
+| **context_precision** | ✓ | ✓ | ✗ | ✓ | 检索到的 contexts 中"有用片段"的占比（去噪能力） |
+| **context_recall** | ✗ | ✓ | ✗ | ✓ | ground_truth 中的事实是否被 contexts 覆盖（召回能力） |
+
+**重要推论**：
+- `faithfulness` 与 `answer_relevancy` **不需要 ground_truth** → 理论上可以"无标准答案"评估（线上流量采样可用）
+- `context_precision` 与 `context_recall` **必须有 ground_truth** → 这是为什么测试集的 `ground_truth` 字段不能省略
+
+#### 1.5.4 必须有 Judge LLM 的原因
+
+RAGAS 指标的本质是**语义判断**，不是字符串匹配：
+
+| 任务 | 字符串匹配能否做？ | 需要 LLM 吗 |
+|------|---------|-------|
+| answer "MT5 用 MQL5 写策略" 与 ground_truth "MetaTrader 5 通过 MQL5 编程实现" 是否一致 | ❌ 字符不重合 | ✅ |
+| contexts 中哪些段落跟 question 真正相关 | ❌ | ✅ |
+| answer 里每句话能不能在 contexts 里找到依据 | ❌ | ✅ |
+
+所以 RAGAS 必须有 Judge LLM 当"裁判"——本项目硬约束 = GLM-4，通过 LangChain 的 `ChatOpenAI` 包一层 GLM 兼容端点接入。
+
+**注意区分两种 LLM 角色**：
+- **生成器 LLM**（[src/libs/llm/](../src/libs/llm/)）：你 RAG 系统里负责拼 answer 的模型，可配 GLM / Azure / Ollama 等
+- **Judge LLM**：RAGAS 评估时单独配置（本项目固定 = GLM-4），跟生成器 LLM 可以是同一个也可以不同
+
+#### 1.5.5 RAGAS vs custom 检索指标的输入差异
+
+本项目同时跑 RAGAS（4 个指标）+ custom（4 个检索指标），输入要求不同：
+
+| 维度 | RAGAS 指标 | custom 检索指标（Hit/MRR/Recall/NDCG） |
+|------|------------|-----------------------------------------|
+| 输入 | (question, contexts 文本, answer, ground_truth) | (检索返回的 chunk_id 列表, expected_chunk_ids 列表) |
+| 评估对象 | 语义层（基于内容） | ID 匹配层（基于元数据） |
+| 需要 Judge LLM | ✅ | ❌（纯 ID 集合运算） |
+| 需要 ground_truth 文本 | 部分指标需要 | ❌ |
+| 需要 expected_chunk_ids | ❌ | ✅ |
+
+这就是为什么 [Feature-001 spec.md](../specs/001-rag-acceptance/spec.md) 的 `TestCase` 实体同时包含 `ground_truth`（喂 RAGAS）和 `expected_chunk_ids`（喂 custom 指标）——**一份测试集同时服务两组指标**。
+
 ---
 
 ## 2. 本项目的评估架构
@@ -551,6 +657,8 @@ assert m.get('ragas__faithfulness', 0) >= 0.7, 'faithfulness regression'
 
 - [DEV_SPEC.md](../DEV_SPEC.md) §3.8：评估系统技术设计
 - [CLAUDE.md](../CLAUDE.md)：项目整体说明
+- [docs/rag-acceptance-plan.md](rag-acceptance-plan.md)：RAG 质量验收方案 + § 评估架构：双层视角（业务回归层 vs 能力诊断层、tags schema、文档形态扩展时的双红线评估）—— 与本文 § 1.4/1.5 互补阅读
+- [specs/001-rag-acceptance/spec.md](../specs/001-rag-acceptance/spec.md)：RAG 验收 Feature-001 spec（FR-014/FR-015/SC-008 是双层评估架构在本项目的 schema 落地）
 - 本文档：`docs/ragas-guide.md`
 
 ### 8.2 RAGAS 官方资源
