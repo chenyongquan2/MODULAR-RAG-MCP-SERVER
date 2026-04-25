@@ -14,6 +14,9 @@
 - [4. 引入 SDD 的完整步骤（回溯）](#4-引入-sdd-的完整步骤回溯)
 - [5. 踩过的坑与原因](#5-踩过的坑与原因必读)
 - [6. 日常使用流程](#6-日常使用流程)
+  - [6.3 Constitution 生成与编写最佳实践](#63-constitution-生成与编写最佳实践)
+  - [6.4 Constitution 立宪时机最佳实践](#64-constitution-立宪时机最佳实践)
+  - [6.5 CLAUDE.md 中的 SPECKIT 块自动管理](#65-claudemd-中的-speckit-块自动管理)
 - [7. 让 AI 遵守 SDD 的约束机制](#7-让-ai-遵守-sdd-的约束机制)
 - [8. 与既有工作的衔接](#8-与既有工作的衔接)
 - [9. 新成员 onboarding](#9-新成员-onboarding)
@@ -86,6 +89,8 @@ SDD 的所有工作产物归为四个层级：
 | **Tasks** | `.specify/features/<name>/tasks.md` | **分几步**——可独立执行的 TODO 列表 | `speckit-tasks` |
 
 **执行顺序**：每个新 feature 依次走 specify → plan → tasks → implement。Constitution 是项目级的，只需写一次，后续按需更新。
+
+> **立宪时机**：Constitution 应该在什么时候首次创建？什么时候修订？这是 SDD 实践中最容易踩坑的问题（立得太晚 → 下游 plan/tasks 无法做 Constitution Check；立得太早 → 写出空话且后续频繁 MAJOR 修宪）。本项目（brownfield + 原则已成熟）建议**立刻立宪、在第一个 feature 之前**；greenfield 项目则建议"first spec 之后、first plan 之前"。**详细分析见 [§6.4 Constitution 立宪时机最佳实践](#64-constitution-立宪时机最佳实践)**。
 
 ### 2.3 Spec-Kit 是什么
 
@@ -361,15 +366,296 @@ Step 8. speckit-implement
 - 或重新调用对应 skill（如 `speckit-specify` 会更新已有 spec.md）
 - 改动完后跑一次 `speckit-analyze` 检查一致性
 
-### 6.3 更新项目宪法
+### 6.3 Constitution 生成与编写最佳实践
 
-项目原则变化时：
-```
-speckit-constitution
-  └─ AI 会检测 constitution.md 与代码的矛盾，建议更新
+#### 6.3.1 文件位置与初始来源
+
+- **路径**：`.specify/memory/constitution.md`（`specify init` 时复制自 `.specify/templates/constitution-template.md`）
+- **模板特点**：含大量 `[PROJECT_NAME]` / `[PRINCIPLE_X_NAME]` 占位符，需要"立宪"动作把它们替换成项目实际原则
+- **首次写入**：由 `speckit-constitution` skill 交互式问答驱动，**也可以**先在对话里手工起草后由 AI 落盘（本项目 v1.0.0 走的就是后者）
+
+#### 6.3.2 模板的"硬锚点"（改了会破坏工具识别）
+
+不是所有 section 都可以中文化。检查 `.specify/templates/constitution-template.md` 可知：
+
+| 标题 | 性质 | 是否可改中文 |
+|---|---|---|
+| `## Core Principles` | **固定** | ❌ 必须保留英文 |
+| `### [PRINCIPLE_X_NAME]` | 占位符 | ✅ 可中文 |
+| `## [SECTION_2_NAME]` | 占位符 | ✅ 可中文 |
+| `## [SECTION_3_NAME]` | 占位符 | ✅ 可中文 |
+| `## Governance` | **固定** | ❌ 必须保留英文 |
+| `**Version**: ... \| **Ratified**: ... \| **Last Amended**: ...` | 固定 footer | ❌ 必须保留英文 |
+| `NON-NEGOTIABLE` 标记 | Spec-Kit 全生态语义 | ❌ 必须保留英文 |
+
+**判别准则**：模板里**没有**用 `[PLACEHOLDER]` 标的就是硬锚点。Spec-Kit 工具按这些固定标题做 anchor，改了风险最大。
+
+#### 6.3.3 每条原则的"4 要素结构"
+
+模板只给了 `[PRINCIPLE_X_NAME]` + `[PRINCIPLE_X_DESCRIPTION]` 两个占位符，但这远远不够。最佳实践是每条原则展开为 **4 个要素**：
+
+```markdown
+### N、原则名
+
+简短的祈使句陈述规则（**必须** / **禁止**）。
+
+**立法理由**：为什么这条是必要的（WHY）。**这是最关键的元素** —— 让 AI 在 plan/code 阶段碰到边界情形时能自己判断，而不只是机械执行。
+
+**执行约束**：
+- 在哪个文件/目录强制
+- code review 检查项
+- 测试如何验证
 ```
 
-不要手工直接改 constitution.md（会绕开一致性校验）。
+**为什么 Rationale 比 Rule 更重要**：Rule 告诉 AI "做什么"，Rationale 告诉 AI "为什么这样做" —— 后者让它能在新场景下推广，而不是死板套规则。
+
+#### 6.3.4 写宪法的 9 条最佳实践（review checklist）
+
+这是本项目立宪时实际套用的清单，可以拿来 review 任何宪法草稿：
+
+**结构层**
+
+1. **结构对齐 Spec-Kit 官方模板** —— 不发明新结构，工具识别才有保障
+2. **每条原则 = 4 要素**（见 §6.3.3）
+
+**内容层**
+
+3. **可测试性强制** —— 每条原则必须能写出 checklist 或 lint 规则验证。无法验证的（如"我们重视质量"）不入宪，放进 styleguide
+4. **NON-NEGOTIABLE 标记区分** —— SDD 纪律 + 涉及正确性（非偏好）的约束加此标记；架构原则一般不加，允许 plan 在 "Complexity Tracking" 登记例外
+5. **Traceability 锚点** —— 每条原则尽量引用真实文件路径（对 brownfield 项目，这能避免"空话宪法"）
+
+**治理层**
+
+6. **版本号语义**：
+   - **MAJOR**：删除原则、反转原则、对现有 plan/tasks 不兼容
+   - **MINOR**：新增原则、对现有原则的实质性扩展
+   - **PATCH**：措辞澄清、补充示例、非语义性修订
+7. **明确例外路径** —— plan.md 的 "Complexity Tracking" 是唯一合法偏离机制，未登记 = 违宪
+
+**反模式**
+
+8. **不写**：空话（"重视测试"）、战术细节（"缩进 4 空格" → lint 的事）、无 Rationale 的条款（变 cargo cult）、>10 条原则（无法执行）
+9. **数量控制**：5-7 条核心原则是健康区间，加 2-3 条 SDD 纪律，总数控制在 10 条以内
+
+#### 6.3.5 决策清单：什么入宪、什么不入
+
+立宪过程频繁遇到的"该不该入宪"问题，可用这张表判断：
+
+| 类别 | 入宪？ | 归属 |
+|---|---|---|
+| 架构约束（provider 抽象、配置驱动等） | ✅ 入宪 | constitution.md |
+| 不可妥协的协议正确性（如 MCP stdio 不能 print） | ✅ 入宪（NON-NEGOTIABLE） | constitution.md |
+| SDD 工作流纪律（spec-first、plan-before-tasks） | ✅ 入宪（NON-NEGOTIABLE） | constitution.md |
+| 测试**原则**（必须配套测试） | ✅ 入宪 | constitution.md |
+| 测试**阈值**（覆盖率 ≥ 80%） | ❌ 不入宪 | CI / pyproject.toml |
+| AI 沟通偏好（中文回答） | ❌ 不入宪 | CLAUDE.md `Interaction Preferences` |
+| 代码注释语言 | ❌ 不入宪 | CLAUDE.md `Code Conventions` |
+| 文档风格（Google docstring） | ❌ 不入宪 | CLAUDE.md / styleguide |
+| 命名约定（小驼峰 / 蛇形） | ❌ 不入宪 | lint config |
+
+**元原则**：
+
+> Constitution = "什么让这套软件**架构正确且可维护**"
+> NOT = "团队怎么协作" / "AI 怎么沟通" / "新人 onboarding 怎么舒服"
+
+#### 6.3.6 修宪与日常维护
+
+- **修宪机制**：必须通过 `speckit-constitution` skill 执行，**禁止**直接 Edit `.specify/memory/constitution.md`（绕过 skill = 绕过一致性校验）
+- **修宪后必做**：
+  1. 同步 `.specify/templates/plan-template.md` 的 Constitution Check 区段
+  2. Review 进行中的 feature plan 是否仍合规
+  3. Commit message 用 `feat(sdd): ratify ...` 或 `chore(sdd): amend constitution to vX.Y.Z`
+- **不要做**：
+  - 频繁修宪（权威性会被稀释）
+  - 在 PR 里顺手改宪法（应该是独立 PR）
+  - 给某个 feature 的特殊需求改宪法（应该走 plan.md 的 Complexity Tracking）
+
+#### 6.3.7 本项目立宪过程速查（2026-04-25）
+
+回溯本项目 v1.0.0 的立宪流程，作为后续项目的参考：
+
+```
+1. 评估时机                                  ← §6.4
+   - Brownfield + 原则成熟 → 立刻立宪
+
+2. 起草内容（对话里完成，先不落盘）
+   - 数量：7 条架构 + 3 条 SDD 纪律 = 10 条
+   - 来源：CLAUDE.md "Key Design Principles" + SDD 纪律
+   - 标 NON-NEGOTIABLE：5（stdout 协议）、7（测试）、8/9/10（SDD 纪律）
+
+3. 决策清单（见 §6.3.5）
+   - 入宪：架构原则 + 测试原则
+   - 不入宪：中文偏好、覆盖率数字、注释风格
+
+4. 中英混合方案（见 §6.3.2）
+   - 保留英文：Core Principles / Governance / footer / NON-NEGOTIABLE
+   - 中文化：原则名 + 立法理由 + 执行约束
+
+5. 落盘 → 同步 plan-template.md → review 在产 feature
+6. 单独 commit：feat(sdd): ratify project constitution v1.0.0
+```
+
+### 6.4 Constitution 立宪时机最佳实践
+
+宪法是 SDD 的"最高法"，约束所有下游产物。**写得早 → 价值最大；改得勤 → 反而有害**。所以"何时立宪"是核心问题。
+
+#### 6.4.1 三类时机
+
+**时机 A：首次创建（Ratification）—— 项目"立宪时刻"**
+
+两种主流观点：
+
+| 观点 | 时机 | 适用场景 |
+|---|---|---|
+| **保守派**（Spec-Kit 官方默认） | 第一个 spec 完成后、第一个 plan 之前 | Greenfield + 团队/项目方向未明 |
+| **激进派**（本项目推荐） | 引入 SDD 时**立刻**立宪，在第一个 feature 之前 | Brownfield + 项目原则已成熟 |
+
+**关键判别准则：项目原则是否已经成熟？**
+
+- ✅ **已成熟**（本项目情形）：CLAUDE.md 里已有 "Provider-Agnostic / Configuration-Driven / Fail-Fast / Explicit Tracing / Structured Logging / Type Safety" 等久经验证的原则。立宪只是**形式化**已有共识，不是发明新规。立宪越早越好。
+- ❌ **未成熟**（典型 greenfield）：团队对项目方向还不清晰，提前立宪容易写出空话（如"我们重视质量""测试很重要"），后续修宪成本高（MAJOR 版本号要 +1）。
+
+**时机 B：修订（Amendment）—— 有限场景**
+
+宪法应该稳定，只在以下情况修订：
+
+| 触发场景 | 例子 | 版本号 |
+|---|---|---|
+| 新增原则 | 引入"所有外部 API 必须有 mock 层" | MINOR +1 |
+| 澄清现有原则 | "Test-First" 补充"集成测试可后置" | PATCH +1 |
+| 废弃/反转原则 | 从"单体优先"改"微服务优先" | MAJOR +1 |
+| 重大架构决策固化 | 选定某种技术栈作为强制约束 | MINOR +1 |
+
+**反模式**（不要做）：
+- 为单 feature 特殊需求修宪 → 改用 plan.md 的 "Complexity Tracking" 记录例外
+- 重构代码风格 → 那是 lint 规则的事，不是宪法
+- 文档措辞润色 → 直接 Edit，不必走 `speckit-constitution`
+
+**时机 C：周期性回顾（Review）—— 防止僵化**
+
+每 3-6 个月或每个大版本前，跑一次 `speckit-constitution`，即使不改内容也走一遍流程问自己：
+- 现在还有原则被持续违反吗？（如果是 → 强化执行 / 承认现实并修宪）
+- 有没有"事实上的原则"还没入宪？（团队都在做但没写下来的实践）
+- 模板同步还对得上吗？（plan-template.md 的 Constitution Check 区段）
+
+#### 6.4.2 为什么 Greenfield 推荐"first spec 之后"立宪？
+
+这是 Spec-Kit 官方暗含的默认建议，理由：
+
+1. **抽象原则需要具体场景做参照**。没写过任何 feature 时，"我们重视类型安全"这种话太空；具体到"所有公开函数必须类型注解、测试覆盖率 ≥ 80%"才有约束力。
+2. **避免过早承诺**。新项目方向常变，过早立宪 → 第一个 feature 就发现某条原则不合理 → 立刻 MAJOR 修宪 → 团队对宪法权威性产生质疑。
+3. **第一个 spec 暴露隐藏假设**。写 spec 时会被迫回答"这个组件谁负责？跨服务怎么调？"——这些答案才是宪法的真正素材。
+
+#### 6.4.3 为什么 Brownfield（本项目）推荐"立刻立宪"？
+
+1. **原则已经存在**，只是没形式化。CLAUDE.md 里 "Key Design Principles" 6 条都是经过 100+ commits 验证的共识，不是空话。
+2. **新 feature 才是受益者**。Feature-002 已经在做 plan 了，如果宪法还是空模板，plan 模板里的 "Constitution Check" 形同虚设。先立宪 → Feature-002 的 plan 真实接受合规检查 → 价值最大化。
+3. **修宪风险低**。已被实战验证的原则不太会被立刻推翻，所以 MAJOR 版本号 +1 的概率不高。
+4. **避开了 greenfield 的"空话"风险**。立法者不是凭空想象，而是把已有的、活跃的代码实践编入宪法。
+
+#### 6.4.4 通用判别表
+
+| 项目类型 | 立宪时机 | 核心理由 |
+|---|---|---|
+| **Brownfield**（原则已成熟） | 引入 SDD 当天，first feature 之前 | 形式化已有共识 |
+| **Greenfield**（团队/方向未明） | First spec 之后、first plan 之前 | 避免空话和过早承诺 |
+| **Greenfield**（团队成熟 + 领域清晰） | 立刻立宪 | 同 brownfield 逻辑 |
+
+#### 6.4.5 本项目当前（2026-04-25）的具体行动建议
+
+1. **立刻跑** `speckit-constitution`
+   - 内容来源：CLAUDE.md 的 "Key Design Principles" 章节（6 条）
+   - 同时加入 SDD 自身约束（见 §7.3 的 NON-NEGOTIABLE 条款）
+2. **跑完后**：回头快速 review [specs/002-multimodal-query-response/plan.md](../specs/002-multimodal-query-response/plan.md)，确认是否符合新立宪法；违反就在 plan 的 "Complexity Tracking" 登记例外
+3. **下次再修**：等出现"这事我们项目其实有共识但没写下来"的瞬间——那就是修宪信号
+4. **不要**：每周/每月强制修宪，那会让 SDD 流程变成形式主义
+
+#### 6.4.6 一句话心法
+
+**立法者不是凭空想象，而是把已经"活着"的实践写下来。**
+
+- **有活实践** → 立刻立宪（本项目情形）
+- **没活实践** → 等第一个 feature 长出来再立
+- **共通**：修宪靠"信号驱动"，不靠日历驱动
+
+### 6.5 CLAUDE.md 中的 SPECKIT 块自动管理
+
+#### 6.5.1 这个块是什么
+
+每个用 Spec-Kit 的项目，CLAUDE.md 里都会有一段：
+
+```markdown
+<!-- SPECKIT START -->
+**Active SDD Plan**: [specs/<feature-name>/plan.md](...)
+
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+above (Feature-XXX: ...). Sibling artifacts in the same directory:
+[spec.md](...), [research.md](...), [data-model.md](...),
+[contracts/](...), [quickstart.md](...).
+<!-- SPECKIT END -->
+```
+
+**作用**：Spec-Kit 把它叫 **Active Context Bundle** —— 给 AI 一个**单点入口**，指向当前在做的 feature 的全部 Phase 0/1 产物。
+
+#### 6.5.2 为何里面要列那么多文档？
+
+每个文档承担不同角色，**不是冗余**：
+
+| 文档 | 回答 | AI 用它做什么 |
+|---|---|---|
+| `spec.md` | **WHAT** —— 需求与边界 | 不做超出 spec 的事 |
+| `plan.md` | **HOW** —— 技术方案 + Constitution Check | 主入口，引用其他文件 |
+| `research.md` | **WHY** —— 关键决策与拒绝的方案 | 避免推翻已 settled 的决策 |
+| `data-model.md` | 实体/类型设计 | 知道有没有新类型要建 |
+| `contracts/` | 接口/工具 I/O 契约 | 落代码时按契约对齐 |
+| `quickstart.md` | 端到端验证脚本 | 实施完跑这个验收 |
+
+#### 6.5.3 不会膨胀（关键问题答疑）
+
+**新加 feature 时这个块会不会累积？—— 不会。**
+
+证据在 [.claude/skills/speckit-plan/SKILL.md](../.claude/skills/speckit-plan/SKILL.md)：
+
+> **3. Agent context update**:
+>    - **Update** the plan reference **between** the `<!-- SPECKIT START -->` and `<!-- SPECKIT END -->` markers in CLAUDE.md to point to the plan file created in step 1
+
+关键动词是 **"Update ... between the markers"** —— 替换两个标记之间的全部内容，不 append。
+
+**行为推演**（假设下周做 Feature-003）：
+
+1. `speckit-specify` 创建 spec（不动 CLAUDE.md）
+2. `speckit-plan` 创建 plan，**然后第 3 步覆写** CLAUDE.md 的 SPECKIT 块，指向 Feature-003
+
+CLAUDE.md 的 SPECKIT 块永远只引用 1 个 feature，大小恒定。
+
+#### 6.5.4 设计假设：一次只 implement 一个 feature
+
+Spec-Kit 的核心假设是 **"一次一个 feature"**（类比 git 分支策略 —— 每个 feature 一个分支，implement 期间在该分支上）。所以：
+
+- **同一 branch**：SPECKIT 块永远是当前 active 的那个 feature
+- **跨 branch**：不同分支的 CLAUDE.md 各自维护自己的 SPECKIT 块
+- **多 feature 并行 = 多分支并行**，各分支独立
+
+#### 6.5.5 边界情形：git merge 冲突
+
+唯一会让 SPECKIT 块"看起来累积"的场景：**手工 git merge 时产生冲突，把两个分支的 SPECKIT 块都保留**。
+
+**处理建议**：
+
+- 合并时如果 SPECKIT 块冲突，**只保留目标分支的版本**（target branch 才是真正的"当前在做"）
+- 或者合并完后立即跑一次 `speckit-plan` 让它重新写一次
+
+#### 6.5.6 给人的规矩：不要手工编辑
+
+CLAUDE.md 里的 SPECKIT 块应被视为"**机器管理区**"：
+
+- ❌ 不要手工增删 plan/spec 引用
+- ❌ 不要修改 markers `<!-- SPECKIT START -->` / `<!-- SPECKIT END -->`（改了 speckit-plan 找不到）
+- ❌ 不要在 markers 之间写自己的笔记
+- ✅ 让 `speckit-plan` 来管，每次启动新 feature 自动更新
+
+本项目在 [CLAUDE.md](../CLAUDE.md) 里把这个块单独放在 `## Active Feature (Spec-Kit managed — do not edit manually)` 小节下，明确标识其"机器管理"性质，避免与 § Interaction Preferences 等人类编辑区混淆。
 
 ---
 
@@ -692,3 +978,6 @@ uv tool uninstall specify-cli
 |---|---|---|
 | 2026-04-23 | v1.0 | 初版：引入 Spec-Kit 0.7.6.dev0，记录完整过程 + 踩过的坑 + 日常用法 |
 | 2026-04-23 | v1.1 | 新增 §7 章节：让 AI 遵守 SDD 的四层约束机制 + 本项目最佳实践推荐（L1+L2+L3） |
+| 2026-04-25 | v1.2 | 新增 §6.4：Constitution 立宪时机最佳实践（Greenfield vs Brownfield 判别准则、修订/回顾时机、本项目当前行动建议） |
+| 2026-04-25 | v1.3 | §2.2 追加立宪时机提示块 + 指向 §6.4 的锚链接，提升可发现性 |
+| 2026-04-25 | v1.4 | 大幅扩写 §6.3 为"Constitution 生成与编写最佳实践"（4 要素结构、9 条 review checklist、入宪决策表、修宪流程、本项目立宪过程速查）；新增 §6.5"SPECKIT 块自动管理"（基于 speckit-plan SKILL.md 证据，论证不会膨胀） |
