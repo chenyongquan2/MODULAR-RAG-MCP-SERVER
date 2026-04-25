@@ -284,14 +284,14 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 > 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->` 与 `<!-- SPECKIT END -->` 之间的内容。
 
 <!-- SPECKIT START -->
-**Active SDD Plan**: [specs/002-multimodal-query-response/plan.md](specs/002-multimodal-query-response/plan.md)
+**Active SDD Plan**: [specs/001-rag-acceptance/plan.md](specs/001-rag-acceptance/plan.md)
 
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-above (Feature-002: 多模态查询响应链路闭合). Sibling artifacts in the
-same directory: [spec.md](specs/002-multimodal-query-response/spec.md),
-[research.md](specs/002-multimodal-query-response/research.md),
-[data-model.md](specs/002-multimodal-query-response/data-model.md),
-[contracts/](specs/002-multimodal-query-response/contracts/),
-[quickstart.md](specs/002-multimodal-query-response/quickstart.md).
+above (Feature-001: RAG 质量验收(中英双语基线)). Sibling artifacts in the
+same directory: [spec.md](specs/001-rag-acceptance/spec.md),
+[research.md](specs/001-rag-acceptance/research.md),
+[data-model.md](specs/001-rag-acceptance/data-model.md),
+[contracts/](specs/001-rag-acceptance/contracts/),
+[quickstart.md](specs/001-rag-acceptance/quickstart.md).
 <!-- SPECKIT END -->
