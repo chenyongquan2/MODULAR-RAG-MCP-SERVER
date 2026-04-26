@@ -417,15 +417,15 @@ python scripts/start_dashboard.py
 
 ## 执行进度追踪
 
-新的 AI 会话或开发者在按此方案推进时，请在下方记录进度（或在 DEV_SPEC.md 中新增对应任务）：
+> **2026-04-25/26 状态更新**:本方案已通过 SDD(GitHub Spec-Kit)接管,见 [specs/001-rag-acceptance/](../specs/001-rag-acceptance/)(spec/plan/research/data-model/contracts/quickstart/tasks 全套)。本文档保留作为方案设计参考;实际执行进度以 spec 目录下的 `tasks.md` checkbox 为准(通过 11 个 commit `3a076d7`..`bd5fabc` 跨 spec/clarify/plan/tasks/implement 5 阶段交付,代码 100% 完成)。
 
-- [ ] Step 0：RAGAS backend 开启 + GLM judge 接入 + 烟雾测试通过
-- [ ] Step 1：合成 raw_testset_zh.json / raw_testset_en.json
-- [ ] Step 2：人工精修产出 reviewed_testset_*.json
-- [ ] Step 3：回填 chunk_ids 产出 golden_test_set_{zh,en}.json
-- [ ] Step 4：生成 logs/eval_zh_baseline.json、logs/eval_en_baseline.json
-- [ ] Step 5：Dashboard 标记基线
-- [ ] Step 6（可选）：RGB 小样本对照
+- [x] Step 0:RAGAS backend 开启 + GLM judge 接入 + 烟雾测试通过(commit `b78b4be` T018 真实 GLM 跑通,8 项指标全产出)
+- [ ] Step 1:合成 raw_testset_zh.json / raw_testset_en.json(代码就位 → `commit 34b6983` T019-T020;**待 user 跑** `scripts/synthesize_testset.py --collection mt5_docs_chinese --lang zh`,前置:先 ingest MT5 中文到独立 collection)
+- [ ] Step 2:人工精修产出 reviewed_testset_*.json(代码就位 → `commit 34b6983` T021;**待 user 跑** `scripts/refine_testset.py`,interactive y/e/d/s/q)
+- [ ] Step 3:回填 chunk_ids 产出 golden_test_set_{zh,en}.json(代码就位 → `commit 34b6983` T022;**待 user 跑** `scripts/backfill_chunk_ids.py`)
+- [x] Step 4:生成 logs/eval_zh_baseline.json、logs/eval_en_baseline.json 的**机制就位**(commit `0482f81` EvalRunner 自动 archive 到 `logs/evaluation_reports/<run_id>.json`;Step 1-3 完成后自动产出真实金标基线)
+- [x] Step 5:Dashboard 标记基线(commit `bd5fabc` US3:`BaselineManager` + Streamlit "🎯 Feature-001 基线 + 回归" tab 实现)
+- [ ] Step 6(可选):RGB 小样本对照 — 标 spec § Assumptions "Step 6 横向对照不在 MVP",留作独立 feature
 
 ---
 

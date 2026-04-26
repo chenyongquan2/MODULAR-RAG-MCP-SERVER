@@ -249,15 +249,28 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 
 ## Evaluation System
 
-Supports pluggable evaluators (Ragas, custom metrics). Evaluations run against golden test sets in `tests/fixtures/golden_test_set.json`.
+Supports pluggable evaluators (Ragas, custom metrics). Evaluations run against golden test sets in `tests/fixtures/golden_test_set.json` (US1 占位) 或 `golden_test_set_{zh,en}.json` (US2 后真实金标)。
 
-Metrics include:
-- Context relevance (retrieval quality)
-- Answer faithfulness (generation quality)
-- Hit rate (recall)
-- Custom business metrics
+**8 项主聚合指标**(Feature-001 后默认):
+- RAGAS 4 项:`ragas__context_recall` / `ragas__context_precision` / `ragas__faithfulness` / `ragas__answer_relevancy`
+- Custom 4 项:`custom__hit_rate` / `custom__mrr` / `custom__recall` / `custom__ndcg`
 
-Configure via `evaluation.backends` in settings.yaml.
+**配置**:通过 `evaluation.backends` 启用 backend(`custom` 永久启用,`ragas` 视场景);Judge LLM、embedding、阈值、归档目录全部由 `config/settings.yaml` `evaluation.*` 控制(详见 [specs/001-rag-acceptance/contracts/settings.evaluation.schema.md](specs/001-rag-acceptance/contracts/settings.evaluation.schema.md))。
+
+**Judge / Embedding 切换提示**(spec § Assumptions § Judge 切换与阈值校准):
+- 不同 Judge LLM 对同一 (q, ctx, answer) 评分有 3-10% 系统性差异
+- 切换 Judge(`evaluation.judge_llm.provider/model`)或 embedding(`evaluation.embedding.*`)后,**FR-013 默认阈值不再适用**;建议:
+  1. 先在新 Judge 下用现有金标重跑评估、观察分数分布
+  2. 据新分布在 `evaluation.acceptance_thresholds.*` 重新校准
+- 每份评估报告自带 `acceptance_thresholds_snapshot` + `judge_llm_identifier` + `embedding_identifier`,跨 Judge 报告可追溯
+
+**关键 CLI**:
+- `scripts/evaluate.py --pretty --collection <name>` — 跑评估,自动 archive + delta vs baseline
+- `scripts/synthesize_testset.py --collection <c> --lang {zh,en}` — RAGAS TestsetGenerator 合成候选(US2)
+- `scripts/refine_testset.py --input <candidate>` — interactive y/e/d/s/q 精修
+- `scripts/backfill_chunk_ids.py --input <golden> --collection <c>` — 语义匹配回填 expected_chunk_ids
+
+**Dashboard**:`python scripts/start_dashboard.py` → 评估面板 → "🎯 Feature-001 基线 + 回归" tab(标基线 / 看 delta / 8 项指标趋势)。
 
 ## Working with DEV_SPEC.md
 
