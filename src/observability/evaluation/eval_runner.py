@@ -251,10 +251,14 @@ class EvalRunner:
         self._validate_chunk_ids_exist(cases, filters)
 
         results: list[EvalCaseResult] = []
-        # 维护两组聚合状态:
-        # 1. metric_value_lists:每个 metric 的有效值列表(已剔除 NaN);
+        # 维护三组聚合状态:
+        # 1. all_metric_keys:所有 case 中出现过的 metric key 全集
+        #    (即使该 metric 在所有 case 中都是 NaN,key 仍要保留 — 否则
+        #    SC-001 的"8 项指标全部产出"会因为某项全降级而误判)
+        # 2. metric_value_lists:每个 metric 的有效值列表(已剔除 NaN)
         #    用于按 case 数取均值(避免 NaN 拉低分母)
-        # 2. degraded_case_count:任一 metric NaN 即视为该 case 降级(SC-006)
+        # 3. degraded_case_count:任一 metric NaN 即视为该 case 降级(SC-006)
+        all_metric_keys: set[str] = set()
         metric_value_lists: dict[str, list[float]] = {}
         hit_count = 0
         rr_sum = 0.0
@@ -286,6 +290,8 @@ class EvalRunner:
             # degraded_case_count(SC-006:占比 ≤ 5% 才算合格基线质量)
             case_has_nan = False
             for metric_name, value in case_result.metrics.items():
+                # 先记录 metric key 出现过(无论是否 NaN),保证 aggregate 含完整 key 集
+                all_metric_keys.add(metric_name)
                 if self._is_nan(value):
                     case_has_nan = True
                     continue  # 不计入分母,避免污染均值
@@ -294,11 +300,16 @@ class EvalRunner:
                 degraded_case_count += 1
 
         total = len(results)
-        # 按"有效值数量"取均值(每 metric 各自的有效计数);完全 NaN 的 metric 直接不出现
-        aggregate_metrics: dict[str, float] = {
-            metric_name: (sum(values) / len(values)) if values else 0.0
-            for metric_name, values in metric_value_lists.items()
-        }
+        # 按"有效值数量"取均值;若某 metric 在所有 case 中全 NaN,聚合层
+        # 输出 NaN(JSON 序列化时为 "NaN" 字面量)而非丢 key,这样 SC-001
+        # "8 项指标全部产出"判据可以稳定判断,ThresholdEvaluator 也能区分
+        # "缺失 key"(配置错误,不应发生)与"NaN"(显式降级)。
+        aggregate_metrics: dict[str, float] = {}
+        for metric_name in all_metric_keys:
+            values = metric_value_lists.get(metric_name, [])
+            aggregate_metrics[metric_name] = (
+                (sum(values) / len(values)) if values else float("nan")
+            )
 
         # FR-015: by-tag 切片聚合 (content_type / difficulty 两维)
         aggregate_metrics_by_tag = self._aggregate_by_tag(

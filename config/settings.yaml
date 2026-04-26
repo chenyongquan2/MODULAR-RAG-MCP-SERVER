@@ -6,7 +6,7 @@
 # LLM 配置
 llm:
   provider: glm             # glm | azure | openai | ollama | deepseek
-  model: GLM-4.7
+  model: z-ai/glm-4.7       # 上游 finpoints 代理的 model id 需要 z-ai/ 前缀;查 ${GLM_BASE_URL}/models 可列出所有可用值
   api_key: ${GLM_API_KEY}
   base_url: ${GLM_BASE_URL}
 
@@ -77,7 +77,7 @@ evaluation:
   # 启用的评估后端 (custom 永久启用, ragas 视场景启用)
   backends:
     - custom
-    # - ragas              # 启用 RAGAS 4 项指标 (需配置下方 judge_llm)
+    - ragas              # 启用 RAGAS 4 项指标 (需配置下方 judge_llm)
 
   # 占位金标 (US1 阶段使用)
   golden_test_set: ./tests/fixtures/golden_test_set.json
@@ -90,9 +90,11 @@ evaluation:
   # Judge LLM (仅 ragas backend 启用时必须填)
   # 复用 LLMFactory 的 5 个 provider: glm/azure/openai/ollama/deepseek
   # FR-016: 切换 Judge 不需修改代码,仅改本配置后重启
+  # 默认与项目顶层 llm.* 对齐 (z-ai/glm-4.7 + 同一 GLM_API_KEY/GLM_BASE_URL),
+  # 这样 production 答案生成与 evaluation 判分用同一可用上游
   judge_llm:
     provider: glm
-    model: glm-4
+    model: z-ai/glm-4.7
     api_key: ${GLM_API_KEY}
     base_url: ${GLM_BASE_URL}
     temperature: 0.0          # Judge 推荐 0.0 提高判分稳定性

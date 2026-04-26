@@ -131,3 +131,36 @@ class CompositeEvaluator(BaseEvaluator):
                 key = f"{prefix}__{metric_name}" if prefix else metric_name
                 merged[key] = 0.0
         return merged
+
+    def get_judge_identifier(self) -> Optional[str]:
+        """透传第一个支持该方法的子评估器的 Judge identifier。
+
+        Feature-001 FR-016:CompositeEvaluator 由 EvaluatorFactory 构造时
+        通常含 RagasEvaluator(它有 get_judge_identifier);若 backends 仅
+        含 custom 类(无 get_*_identifier 方法),则返回 None。
+        EvalRunner 通过 _safe_call 调用本方法,把返回值写入
+        EvaluationReport.judge_llm_identifier。
+        """
+        for evaluator in self._evaluators:
+            method = getattr(evaluator, "get_judge_identifier", None)
+            if callable(method):
+                try:
+                    value = method()
+                except Exception:
+                    continue
+                if value:
+                    return str(value)
+        return None
+
+    def get_embedding_identifier(self) -> Optional[str]:
+        """透传第一个支持该方法的子评估器的 embedding identifier(FR-017)。"""
+        for evaluator in self._evaluators:
+            method = getattr(evaluator, "get_embedding_identifier", None)
+            if callable(method):
+                try:
+                    value = method()
+                except Exception:
+                    continue
+                if value:
+                    return str(value)
+        return None

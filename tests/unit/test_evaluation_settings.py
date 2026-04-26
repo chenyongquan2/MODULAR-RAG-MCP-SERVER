@@ -238,14 +238,19 @@ class TestLoadSettingsEndToEnd:
     """直接读项目 config/settings.yaml,验证 evaluation 段加载正确。"""
 
     def test_load_real_yaml_loads_evaluation_section(self) -> None:
-        """实际加载 config/settings.yaml,evaluation 段嵌套 dataclass 字段都正确填充。"""
+        """实际加载 config/settings.yaml,evaluation 段嵌套 dataclass 字段都正确填充。
+
+        测试不绑定具体 model 值(项目可能在 settings.yaml 里调整 model 名,
+        例如从 glm-4 改成 z-ai/glm-4.7 以匹配 production llm 配置),只断言:
+        provider=glm + model 非空 + 其他字段结构正确。
+        """
         s = load_settings()
         # 顶层
         assert s.evaluation.schema_version == 1
         assert "custom" in s.evaluation.backends
         # 嵌套 judge_llm
         assert s.evaluation.judge_llm.provider == "glm"
-        assert s.evaluation.judge_llm.model == "glm-4"
+        assert s.evaluation.judge_llm.model  # 非空即可,不绑定具体 model 名
         # 嵌套 embedding(默认空)
         assert s.evaluation.embedding.provider == ""
         # 嵌套 acceptance_thresholds(默认 8 项业界参考值)
