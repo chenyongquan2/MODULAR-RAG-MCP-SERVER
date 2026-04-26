@@ -31,6 +31,17 @@ dependencies = [
     "streamlit>=1.28.0",
     "plotly>=5.0.0",
     "pandas>=2.0.0",
+    # ─── 评估系统 (Feature-001 RAG 质量验收) ───
+    # CRITICAL: ragas 版本是 Feature-001 基线锚定点;不同版本判分尺度不同,
+    # 擅自升级会破坏 SC-005 / SC-008 的可比性。修改前请走 SDD 流程。
+    # 详见 specs/001-rag-acceptance/research.md § Decision 1
+    "ragas==0.1.21",
+    # langchain-openai: 把 LLMFactory 的 OpenAI 兼容 provider (glm/openai/azure/deepseek)
+    # 适配为 RAGAS 期待的 LangChain BaseLLM/Embeddings 接口
+    # 详见 specs/001-rag-acceptance/research.md § Decision 2
+    "langchain-openai>=0.1.0",
+    # datasets: ragas evaluate() 的核心依赖 (Dataset.from_dict)
+    "datasets>=2.14.0",
 ]
 
 [project.optional-dependencies]

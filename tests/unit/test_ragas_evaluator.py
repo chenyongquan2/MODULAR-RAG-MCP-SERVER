@@ -91,6 +91,14 @@ class TestRagasEvaluator:
 
         assert "golden_ids cannot be empty" in str(exc_info.value)
 
+    @pytest.mark.skip(
+        reason=(
+            "前提已失效:Feature-001 T001 在 pyproject.toml 中已固定 ragas==0.1.21 + "
+            "langchain-openai,本测试覆盖的'ragas 未装时抛 ImportError'路径在本项目"
+            "永远不会被触发。Feature-001 T008 会重写 RagasEvaluator 让 Judge/embedding "
+            "通过 LLMFactory/EmbeddingFactory 注入(FR-016/FR-017),届时本测试整个删除或重写。"
+        )
+    )
     def test_missing_ragas_dependency_raises_import_error(
         self, mock_settings_ragas: Settings
     ) -> None:

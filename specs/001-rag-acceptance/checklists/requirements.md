@@ -15,10 +15,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
-  - **状态：故意保留** — 2 个 markers（FR-013、SC-007）指向**同一主题**："8 个聚合指标的合格阈值清单"。
-  - **决定**：用户在启动 spec 时明确要求"暂留 [NEEDS CLARIFICATION]，由后续 `speckit-clarify` 决定"，符合"≤ 3 个"上限规则。
-  - **解决路径**：在跑 `speckit-plan` 之前先跑一次 `speckit-clarify`，把阈值清单 encode 回 spec.md。
+- [x] No [NEEDS CLARIFICATION] markers remain
+  - **状态:已解决** — 2026-04-25 `speckit-clarify` 阶段完成 7 题(commit `3a076d7`),把 FR-013 / SC-007 两个 markers 替换为具体阈值清单(业界参考值)。grep 验证 spec.md 中 0 个残留 marker。
 - [X] Requirements are testable and unambiguous
 - [X] Success criteria are measurable
   - 注：SC-001~SC-006 均已量化（具体次数 / 比例 / 时长 / 数量）；SC-007 标 NEEDS CLARIFICATION 待补。
