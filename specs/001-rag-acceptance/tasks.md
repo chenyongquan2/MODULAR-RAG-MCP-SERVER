@@ -25,7 +25,7 @@ description: "Task list for Feature-001: RAG 质量验收(中英双语基线)"
 
 **Purpose**:固定关键依赖版本,确保 Feature-001 全周期使用同一 RAGAS 版本,保证基线可比性(research.md § Decision 1)。
 
-- [ ] T001 在 [pyproject.toml](../../pyproject.toml) 的 dependencies 中固定 `ragas==0.1.21`(或最终选定的精确版本)与 `langchain-openai`(可能还需 `langchain-community` 视 RAGAS 版本要求)+ 在 README 该段加注释"RAGAS 版本是 Feature-001 基线锚定点,擅自升级会破坏 SC-005/SC-008 可比性",运行 `pip install -e ".[dev]"` 同步本地环境(refs research § Decision 1)
+- [x] T001 在 [pyproject.toml](../../pyproject.toml) 的 dependencies 中固定 `ragas==0.1.21`(或最终选定的精确版本)与 `langchain-openai`(可能还需 `langchain-community` 视 RAGAS 版本要求)+ 在 README 该段加注释"RAGAS 版本是 Feature-001 基线锚定点,擅自升级会破坏 SC-005/SC-008 可比性",运行 `pip install -e ".[dev]"` 同步本地环境(refs research § Decision 1)
 
 ---
 
@@ -35,12 +35,12 @@ description: "Task list for Feature-001: RAG 质量验收(中英双语基线)"
 
 **⚠️ CRITICAL**: 完成 Phase 2 前禁止进入 Phase 3+。
 
-- [ ] T002 [P] 扩展 [src/core/types.py](../../src/core/types.py):新增 `TestCaseTags` / `TestCase` / `GoldenTestSet` / `Baseline` / `BaselineStore` / `DeltaReport` 数据类与 `AcceptanceStatus` 枚举(refs [data-model.md § 2](data-model.md))
-- [ ] T003 [P] 扩展 [src/core/settings.py](../../src/core/settings.py):新增 `JudgeLLMSettings` / `EvaluationEmbeddingSettings` / `AcceptanceThresholds` 子 dataclass,扩展 `EvaluationSettings` 加 `_schema_version` / `golden_test_sets_by_lang` / `judge_llm` / `embedding` / `acceptance_thresholds` / `by_tag_dimensions` / `tag_slice_min_samples` / `report_archive_dir` / `baseline_store_path` / `chunk_id_validation` 字段(refs [data-model.md § 1](data-model.md))
-- [ ] T004 在 [src/core/settings.py](../../src/core/settings.py) 实现 `_validate_evaluation_settings(settings)` 启动期校验函数并接入 `load_settings()`,覆盖 16 条 [校验规则](contracts/settings.evaluation.schema.md#field-validation-rules);非法值立即抛 `ValueError`(refs [research § Decision 7](research.md), [contracts/settings.evaluation.schema.md](contracts/settings.evaluation.schema.md);依赖 T003)
-- [ ] T005 [P] 扩展 [config/settings.yaml](../../config/settings.yaml) 的 `evaluation` 段,从当前 2 字段扩到完整 schema(参照 [contracts/settings.evaluation.schema.md § Full Example](contracts/settings.evaluation.schema.md))(refs [contracts/settings.evaluation.schema.md](contracts/settings.evaluation.schema.md))
-- [ ] T006 [P] 在 [src/observability/evaluation/ragas_evaluator.py](../../src/observability/evaluation/ragas_evaluator.py) 新增 `_build_ragas_judge(settings)` 与 `_build_ragas_embedding(settings)` 包装层函数:把 `LLMFactory.create()` / `EmbeddingFactory.create()` 实例适配为 LangChain `BaseLLM` / `Embeddings` 接口(GLM/OpenAI/Azure/DeepSeek 走 `langchain_openai.ChatOpenAI`,Ollama 走 `ChatOllama`;embedding 自定义 `Embeddings` 子类包装项目 BaseEmbedding)(refs [research § Decision 2](research.md), [research § Decision 6](research.md))
-- [ ] T007 [P] 测试 [tests/unit/test_evaluation_settings.py](../../tests/unit/test_evaluation_settings.py):覆盖 6+ 个 negative cases — provider 不在 LLMFactory 注册列表 / 阈值越界([0,1] 外) / by_tag_dimensions 非法值 / report_archive_dir 父目录不可写 / `"ragas" in backends` 但 `judge_llm` 缺失 / `_schema_version=0` 拒绝;以及默认值正确性(8 个 acceptance_thresholds 默认值 = 业界参考)(refs T003, T004,宪法 § VII)
+- [x] T002 [P] 扩展 [src/core/types.py](../../src/core/types.py):新增 `TestCaseTags` / `TestCase` / `GoldenTestSet` / `Baseline` / `BaselineStore` / `DeltaReport` 数据类与 `AcceptanceStatus` 枚举(refs [data-model.md § 2](data-model.md))
+- [x] T003 [P] 扩展 [src/core/settings.py](../../src/core/settings.py):新增 `JudgeLLMSettings` / `EvaluationEmbeddingSettings` / `AcceptanceThresholds` 子 dataclass,扩展 `EvaluationSettings` 加 `_schema_version` / `golden_test_sets_by_lang` / `judge_llm` / `embedding` / `acceptance_thresholds` / `by_tag_dimensions` / `tag_slice_min_samples` / `report_archive_dir` / `baseline_store_path` / `chunk_id_validation` 字段(refs [data-model.md § 1](data-model.md))
+- [x] T004 在 [src/core/settings.py](../../src/core/settings.py) 实现 `_validate_evaluation_settings(settings)` 启动期校验函数并接入 `load_settings()`,覆盖 16 条 [校验规则](contracts/settings.evaluation.schema.md#field-validation-rules);非法值立即抛 `ValueError`(refs [research § Decision 7](research.md), [contracts/settings.evaluation.schema.md](contracts/settings.evaluation.schema.md);依赖 T003)
+- [x] T005 [P] 扩展 [config/settings.yaml](../../config/settings.yaml) 的 `evaluation` 段,从当前 2 字段扩到完整 schema(参照 [contracts/settings.evaluation.schema.md § Full Example](contracts/settings.evaluation.schema.md))(refs [contracts/settings.evaluation.schema.md](contracts/settings.evaluation.schema.md))
+- [x] T006 [P] 在 [src/observability/evaluation/_ragas_wrappers.py](../../src/observability/evaluation/_ragas_wrappers.py) 新增 `build_ragas_judge(settings)` 与 `build_ragas_embedding(settings)` 包装层函数(实施时改为单独 helper 模块,而非塞进 ragas_evaluator.py;延迟 import ragas 让 custom-only 评估场景不必装 ragas):把 `LLMFactory.create()` / `EmbeddingFactory.create()` 实例适配为 LangChain `BaseLLM` / `Embeddings` 接口,再用 RAGAS `LangchainLLMWrapper` / `LangchainEmbeddingsWrapper` 包一层供 metric 注入(refs [research § Decision 2](research.md), [research § Decision 6](research.md))
+- [x] T007 [P] 测试 [tests/unit/test_evaluation_settings.py](../../tests/unit/test_evaluation_settings.py):22 用例覆盖 — 默认值正确性(8 个 acceptance_thresholds 业界参考值 + Judge GLM-4 默认 + chunk_id_validation 等)+ 12 个 negative cases(provider/temperature/timeout/by_tag_dimensions/thresholds 越界/min_samples 等违规 + ragas backend 未配 judge + 父目录不可写)+ load_settings 端到端 + AcceptanceThresholds.to_dict;**全部 22 用例通过**(refs T003, T004,宪法 § VII)
 
 **Checkpoint**:Foundation 就绪,US1/US2/US3 可启动。
 
