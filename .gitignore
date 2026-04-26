@@ -42,6 +42,10 @@ cache/captions/**/*
 cache/processing/**/*
 logs/*.jsonl
 logs/*.log
+# Feature-001: 评估报告归档目录(每次评估产出 <run_id>.json + index.jsonl)
+logs/evaluation_reports/
+# Feature-001: 基线标记单文件(US3 阶段使用,每次标记 atomic 写)
+logs/baselines.json
 
 # Keep .gitkeep files
 !**/.gitkeep

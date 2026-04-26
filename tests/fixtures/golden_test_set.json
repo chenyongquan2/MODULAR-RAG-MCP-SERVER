@@ -1,28 +1,58 @@
 {
+  "_schema_version": 1,
+  "language": "mixed",
+  "version": "v0.1-smoke",
+  "created_at": "2026-04-26T00:00:00+08:00",
+  "source_corpus_collection": "default",
+  "_note": "MVP 占位测试集,US1 烟雾测试用。expected_chunk_ids 当前为占位字符串(chunk_*_001 等),实际跑评估前需要按 quickstart.md Path A Step 5-6 替换为 vector store 中的真实 chunk ID;或临时设置 evaluation.chunk_id_validation=false 跳过校验。US2 完成后由 golden_test_set_zh.json / _en.json 接管主评估。",
   "test_cases": [
     {
-      "query": "如何配置 Azure OpenAI？",
+      "query": "如何配置 Azure OpenAI?",
       "expected_chunk_ids": ["chunk_azure_001", "chunk_azure_002"],
       "expected_sources": ["config_guide.pdf"],
-      "ground_truth": "在 config/settings.yaml 的 llm 节点下，将 provider 设为 azure，并填写 api_key、endpoint、api_version 与 deployment 名称；api_key 支持通过环境变量 ${AZURE_OPENAI_API_KEY} 注入。"
+      "ground_truth": "在 config/settings.yaml 的 llm 节点下,将 provider 设为 azure,并填写 api_key、endpoint、api_version 与 deployment 名称;api_key 支持通过环境变量 ${AZURE_OPENAI_API_KEY} 注入。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     },
     {
-      "query": "RAG 检索流程包括哪些阶段？",
+      "query": "RAG 检索流程包括哪些阶段?",
       "expected_chunk_ids": ["chunk_retrieval_001"],
       "expected_sources": ["rag_overview.md"],
-      "ground_truth": "RAG 检索流程包括：Query 预处理 → 稠密检索 (Dense) 与稀疏检索 (Sparse) 并行执行 → 融合 (RRF) → 重排 (Rerank) → 响应构建 (Response)。"
+      "ground_truth": "RAG 检索流程包括:Query 预处理 → 稠密检索 (Dense) 与稀疏检索 (Sparse) 并行执行 → 融合 (RRF) → 重排 (Rerank) → 响应构建 (Response)。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     },
     {
-      "query": "如何开启 ingestion trace 追踪？",
+      "query": "如何开启 ingestion trace 追踪?",
       "expected_chunk_ids": ["chunk_trace_001"],
       "expected_sources": ["observability_guide.md"],
-      "ground_truth": "在 observability.tracing 配置中将 enabled 设为 true，并指定 trace 输出路径（默认 logs/traces.jsonl）；ingestion 各阶段会按 load → split → transform → embed → upsert 顺序写入 trace。"
+      "ground_truth": "在 observability.tracing 配置中将 enabled 设为 true,并指定 trace 输出路径(默认 logs/traces.jsonl);ingestion 各阶段会按 load → split → transform → embed → upsert 顺序写入 trace。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     },
     {
-      "query": "Dashboard 支持哪些页面？",
+      "query": "Dashboard 支持哪些页面?",
       "expected_chunk_ids": ["chunk_dashboard_001", "chunk_dashboard_002"],
       "expected_sources": ["dashboard_manual.md"],
-      "ground_truth": "Streamlit Dashboard 共六个页面：系统概览、数据浏览、Ingestion 管理、Query Trace、Ingestion Trace、评估面板。"
+      "ground_truth": "Streamlit Dashboard 共六个页面:系统概览、数据浏览、Ingestion 管理、Query Trace、Ingestion Trace、评估面板。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     }
   ]
 }

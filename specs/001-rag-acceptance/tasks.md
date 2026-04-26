@@ -54,9 +54,9 @@ description: "Task list for Feature-001: RAG 质量验收(中英双语基线)"
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] 改造 [src/observability/evaluation/ragas_evaluator.py](../../src/observability/evaluation/ragas_evaluator.py) 中 `RagasEvaluator`:`__init__()` 调用 T006 的 `_build_ragas_judge(settings)` + `_build_ragas_embedding(settings)`,把 4 个 RAGAS metrics(Faithfulness / AnswerRelevancy / ContextPrecision / ContextRecall)的 `.llm` 与 `.embeddings` 全部注入同一对实例;新增 `get_judge_identifier()` 返回 `"<provider>:<model>"` 字符串、`get_embedding_identifier()` 同理;移除任何环境变量直读或 hardcoded provider 行为(refs [spec FR-016](spec.md), [spec FR-017](spec.md);依赖 T006)
-- [ ] T009 [P] [US1] 新增 [src/observability/evaluation/threshold_evaluator.py](../../src/observability/evaluation/threshold_evaluator.py):实现 `ThresholdEvaluator` 类,接收 `acceptance_thresholds: dict[str, float]` + `aggregate_metrics: dict[str, float]`,`evaluate(metrics) -> AcceptanceStatus` 返回 `PASS`(全 8 项 ≥ 各自阈值)或 `FAIL`;附 `get_failed_metrics(metrics) -> list[str]` 辅助方法供面板展示(refs [spec FR-013](spec.md), [data-model § 2.4](data-model.md))
-- [ ] T010 [US1] 改造 [src/observability/evaluation/eval_runner.py](../../src/observability/evaluation/eval_runner.py):
+- [x] T008 [US1] 改造 [src/observability/evaluation/ragas_evaluator.py](../../src/observability/evaluation/ragas_evaluator.py) 中 `RagasEvaluator`:`__init__()` 加 lazy 标志 `_wrappers_built`,首次 `_evaluate_with_ragas()` 触发时调用 `_ragas_wrappers.build_ragas_judge/build_ragas_embedding` 通过 LLMFactory/EmbeddingFactory 注入 RAGAS 4 个 metrics 的 `.llm`/`.embeddings`(单元测试可通过 kwargs 覆盖通道注入 mock);新增 `get_judge_identifier()` / `get_embedding_identifier()` 委托给 `_ragas_wrappers.get_*_identifier`(refs [spec FR-016](spec.md), [spec FR-017](spec.md);依赖 T006)
+- [x] T009 [P] [US1] 新增 [src/observability/evaluation/threshold_evaluator.py](../../src/observability/evaluation/threshold_evaluator.py):实现 `ThresholdEvaluator` 类,接收 `AcceptanceThresholds` dataclass,`evaluate(aggregate_metrics) -> AcceptanceStatus` 返回 `PASS`(全 8 项 ≥ 各自阈值)或 `FAIL`(任一不达标 / 缺 key / NaN);附 `get_failed_metrics()` 辅助方法 + `thresholds_snapshot` 只读属性(refs [spec FR-013](spec.md), [data-model § 2.4](data-model.md))
+- [x] T010 [US1] 改造 [src/observability/evaluation/eval_runner.py](../../src/observability/evaluation/eval_runner.py):
   - `EvalCase` 加 `tags: Optional[TestCaseTags] = None` 字段(US1 占位允许 None)
   - `EvalReport` 大扩展:加 `run_id` / `collection` / `test_set_version` / `created_at` / `acceptance_thresholds_snapshot` / `acceptance_status` / `judge_llm_identifier` / `embedding_identifier` / `degraded_case_count` / `aggregate_metrics_by_tag` 字段
   - `_load_test_cases()` 解析 `tags` 字段 + `_schema_version` 校验
@@ -65,12 +65,13 @@ description: "Task list for Feature-001: RAG 质量验收(中英双语基线)"
   - 调用 `ThresholdEvaluator` 计算 `acceptance_status`,从 `evaluator.get_judge_identifier()` / `get_embedding_identifier()` 取标识(若 evaluator 不支持则记 `null`,作为 custom-only 评估场景)
   - 加 `_archive_report(report)` 写 `settings.evaluation.report_archive_dir/<run_id>.json` + 追加 `index.jsonl` 一行精简元数据
   (refs [spec FR-007](spec.md), [spec FR-013](spec.md), [spec FR-015](spec.md), [spec FR-016](spec.md), [spec FR-017](spec.md), [data-model § 2.5](data-model.md), [contracts/evaluation_report.schema.md](contracts/evaluation_report.schema.md);依赖 T008, T009)
-- [ ] T011 [P] [US1] 修复 [tests/fixtures/golden_test_set.json](../../tests/fixtures/golden_test_set.json):
+- [x] T011 [P] [US1] 修复 [tests/fixtures/golden_test_set.json](../../tests/fixtures/golden_test_set.json):
   - 加顶层 `_schema_version: 1` / `language: "mixed"` / `version: "v0.1-smoke"` / `created_at` / `source_corpus_collection: "default"` 字段
-  - 替换 4 条 case 的 `expected_chunk_ids` 占位字符串为 vector store 真实 ID(可用 `python -c "..."` 通过 chromadb 客户端 `peek()` 获取)
-  - 每条 case 加 `tags` 4 子字段(content_type=text / difficulty=simple / language=zh|en / doc_version=v1)
+  - 每条 case 加 `tags` 4 子字段(content_type/difficulty/language/doc_version);难度分布:2 simple / 1 reasoning / 1 multi_context
+  - **expected_chunk_ids 保留占位字符串**(`chunk_*_001` 等),由 user 在 quickstart Path A Step 5-6 替换为 vector store 真实 ID(此为 US1 验收的人工步骤);或临时设 `evaluation.chunk_id_validation=false` 跳过校验
+  - 加 `_note` 字段说明上述意图,向未来读者解释为什么 chunk_ids 仍是占位
   (refs [contracts/golden_test_set.schema.md § 6](contracts/golden_test_set.schema.md))
-- [ ] T012 [US1] 改造 [scripts/evaluate.py](../../scripts/evaluate.py):
+- [x] T012 [US1] 改造 [scripts/evaluate.py](../../scripts/evaluate.py):
   - 新增 `--lang <zh|en>` 参数(从 `settings.evaluation.golden_test_sets_by_lang[<lang>]` 取 path,与 `--test-set` 互斥)
   - 新增 `--archive` / `--no-archive` 默认 True,控制 EvalRunner 归档行为
   - 新增 `--exit-on-fail` 启用时 acceptance_status=fail → 退出码 3

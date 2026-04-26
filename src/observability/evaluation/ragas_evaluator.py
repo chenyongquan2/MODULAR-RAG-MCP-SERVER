@@ -17,6 +17,12 @@ This module wraps the Ragas framework behind the project's pluggable
                                          导致 faithfulness/answer_relevancy 失真）。
 
     单元测试可通过 ``mock_metrics`` 旁路真实执行。
+
+Feature-001 改造 (T008, refs spec FR-016 / FR-017):
+    Judge LLM 与 embedding **不再**靠调用方从 kwargs 传 ``llm``/``embeddings``,
+    而是在首次评估调用时通过 ``_ragas_wrappers`` 模块经 LLMFactory /
+    EmbeddingFactory 自动注入(provider-agnostic、配置驱动)。kwargs 保留覆盖
+    通道供单元测试 mock 使用。
 """
 
 from __future__ import annotations
@@ -41,7 +47,8 @@ class RagasEvaluator(BaseEvaluator):
 
     The evaluator supports two execution modes:
     1. ``mock_metrics`` mode for deterministic unit tests without external deps.
-    2. Real Ragas execution mode, requiring ``ragas`` and ``datasets``.
+    2. Real Ragas execution mode, requiring ``ragas`` and ``datasets``;Judge
+       与 embedding 通过 LLMFactory / EmbeddingFactory 注入(spec § FR-016 / FR-017)。
     """
 
     def __init__(self, settings: "Settings", **override_kwargs: Any) -> None:
@@ -53,6 +60,57 @@ class RagasEvaluator(BaseEvaluator):
         """
         self.settings = settings
         self._override_kwargs = override_kwargs
+        # 延迟构建 RAGAS Judge / embedding 包装(在首次 evaluate 时按需触发);
+        # 避免 RagasEvaluator 实例化时立刻发起 LLM 客户端连接,以及让仅做
+        # 配置/类型校验的 import 路径不依赖 LLM 网络可达性。
+        self._judge_wrapper: Any = None
+        self._embedding_wrapper: Any = None
+        self._wrappers_built: bool = False
+
+    def _ensure_wrappers(self) -> None:
+        """首次评估时构建 Judge / embedding 包装,后续重用。
+
+        通过 ``src.observability.evaluation._ragas_wrappers`` 中的工厂调用
+        ``LLMFactory.create`` 与 ``EmbeddingFactory.create``,把项目实例适配为
+        RAGAS 期待的 ``BaseRagasLLM`` / ``BaseRagasEmbeddings``。
+
+        Raises:
+            ImportError: ragas / langchain-core 缺失时(实际上 T001 已固定依赖,
+                此处仅作 defensive)。
+        """
+        if self._wrappers_built:
+            return
+        from src.observability.evaluation._ragas_wrappers import (
+            build_ragas_embedding,
+            build_ragas_judge,
+        )
+
+        self._judge_wrapper = build_ragas_judge(self.settings)
+        self._embedding_wrapper = build_ragas_embedding(self.settings)
+        self._wrappers_built = True
+
+    def get_judge_identifier(self) -> str:
+        """返回 Judge LLM 的 ``"<provider>:<model>"`` 标识 (FR-016)。
+
+        Used by EvalRunner 写入 EvaluationReport.judge_llm_identifier 字段,
+        让跨 Judge 跑出的报告可追溯、可对比。
+        """
+        from src.observability.evaluation._ragas_wrappers import (
+            get_judge_identifier as _get_judge_id,
+        )
+
+        return _get_judge_id(self.settings)
+
+    def get_embedding_identifier(self) -> str:
+        """返回评估期 embedding 的 ``"<provider>:<model>"`` 标识 (FR-017)。
+
+        默认为顶层 embedding 复用(spec § FR-017 避免 train-eval skew)。
+        """
+        from src.observability.evaluation._ragas_wrappers import (
+            get_embedding_identifier as _get_embedding_id,
+        )
+
+        return _get_embedding_id(self.settings)
 
     def evaluate(
         self,
@@ -181,6 +239,18 @@ class RagasEvaluator(BaseEvaluator):
             }
         )
 
+        # FR-016 / FR-017:Judge 与 embedding 通过 _ragas_wrappers 经 LLMFactory /
+        # EmbeddingFactory 注入;kwargs 仅保留作为单元测试 mock 通道
+        # (kwargs.get("llm") / .get("embeddings") 非空时优先使用,便于测试隔离)。
+        kwarg_llm = kwargs.get("llm")
+        kwarg_embeddings = kwargs.get("embeddings")
+        if kwarg_llm is None or kwarg_embeddings is None:
+            self._ensure_wrappers()
+        ragas_llm = kwarg_llm if kwarg_llm is not None else self._judge_wrapper
+        ragas_embeddings = (
+            kwarg_embeddings if kwarg_embeddings is not None else self._embedding_wrapper
+        )
+
         try:
             result = ragas_evaluate(
                 dataset=dataset,
@@ -190,8 +260,8 @@ class RagasEvaluator(BaseEvaluator):
                     context_precision,
                     context_recall,
                 ],
-                llm=kwargs.get("llm"),
-                embeddings=kwargs.get("embeddings"),
+                llm=ragas_llm,
+                embeddings=ragas_embeddings,
             )
         except Exception as exc:
             raise RuntimeError(f"Ragas evaluation failed: {exc}") from exc
