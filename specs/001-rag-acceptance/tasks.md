@@ -88,7 +88,7 @@ description: "Task list for Feature-001: RAG 质量验收(中英双语基线)"
 
 ### US1 验收
 
-- [ ] T018 [US1] 跑 [quickstart.md Path A](quickstart.md) 10 步端到端验证:确认 stdout JSON 含 8 个 aggregate_metrics 键 + `acceptance_status` + 4 个 identifier/snapshot/case 相关字段;`logs/evaluation_reports/<run_id>.json` 与 `index.jsonl` 落盘正确(refs [spec SC-001](spec.md))
+- [x] T018 [US1] quickstart Path A 真实 GLM API 跑通(commit `b78b4be`):`run_id=ccd21700-...`,`judge_llm_identifier=glm:z-ai/glm-4.7`,`embedding_identifier=openai:text-embedding-3-small`,8 个 aggregate_metrics keys 全产出(7 finite + 1 NaN 在 spec 允许的显式降级范围),archive 写入 `logs/evaluation_reports/<run_id>.json` + `index.jsonl`;**SC-001 严格满足**(refs [spec SC-001](spec.md))
 
 **Checkpoint**:US1 完整可用,可独立交付 MVP 增量。
 
