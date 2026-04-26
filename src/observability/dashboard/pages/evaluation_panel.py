@@ -1,6 +1,11 @@
 """评估面板页面。
 
 支持运行评估、展示指标与查看历史趋势。
+
+Feature-001 增强(T033):新增 tab "Feature-001 基线 + 回归",读取
+``logs/evaluation_reports/index.jsonl`` + ``logs/baselines.json``,提供
+pass/fail 视觉徽标 + per-collection 基线标记 + delta 视图 + 8 项指标趋势。
+经典视图保留(用 ``EvaluationService.evals.jsonl`` 的旧机制)。
 """
 
 from __future__ import annotations
@@ -8,6 +13,9 @@ from __future__ import annotations
 import streamlit as st
 
 from src.core.settings import load_settings
+from src.observability.dashboard.pages._feature_001_evaluation import (
+    render_feature_001_view,
+)
 from src.observability.dashboard.services import EvaluationService
 from src.observability.evaluation.eval_runner import EvalReport
 
@@ -92,6 +100,18 @@ def render() -> None:
 
     settings, service = load_runtime()
 
+    # Feature-001: 用 tabs 把新旧视图分开,保持 legacy 路径不变
+    tab_legacy, tab_v2 = st.tabs(["经典视图 (legacy)", "🎯 Feature-001 基线 + 回归"])
+
+    with tab_v2:
+        render_feature_001_view(settings)
+
+    with tab_legacy:
+        _render_legacy_view(settings, service)
+
+
+def _render_legacy_view(settings, service: EvaluationService) -> None:
+    """旧版评估视图(基于 EvaluationService.evals.jsonl + is_baseline flag)。"""
     st.subheader("运行配置")
     candidate_test_sets = service.discover_test_sets(
         default_path=settings.evaluation.golden_test_set

@@ -133,32 +133,21 @@ description: "Task list for Feature-001: RAG 质量验收(中英双语基线)"
 
 ### Implementation for User Story 3
 
-- [ ] T031 [US3] 新增 [src/observability/evaluation/baseline_manager.py](../../src/observability/evaluation/baseline_manager.py):`BaselineManager` 类
-  - `mark_as_baseline(report_id, collection)`:把当前 baseline 移到 history,新 baseline 写入 current(原子写:写临时文件 + os.replace 重命名)
-  - `get_current_baseline(collection)` → `Optional[Baseline]`
-  - `get_history(collection)` → `list[Baseline]`
-  - `compute_delta(current_report: EvaluationReport, baseline_report: EvaluationReport)` → `DeltaReport`(简单相减)
-  - `_load_report(report_id)` 从 `report_archive_dir` 读完整报告 JSON
-  - 文件:`settings.evaluation.baseline_store_path`(默认 `logs/baselines.json`),schema 见 [data-model § 2.7](data-model.md)
-  (refs [spec FR-008](spec.md), [spec FR-009](spec.md), [research § Decision 3](research.md), [data-model § 2.6](data-model.md), [data-model § 2.7](data-model.md))
-- [ ] T032 [US3] 在 [src/observability/evaluation/eval_runner.py](../../src/observability/evaluation/eval_runner.py) 的 `run()` 尾部接入 `BaselineManager`:若 `get_current_baseline(collection)` 非空,则 `compute_delta(current, baseline_report)` 并把结果嵌入 EvalReport 的 `baseline_id` / `delta_aggregate_metrics` / `per_tag_delta` / `delta_hit_rate` / `delta_mrr` 字段(refs [spec FR-009](spec.md);依赖 T031,改 T010 已扩展的 EvalRunner)
-- [ ] T033 [US3] 改造 Streamlit 评估面板(具体路径以现有 dashboard 代码为准,典型位置 `src/observability/dashboard/pages/evaluation_panel.py` 或类似):
-  - 列出 `index.jsonl` 中每次评估,绿色徽标 = pass、红色徽标 = fail
-  - 评估详情视图加"标记为基线"按钮 → 调用 `BaselineManager.mark_as_baseline()`
-  - 当前 vs 基线 delta 表格(8 项主聚合指标 + 顶层 hit_rate / mrr 的 delta 含正负方向)
-  - 历史趋势:每个 collection × 每个 metric 的时序折线(扫 `index.jsonl` 中 `created_at` + 单文件读 `aggregate_metrics`,N ≤ 几十次)
-  - fail 基线列表项加灰色背景(spec § Clarifications Q3)
+- [x] T031 [US3] 新增 [src/observability/evaluation/baseline_manager.py](../../src/observability/evaluation/baseline_manager.py):`BaselineManager` 类:per-collection mark / current / history(`logs/baselines.json` 单文件 + 原子写 mkstemp+os.replace);`compute_delta` 覆盖主聚合 + by-tag(切片任一边 skipped 即 entry 为 None);`load_report` 读归档;`_schema_version=1` 守卫(refs [spec FR-008](spec.md), [spec FR-009](spec.md), [research § Decision 3](research.md), [data-model § 2.6](data-model.md), [data-model § 2.7](data-model.md))
+- [x] T032 [US3] [src/observability/evaluation/eval_runner.py](../../src/observability/evaluation/eval_runner.py) `run()` 尾部新增 `_attach_baseline_delta(report)`:若 `get_current_baseline(collection)` 非空 → `load_report(baseline_id)` + `compute_delta` → 嵌入 `baseline_id` / `delta_aggregate_metrics` / `per_tag_delta` / `delta_hit_rate` / `delta_mrr`;失败仅日志警告不阻断主输出(refs [spec FR-009](spec.md))
+- [x] T033 [US3] 新增 [src/observability/dashboard/pages/_feature_001_evaluation.py](../../src/observability/dashboard/pages/_feature_001_evaluation.py) + 在 [src/observability/dashboard/pages/evaluation_panel.py](../../src/observability/dashboard/pages/evaluation_panel.py) 用 `st.tabs()` 接入(legacy 视图保留):
+  - 读 `logs/evaluation_reports/index.jsonl` 列近 30 次评估表格(run_id 短/collection/created_at/acceptance_status/judge/embedding/n_cases)
+  - per-collection 当前基线展示(`:green` / `:red` 徽标 + marked_at)
+  - 选中 run 详情:summary 4 列、judge/embedding identifier、主聚合 vs 阈值 pass 列、Mark-as-baseline 按钮(调 `BaselineManager.mark_as_baseline`)
+  - Delta 表(若 report 已含 baseline_id,显示主聚合 + 顶层 hit_rate/mrr 的 delta + ↑/↓ 方向)
+  - by-tag 切片诊断(expander,显示 skipped 切片含 _skipped_reason)
+  - 8 项主聚合指标趋势折线(读 ≤ 30 个归档报告,FR-010)
   (refs [spec FR-008](spec.md), [spec FR-009](spec.md), [spec FR-010](spec.md), [spec US3 AS1-AS4](spec.md), [contracts/evaluation_report.schema.md § 5](contracts/evaluation_report.schema.md))
 
 ### Tests for User Story 3(宪法 § VII NON-NEGOTIABLE)
 
-- [ ] T034 [P] [US3] 测试 [tests/unit/test_baseline_manager.py](../../tests/unit/test_baseline_manager.py):用 tmp_path fixture 构造临时 baselines.json
-  - 标记新基线后旧基线移到 history,current 仅 1 个 / collection
-  - `compute_delta()` 简单相减正确(`current - baseline`,含正负)
-  - 原子写:模拟写中断(临时文件留存),不破坏原 baselines.json
-  - schema_version 不匹配时拒绝读取
-  (refs T031,[spec FR-008](spec.md), [spec FR-009](spec.md))
-- [ ] T035 [P] [US3] 测试 [tests/unit/test_eval_runner_baseline_integration.py](../../tests/unit/test_eval_runner_baseline_integration.py):mock BaselineManager — 有当前基线时 EvalReport 含 delta 字段;无当前基线时 delta 字段为 None;baseline_report 缺失某指标时该 delta 项为 None(refs T032)
+- [x] T034 [P] [US3] 测试 [tests/unit/test_baseline_manager.py](../../tests/unit/test_baseline_manager.py):**17 用例** — mark(5):首份基线 / 替换 + 旧到 history / 跨 collection 隔离 / 缺 report 拒绝 / 空 collection 拒绝;query 无基线(2);compute_delta(5):主聚合相减 / 缺 baseline metric 跳过 / 切片 skipped → None / 缺 baseline 切片 → None / 空 dict;load_report(2);schema 兼容(2):未来版本拒绝 / corrupted JSON;原子写无残留临时文件(1)(refs T031,[spec FR-008](spec.md), [spec FR-009](spec.md))
+- [x] T035 [P] [US3] 测试 [tests/unit/test_eval_runner_baseline_integration.py](../../tests/unit/test_eval_runner_baseline_integration.py):**4 用例** — 无基线时 delta 字段全 None;有基线时主聚合/顶层 delta 正确嵌入;BaselineManager 失败时降级 None 不阻断(report 文件丢失模拟);baseline 缺指标时该 delta key 不出现(refs T032)
 
 ### US3 验收
 

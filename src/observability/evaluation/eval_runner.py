@@ -350,6 +350,11 @@ class EvalRunner:
             aggregate_metrics_by_tag=aggregate_metrics_by_tag,
         )
 
+        # T032 (FR-009):若该 collection 已有当前基线,自动算 delta 嵌入 report
+        # (baseline_id / delta_aggregate_metrics / delta_hit_rate / delta_mrr /
+        # per_tag_delta);无基线时这些字段保持 None,JSON 输出向后兼容
+        self._attach_baseline_delta(report)
+
         # 默认归档到 settings.evaluation.report_archive_dir;CLI 通过
         # --no-archive 关闭。失败仅警告不抛错(不阻断 stdout 输出报告)。
         if archive:
@@ -686,6 +691,50 @@ class EvalRunner:
                 result[dimension] = dim_result
 
         return result
+
+    # ------------------------------------------------------------------
+    # FR-009: Baseline + Delta 集成 (T032)
+    # ------------------------------------------------------------------
+
+    def _attach_baseline_delta(self, report: EvalReport) -> None:
+        """若该 collection 已有当前基线,在 report 上附 delta 字段(FR-009)。
+
+        失败/无基线时静默不动(report.baseline_id 保持 None,delta_* 也是 None,
+        JSON 序列化时 to_dict() 自动跳过这些字段,向后兼容)。
+
+        Args:
+            report: 即将归档/输出的 EvalReport(in-place 修改 baseline 相关字段)。
+        """
+        try:
+            from src.observability.evaluation.baseline_manager import BaselineManager
+            manager = BaselineManager(self._settings)
+            current_baseline = manager.get_current_baseline(report.collection)
+            if current_baseline is None:
+                return
+            baseline_report_dict = manager.load_report(current_baseline.report_id)
+            current_report_dict = report.to_dict()
+            delta = manager.compute_delta(current_report_dict, baseline_report_dict)
+        except Exception as exc:
+            # 任何失败都降级为"无 delta"(不阻断主评估输出)
+            logger.warning("Failed to compute baseline delta: %s", exc)
+            return
+
+        report.baseline_id = current_baseline.report_id
+        report.delta_aggregate_metrics = dict(delta.per_metric_delta)
+        report.per_tag_delta = dict(delta.per_tag_delta) if delta.per_tag_delta else None
+        # 顶层 hit_rate / mrr 的 delta(从 baseline_report 直接读取顶层字段)
+        try:
+            report.delta_hit_rate = report.hit_rate - float(
+                baseline_report_dict.get("hit_rate", 0.0)
+            )
+            report.delta_mrr = report.mrr - float(baseline_report_dict.get("mrr", 0.0))
+        except (TypeError, ValueError):
+            pass
+        logger.info(
+            "Attached baseline delta: baseline_id=%s,主聚合 delta keys=%s",
+            current_baseline.report_id,
+            sorted(delta.per_metric_delta.keys()),
+        )
 
     # ------------------------------------------------------------------
     # 归档:logs/evaluation_reports/<run_id>.json + index.jsonl
