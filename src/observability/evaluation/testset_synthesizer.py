@@ -161,27 +161,35 @@ class TestsetSynthesizer:
         judge = build_ragas_judge(self._settings)
         embedding = build_ragas_embedding(self._settings)
 
-        # docstore 设为 None 时 RAGAS 会用默认 InMemoryDocumentStore
+        # InMemoryDocumentStore 需要 splitter+embeddings+extractor 全部填上
+        # (extractor 也用同一个 judge wrapper,保持 provider-agnostic)
         self._generator = TestsetGenerator(
             generator_llm=judge,
             critic_llm=judge,  # 共用,降低 LLM 调用差异
             embeddings=embedding,
-            docstore=self._build_docstore(embedding),
+            docstore=self._build_docstore(embedding=embedding, judge=judge),
         )
 
-    def _build_docstore(self, embedding: Any) -> Any:
+    def _build_docstore(self, embedding: Any, judge: Any) -> Any:
         """构建 RAGAS 的 InMemoryDocumentStore。
 
-        RAGAS 0.1.x 要求 docstore 必填(__init__ 签名);但内部如果用
-        generate_with_langchain_docs(),docstore 会被自动填充。这里给一个
-        空的 InMemoryDocumentStore 即可。
+        RAGAS 0.1.x 的 InMemoryDocumentStore 需要 ``splitter`` + ``embeddings``
+        + ``extractor``(KeyphraseExtractor 用 LLM 抽取关键短语作为种子)。
+        三者缺一会在 generate 时报"Extractor must be set"。
+
+        所有依赖都用项目复用的 judge / embedding wrapper,保持 provider-agnostic。
         """
         from ragas.testset.docstore import InMemoryDocumentStore
-        # InMemoryDocumentStore 需要 splitter 和 embeddings 但本路径不会用到
-        # splitter (因为 generate_with_langchain_docs 自己处理),所以传个 dummy
+        from ragas.testset.extractor import KeyphraseExtractor
         from langchain_text_splitters import RecursiveCharacterTextSplitter
+
         splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
-        return InMemoryDocumentStore(splitter=splitter, embeddings=embedding)
+        extractor = KeyphraseExtractor(llm=judge)
+        return InMemoryDocumentStore(
+            splitter=splitter,
+            embeddings=embedding,
+            extractor=extractor,
+        )
 
     def _fetch_chunks(
         self,
