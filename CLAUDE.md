@@ -249,15 +249,28 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 
 ## Evaluation System
 
-Supports pluggable evaluators (Ragas, custom metrics). Evaluations run against golden test sets in `tests/fixtures/golden_test_set.json`.
+Supports pluggable evaluators (Ragas, custom metrics). Evaluations run against golden test sets in `tests/fixtures/golden_test_set.json` (US1 占位) 或 `golden_test_set_{zh,en}.json` (US2 后真实金标)。
 
-Metrics include:
-- Context relevance (retrieval quality)
-- Answer faithfulness (generation quality)
-- Hit rate (recall)
-- Custom business metrics
+**8 项主聚合指标**(Feature-001 后默认):
+- RAGAS 4 项:`ragas__context_recall` / `ragas__context_precision` / `ragas__faithfulness` / `ragas__answer_relevancy`
+- Custom 4 项:`custom__hit_rate` / `custom__mrr` / `custom__recall` / `custom__ndcg`
 
-Configure via `evaluation.backends` in settings.yaml.
+**配置**:通过 `evaluation.backends` 启用 backend(`custom` 永久启用,`ragas` 视场景);Judge LLM、embedding、阈值、归档目录全部由 `config/settings.yaml` `evaluation.*` 控制(详见 [specs/001-rag-acceptance/contracts/settings.evaluation.schema.md](specs/001-rag-acceptance/contracts/settings.evaluation.schema.md))。
+
+**Judge / Embedding 切换提示**(spec § Assumptions § Judge 切换与阈值校准):
+- 不同 Judge LLM 对同一 (q, ctx, answer) 评分有 3-10% 系统性差异
+- 切换 Judge(`evaluation.judge_llm.provider/model`)或 embedding(`evaluation.embedding.*`)后,**FR-013 默认阈值不再适用**;建议:
+  1. 先在新 Judge 下用现有金标重跑评估、观察分数分布
+  2. 据新分布在 `evaluation.acceptance_thresholds.*` 重新校准
+- 每份评估报告自带 `acceptance_thresholds_snapshot` + `judge_llm_identifier` + `embedding_identifier`,跨 Judge 报告可追溯
+
+**关键 CLI**:
+- `scripts/evaluate.py --pretty --collection <name>` — 跑评估,自动 archive + delta vs baseline
+- `scripts/synthesize_testset.py --collection <c> --lang {zh,en}` — RAGAS TestsetGenerator 合成候选(US2)
+- `scripts/refine_testset.py --input <candidate>` — interactive y/e/d/s/q 精修
+- `scripts/backfill_chunk_ids.py --input <golden> --collection <c>` — 语义匹配回填 expected_chunk_ids
+
+**Dashboard**:`python scripts/start_dashboard.py` → 评估面板 → "🎯 Feature-001 基线 + 回归" tab(标基线 / 看 delta / 8 项指标趋势)。
 
 ## Working with DEV_SPEC.md
 
@@ -284,14 +297,14 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 > 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->` 与 `<!-- SPECKIT END -->` 之间的内容。
 
 <!-- SPECKIT START -->
-**Active SDD Plan**: [specs/002-multimodal-query-response/plan.md](specs/002-multimodal-query-response/plan.md)
+**Active SDD Plan**: [specs/001-rag-acceptance/plan.md](specs/001-rag-acceptance/plan.md)
 
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-above (Feature-002: 多模态查询响应链路闭合). Sibling artifacts in the
-same directory: [spec.md](specs/002-multimodal-query-response/spec.md),
-[research.md](specs/002-multimodal-query-response/research.md),
-[data-model.md](specs/002-multimodal-query-response/data-model.md),
-[contracts/](specs/002-multimodal-query-response/contracts/),
-[quickstart.md](specs/002-multimodal-query-response/quickstart.md).
+above (Feature-001: RAG 质量验收(中英双语基线)). Sibling artifacts in the
+same directory: [spec.md](specs/001-rag-acceptance/spec.md),
+[research.md](specs/001-rag-acceptance/research.md),
+[data-model.md](specs/001-rag-acceptance/data-model.md),
+[contracts/](specs/001-rag-acceptance/contracts/),
+[quickstart.md](specs/001-rag-acceptance/quickstart.md).
 <!-- SPECKIT END -->

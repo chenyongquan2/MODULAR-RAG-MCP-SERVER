@@ -1,0 +1,51 @@
+{
+  "_schema_version": 1,
+  "language": "en",
+  "version": "v1.0",
+  "created_at": "2026-04-27T05:08:04.095195+00:00",
+  "source_corpus_collection": "",
+  "_refine_summary": {
+    "keep": 2,
+    "edit": 0,
+    "drop": 0,
+    "skip": 0
+  },
+  "test_cases": [
+    {
+      "query": "What can be downloaded from the MetaQuotes Software Corp. support site?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16_17949e22",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18_ded050dc",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_0_d8e2d4ed",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_9_f59f010f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_9105_c779dc5b"
+      ],
+      "expected_sources": [],
+      "ground_truth": "A single installation file used for all five MetaTrader 5 APIs.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What global time settings of a trading platform can be managed using the MetaTrader 5 Server API?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_542_08dc6d3f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_334_1effbe52",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18117_18d4ce37",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_43_5e3015b1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_49_f98290f9"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The MetaTrader 5 Server API allows managing the working time, the time zone, and the address of the server for synchronizing time.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    }
+  ]
+}

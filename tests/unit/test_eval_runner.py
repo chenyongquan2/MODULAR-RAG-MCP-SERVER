@@ -61,7 +61,11 @@ def _build_settings() -> Settings:
         embedding=EmbeddingSettings(provider="openai", model="text-embedding-3-small"),
         vision_llm=VisionLLMSettings(provider="azure", model="gpt-4o"),
         vector_store=VectorStoreSettings(backend="chroma"),
-        evaluation=EvaluationSettings(backends=["custom"]),
+        # T010 (Feature-001 FR-007): chunk_id_validation 默认 True 会在 run()
+        # 入口去 vector store 查 chunk 是否存在。本测试用 mock chunk IDs
+        # ("c1" 等占位),禁用校验保持原测试语义。真实 fixture 修复后
+        # (T011 把 expected_chunk_ids 替换为 vector store 真实 ID)即可启用。
+        evaluation=EvaluationSettings(backends=["custom"], chunk_id_validation=False),
     )
 
 

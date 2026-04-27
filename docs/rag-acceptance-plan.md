@@ -46,6 +46,147 @@
 
 ---
 
+## 评估架构：双层视角（重要的心智模型）
+
+> **2026-04-25 增补**：本节解释为什么本方案的"自合成 + 人工精修"测试集是必然选择、为什么 Step 6 公开 benchmark 是"可选但有价值"、以及为什么 [Feature-001 spec.md](../specs/001-rag-acceptance/spec.md) 的 FR-014/FR-015 要求测试集打 `tags`。如果你只是要执行一次验收，可以跳过本节直接看"详细步骤"；如果你想理解"评估架构在系统生命周期中如何演进"，本节是核心。
+>
+> **前置概念**：本节假设你已理解"语料 vs Golden Test Set"的区别 + RAGAS 输入数据流。若不熟悉，先读 [docs/ragas-guide.md § 1.4 RAG 语料 vs Golden Test Set](ragas-guide.md) 与 [§ 1.5 RAGAS 的输入与评估对象](ragas-guide.md)。
+
+### 1. 为什么不存在"通用万能 RAG 测试集"
+
+RAG 系统的实际效果是 `f(语料, 查询类型, 下游使用场景)` 三个变量的乘积。公开数据集（MS MARCO / HotpotQA / 等）只能模拟"通用语料 × 通用查询"，跟你的真实业务场景永远错位。
+
+举个例子：你想测"我的 MT5 RAG 好不好用"，但 MS MARCO 的题目基于 Bing 搜索 + Web 文档，跟 MT5 手册没有任何关系——拿 MS MARCO 的题目问你的 RAG，几乎必然 100% 答错（因为你的语料里压根没那些内容）。反过来，把 MS MARCO 的语料**额外摄入**到你的系统再评估，本质等于"换一个领域重跑一遍"，对你的 MT5 业务效果一无所知。
+
+**结论**：追求"一份通用集量我所有 RAG 项目"在逻辑上不成立。
+
+### 2. 工业界的解法：双层评估架构
+
+把"评估"拆成两个独立的层，分别承担不同职责：
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Layer A: 业务回归层（演进的）                              │
+│  ──────────────────────────────────                       │
+│  目的：评估"我当前业务上系统好不好"                          │
+│  数据：业务专属 golden set（自合成 + 人工精修）              │
+│  生命周期：跟文档一起演进 v1 → v2 → v3                      │
+│  本项目：本方案 Step 0~5 + Feature-001 全部围绕这层          │
+└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Layer B: 能力诊断层（基本不变的）                           │
+│  ──────────────────────────────────                       │
+│  目的：评估"我系统的零部件能力在标准基准下处于什么水平"        │
+│  数据：公开 benchmark（按能力维度选）                        │
+│  生命周期：文档怎么变这层都不变（除非升级 retriever 算法本身）│
+│  本项目：本方案 Step 6（可选）+ 未来独立 feature             │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Layer A 与 Layer B 不互相替代，是互补关系**：
+
+| 你想知道的问题 | Layer A | Layer B |
+|------|---------|---------|
+| 我的 MT5 业务 RAG 效果怎样 | ✅ 唯一权威 | ❌ 不能告诉你 |
+| 我的检索器多跳推理能力如何 | ❌ 看不出 | ✅ HotpotQA 能告诉你 |
+| 我的系统对表格 QA 鲁棒吗 | ❌（除非业务集恰好有表格题） | ✅ TabFact 能告诉你 |
+| 文档变了之后老能力有没有退化 | ✅ 重跑 v1 子集 | ❌ |
+| 我跟业内 SOTA 差多少 | ❌ | ✅ |
+
+### 3. Layer B 的能力维度数据集清单（按需选用）
+
+只要你想测某种"组件能力"，几乎都有对应的公开 benchmark：
+
+| 想测的能力 | 推荐 benchmark | 备注 |
+|------------|----------------|------|
+| 表格 QA | WikiTableQuestions / TabFact / FinQA | 加表格内容前先跑一次拿基线 |
+| 代码 QA / 检索 | CodeSearchNet / CoSQA / HumanEval-Pack | 加代码内容时用 |
+| 多跳推理 | HotpotQA / 2WikiMultihopQA | 测复杂 query |
+| 长文档 | NarrativeQA / QuALITY / LongBench | 测 chunk 跨段拼接 |
+| 抗噪声 / 反事实 / 拒答 | RGB（同济，中英双语，4 档难度） | 测系统鲁棒性 |
+| 中文 RAG 综合 | DuReader / CRUD-RAG / CMRC2018 | 中文场景 |
+| 检索器纯能力 | MS MARCO / BEIR（18 个子集） | 不含 generator |
+
+**Layer B 跑法**：把 benchmark 的语料**临时摄入到独立 collection**（例如 `benchmark_rgb`），跑同样的评估管线，得分作为系统的"能力指纹"。文档形态变化前后这层指标**不应该明显变动**——因为它测的不是业务，是组件能力。
+
+### 4. Layer A 的核心难题：测试集如何"演进"
+
+业务文档不会一成不变。MT5 文档今天可能是纯文本（A 状态），明年可能扩展到含代码段、含表格（B 状态）。如果每次文档变了就**全部废弃旧测试集重新合成**，会同时丢两样东西：
+- **历史回归能力**：没法判断"老题指标退步"是因为新文档加进来污染了，还是 retriever 本身退化
+- **沉没的人工精修成本**：每条用例的人工 review 成本很高，重做一遍亏本
+
+**正确做法（业界标准）**：增量演进 + 维度切片。
+
+#### 4.1 测试集 schema 加 tags
+
+每条用例打**多维标签**（[Feature-001 spec.md](../specs/001-rag-acceptance/spec.md) 的 FR-014）：
+
+```json
+{
+  "query": "如何在 MT5 中执行限价单？",
+  "ground_truth": "...",
+  "expected_chunk_ids": ["..."],
+  "tags": {
+    "content_type": "text",          // text | code | table | mixed
+    "difficulty": "simple",          // simple | reasoning | multi_context
+    "language": "zh",
+    "doc_version": "v1"              // 关键：标注题目所属的文档版本
+  }
+}
+```
+
+#### 4.2 文档扩展时的增量做法
+
+文档从 A → B 时，**v1 全部保留**，**只增量补 v2**：
+
+```
+v1.json  (40 条 text 题)               ← 保留不动
+v2.json  (10 条 code 题 + 8 条 table 题)  ← 新增
+
+最终金标 = v1 ∪ v2 = 58 条
+```
+
+#### 4.3 评估时按 tag 切片看分数（[Feature-001 spec.md](../specs/001-rag-acceptance/spec.md) 的 FR-015）
+
+不要只看总分，要按 tag 维度切片定位短板：
+
+```
+ragas__faithfulness:
+  全集     = 0.82
+  ├─ content_type=text   = 0.85   ← 跟 v1 历史比，没退化
+  ├─ content_type=code   = 0.71   ← 新能力，刚达标
+  └─ content_type=table  = 0.65   ← ⚠️ 新能力，待优化
+```
+
+#### 4.4 双重红线：历史回归 + 新能力达标
+
+文档每次扩展时跑两次评估，对应两条独立验收红线：
+
+| 红线 | 测什么 | 跑哪份测试集 | 评估规则 |
+|------|--------|--------------|----------|
+| **历史回归** | 老能力别退化 | `tags.doc_version=v1` 子集 | 与 v1 时代基线对比，每个指标 delta ≥ -0.02 |
+| **新能力达标** | 新内容能 hold | `tags.doc_version=v2` 增量子集 | 每个指标 ≥ Layer B 对应能力的"合格"水位 |
+
+这就是 [Feature-001 spec.md](../specs/001-rag-acceptance/spec.md) **SC-008** 要求的"v1 子集重跑 delta ≥ -0.02"的来源。
+
+### 5. 一句话总结
+
+| 你以为你在找 | 你真正需要的 |
+|---|---|
+| 一份通用数据集量我所有 RAG 项目 | 一套**评估架构**，让业务集能演进、能力集能补充 |
+| 文档变了测试集就失效 | 让测试集**增量演进 + 维度切片**，老题留下做回归，新题专测新能力 |
+| 用 RAGAS 跑一次给我个全局分数 | 用 RAGAS 跑**按 tag 切片**的分数矩阵，定位能力短板 |
+
+> **金句**：测试集的"通用性"不在题目本身能跨业务，而在**评估架构能跨版本**。
+
+### 6. 与本方案 Step 0~6 的对应关系
+
+- **Step 0~5（本方案核心）= Layer A 第一次落地**：用 MT5 v1 文档建业务测试集 v1。本节"4.1 tags schema"在合成阶段就要落到 `golden_test_set_zh.json` / `golden_test_set_en.json`，本节"4.3 切片聚合"在 [src/observability/evaluation/eval_runner.py](../src/observability/evaluation/eval_runner.py) 的报告聚合阶段落地。
+- **Step 6（可选）= Layer B 第一次启动**：选 RGB 中文小样本做"能力指纹"对照。建议作为独立 feature 启动，不在本方案 MVP 强求。
+- **未来 v2 文档扩展**：按本节 4.2~4.4 的增量做法操作，v1 题留下做历史回归，新增 v2 题专测新内容类型。
+
+---
+
 ## 详细步骤
 
 ### Step 0：环境与配置准备
@@ -276,15 +417,15 @@ python scripts/start_dashboard.py
 
 ## 执行进度追踪
 
-新的 AI 会话或开发者在按此方案推进时，请在下方记录进度（或在 DEV_SPEC.md 中新增对应任务）：
+> **2026-04-25/26 状态更新**:本方案已通过 SDD(GitHub Spec-Kit)接管,见 [specs/001-rag-acceptance/](../specs/001-rag-acceptance/)(spec/plan/research/data-model/contracts/quickstart/tasks 全套)。本文档保留作为方案设计参考;实际执行进度以 spec 目录下的 `tasks.md` checkbox 为准(通过 11 个 commit `3a076d7`..`bd5fabc` 跨 spec/clarify/plan/tasks/implement 5 阶段交付,代码 100% 完成)。
 
-- [ ] Step 0：RAGAS backend 开启 + GLM judge 接入 + 烟雾测试通过
-- [ ] Step 1：合成 raw_testset_zh.json / raw_testset_en.json
-- [ ] Step 2：人工精修产出 reviewed_testset_*.json
-- [ ] Step 3：回填 chunk_ids 产出 golden_test_set_{zh,en}.json
-- [ ] Step 4：生成 logs/eval_zh_baseline.json、logs/eval_en_baseline.json
-- [ ] Step 5：Dashboard 标记基线
-- [ ] Step 6（可选）：RGB 小样本对照
+- [x] Step 0:RAGAS backend 开启 + GLM judge 接入 + 烟雾测试通过(commit `b78b4be` T018 真实 GLM 跑通,8 项指标全产出)
+- [ ] Step 1:合成 raw_testset_zh.json / raw_testset_en.json(代码就位 → `commit 34b6983` T019-T020;**待 user 跑** `scripts/synthesize_testset.py --collection mt5_docs_chinese --lang zh`,前置:先 ingest MT5 中文到独立 collection)
+- [ ] Step 2:人工精修产出 reviewed_testset_*.json(代码就位 → `commit 34b6983` T021;**待 user 跑** `scripts/refine_testset.py`,interactive y/e/d/s/q)
+- [ ] Step 3:回填 chunk_ids 产出 golden_test_set_{zh,en}.json(代码就位 → `commit 34b6983` T022;**待 user 跑** `scripts/backfill_chunk_ids.py`)
+- [x] Step 4:生成 logs/eval_zh_baseline.json、logs/eval_en_baseline.json 的**机制就位**(commit `0482f81` EvalRunner 自动 archive 到 `logs/evaluation_reports/<run_id>.json`;Step 1-3 完成后自动产出真实金标基线)
+- [x] Step 5:Dashboard 标记基线(commit `bd5fabc` US3:`BaselineManager` + Streamlit "🎯 Feature-001 基线 + 回归" tab 实现)
+- [ ] Step 6(可选):RGB 小样本对照 — 标 spec § Assumptions "Step 6 横向对照不在 MVP",留作独立 feature
 
 ---
 

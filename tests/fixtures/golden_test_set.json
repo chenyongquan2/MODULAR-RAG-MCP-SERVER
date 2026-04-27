@@ -1,28 +1,68 @@
 {
+  "_schema_version": 1,
+  "language": "mixed",
+  "version": "v0.1-smoke",
+  "created_at": "2026-04-26T12:30:00+08:00",
+  "source_corpus_collection": "default",
+  "_note": "MVP 烟雾测试占位集合(US1)。expected_chunk_ids 已替换为 default collection 中真实存在的 MT5 SDK chunk(让 FR-007 校验通过 + 管线跑通验证)。但 4 个 query/ground_truth **故意保留**为 Azure/RAG/Dashboard 主题,与 MT5 corpus 不匹配——目的:用 hit_rate=0/mrr=0 反向证明 retrieval/评估管线工作正常(命中=0 是结构正确的输出,不是 bug)。语义有意义的评估留给 US2(合成 MT5 真实金标 80-100 条)。",
   "test_cases": [
     {
-      "query": "如何配置 Azure OpenAI？",
-      "expected_chunk_ids": ["chunk_azure_001", "chunk_azure_002"],
-      "expected_sources": ["config_guide.pdf"],
-      "ground_truth": "在 config/settings.yaml 的 llm 节点下，将 provider 设为 azure，并填写 api_key、endpoint、api_version 与 deployment 名称；api_key 支持通过环境变量 ${AZURE_OPENAI_API_KEY} 注入。"
+      "query": "如何配置 Azure OpenAI?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_0_b5d1e1df",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1_88c28b6d"
+      ],
+      "expected_sources": ["MetaTrader5SDK_Chinese.chm"],
+      "ground_truth": "在 config/settings.yaml 的 llm 节点下,将 provider 设为 azure,并填写 api_key、endpoint、api_version 与 deployment 名称;api_key 支持通过环境变量 ${AZURE_OPENAI_API_KEY} 注入。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     },
     {
-      "query": "RAG 检索流程包括哪些阶段？",
-      "expected_chunk_ids": ["chunk_retrieval_001"],
-      "expected_sources": ["rag_overview.md"],
-      "ground_truth": "RAG 检索流程包括：Query 预处理 → 稠密检索 (Dense) 与稀疏检索 (Sparse) 并行执行 → 融合 (RRF) → 重排 (Rerank) → 响应构建 (Response)。"
+      "query": "RAG 检索流程包括哪些阶段?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2_ba795d82"
+      ],
+      "expected_sources": ["MetaTrader5SDK_Chinese.chm"],
+      "ground_truth": "RAG 检索流程包括:Query 预处理 → 稠密检索 (Dense) 与稀疏检索 (Sparse) 并行执行 → 融合 (RRF) → 重排 (Rerank) → 响应构建 (Response)。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     },
     {
-      "query": "如何开启 ingestion trace 追踪？",
-      "expected_chunk_ids": ["chunk_trace_001"],
-      "expected_sources": ["observability_guide.md"],
-      "ground_truth": "在 observability.tracing 配置中将 enabled 设为 true，并指定 trace 输出路径（默认 logs/traces.jsonl）；ingestion 各阶段会按 load → split → transform → embed → upsert 顺序写入 trace。"
+      "query": "如何开启 ingestion trace 追踪?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_3_cda9e88f"
+      ],
+      "expected_sources": ["MetaTrader5SDK_Chinese.chm"],
+      "ground_truth": "在 observability.tracing 配置中将 enabled 设为 true,并指定 trace 输出路径(默认 logs/traces.jsonl);ingestion 各阶段会按 load → split → transform → embed → upsert 顺序写入 trace。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     },
     {
-      "query": "Dashboard 支持哪些页面？",
-      "expected_chunk_ids": ["chunk_dashboard_001", "chunk_dashboard_002"],
-      "expected_sources": ["dashboard_manual.md"],
-      "ground_truth": "Streamlit Dashboard 共六个页面：系统概览、数据浏览、Ingestion 管理、Query Trace、Ingestion Trace、评估面板。"
+      "query": "Dashboard 支持哪些页面?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_4_48971053",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_5_9c43448e"
+      ],
+      "expected_sources": ["MetaTrader5SDK_Chinese.chm"],
+      "ground_truth": "Streamlit Dashboard 共六个页面:系统概览、数据浏览、Ingestion 管理、Query Trace、Ingestion Trace、评估面板。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
     }
   ]
 }

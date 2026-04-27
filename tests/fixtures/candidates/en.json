@@ -1,0 +1,48 @@
+{
+  "_schema_version": 1,
+  "language": "en",
+  "_synthesis_metadata": {
+    "generator": "ragas.testset.TestsetGenerator",
+    "ragas_version": "0.1.21",
+    "judge_llm_identifier": "glm:z-ai/glm-4.7",
+    "embedding_identifier": "openai:text-embedding-3-small",
+    "distribution": {
+      "multi_context": 0.2,
+      "simple": 0.5,
+      "reasoning": 0.3
+    },
+    "synthesized_at": "2026-04-27T04:57:13.496083+00:00"
+  },
+  "test_cases": [
+    {
+      "query": "What can be downloaded from the MetaQuotes Software Corp. support site?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "A single installation file used for all five MetaTrader 5 APIs.",
+      "_synth_contexts": [
+        "### Setup\n\nSetup\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Getting Started](getting_started.htm) / Setup | [Previous](system_requirements.htm)  [Next](files_folders_structure.htm) | | |\n\nSetup\n\nA single installation file is used for all five MetaTrader 5 APIs. Download it from the [MetaQuotes Software Corp. support site](https://support.metaquotes.net/en/download/mt5 \"Download MetaTrader 5 Manager API\"). Run the file and follow the instructions."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What global time settings of a trading platform can be managed using the MetaTrader 5 Server API?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The MetaTrader 5 Server API allows managing the working time, the time zone, and the address of the server for synchronizing time.",
+      "_synth_contexts": [
+        "Time Configuration\n\nMetaTrader 5 Server API allows managing global time settings of a trading platform: adjust working time, retrieve and change the time zone and the address of the server for synchronizing time.\n\nFunctions described in this section allow managing the time configurations of the platform, as well subscribe and unsubscribe from events associated with its change."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    }
+  ]
+}

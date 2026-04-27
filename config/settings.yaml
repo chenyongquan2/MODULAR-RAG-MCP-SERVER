@@ -6,7 +6,7 @@
 # LLM 配置
 llm:
   provider: glm             # glm | azure | openai | ollama | deepseek
-  model: GLM-4.7
+  model: z-ai/glm-4.7       # 上游 finpoints 代理的 model id 需要 z-ai/ 前缀;查 ${GLM_BASE_URL}/models 可列出所有可用值
   api_key: ${GLM_API_KEY}
   base_url: ${GLM_BASE_URL}
 
@@ -69,11 +69,74 @@ ingestion:
     enabled: true
     use_fallback: true
 
-# 评估配置
+# 评估配置 (Feature-001 RAG 质量验收)
+# 详细 schema: specs/001-rag-acceptance/contracts/settings.evaluation.schema.md
 evaluation:
+  _schema_version: 1
+
+  # 启用的评估后端 (custom 永久启用, ragas 视场景启用)
   backends:
     - custom
+    - ragas              # 启用 RAGAS 4 项指标 (需配置下方 judge_llm)
+
+  # 占位金标 (US1 阶段使用)
   golden_test_set: ./tests/fixtures/golden_test_set.json
+
+  # 中英分语种金标 (T027-T029 完成,5 zh + 2 en cases — 小样本验证用,
+  # 完整 SC-002 验收需要重跑 target_count=100 产出 ≥ 40/language)
+  golden_test_sets_by_lang:
+    zh: ./tests/fixtures/golden_test_set_zh.json
+    en: ./tests/fixtures/golden_test_set_en.json
+
+  # Judge LLM (仅 ragas backend 启用时必须填)
+  # 复用 LLMFactory 的 5 个 provider: glm/azure/openai/ollama/deepseek
+  # FR-016: 切换 Judge 不需修改代码,仅改本配置后重启
+  # 默认与项目顶层 llm.* 对齐 (z-ai/glm-4.7 + 同一 GLM_API_KEY/GLM_BASE_URL),
+  # 这样 production 答案生成与 evaluation 判分用同一可用上游
+  judge_llm:
+    provider: glm
+    model: z-ai/glm-4.7
+    api_key: ${GLM_API_KEY}
+    base_url: ${GLM_BASE_URL}
+    temperature: 0.0          # Judge 推荐 0.0 提高判分稳定性
+    request_timeout_sec: 60
+
+  # 评估流程使用的 embedding (默认全空 = 复用顶层 settings.embedding)
+  # FR-017: 评估流程所有 embedding 环节 MUST 用同一配置 (避免 train-eval skew)
+  embedding:
+    provider: ""              # 空 = 复用顶层 embedding.provider
+    model: ""                 # 空 = 复用顶层 embedding.model
+    api_key: ""
+    base_url: null
+
+  # 8 项主聚合指标的 pass/fail 阈值 (FR-013 业界参考值, 2026-04-25 clarify 决议)
+  # 切换 Judge LLM 后建议重新校准 (见 spec.md § Assumptions § Judge 切换与阈值校准)
+  acceptance_thresholds:
+    ragas__context_recall: 0.70
+    ragas__context_precision: 0.65
+    ragas__faithfulness: 0.85
+    ragas__answer_relevancy: 0.75
+    custom__hit_rate: 0.60
+    custom__mrr: 0.55
+    custom__recall: 0.70
+    custom__ndcg: 0.55
+
+  # by-tag 切片维度 (MVP 仅支持 content_type / difficulty)
+  by_tag_dimensions:
+    - content_type
+    - difficulty
+
+  # 切片样本量下限 (< 此值的切片在报告中标 null + _skipped_reason)
+  tag_slice_min_samples: 5
+
+  # 评估报告归档目录
+  report_archive_dir: ./logs/evaluation_reports
+
+  # 基线标记单文件
+  baseline_store_path: ./logs/baselines.json
+
+  # FR-007: expected_chunk_ids 在 vector store 中的存在性校验 (调试时可临时关闭)
+  chunk_id_validation: true
 
 # 可观测性配置
 observability:

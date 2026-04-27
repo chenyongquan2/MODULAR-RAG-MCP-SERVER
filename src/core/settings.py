@@ -14,7 +14,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import yaml
 
@@ -182,11 +182,117 @@ class IngestionSettings:
 
 
 @dataclass
-class EvaluationSettings:
-    """评估配置。"""
+class JudgeLLMSettings:
+    """RAGAS Judge LLM 配置 (FR-016)。
 
+    复用 LLMFactory 注册的 5 个 provider(glm/azure/openai/ollama/deepseek);
+    切换 Judge 不需修改评估代码,仅需改本配置后重启。
+
+    Attributes:
+        provider: LLM provider(glm/azure/openai/ollama/deepseek)
+        model: 模型标识(如 "glm-4")
+        api_key: API key(支持 ${VAR} 环境变量注入)
+        base_url: API base URL(可选,如 OpenAI 兼容端点)
+        temperature: 采样温度(0.0 表示完全确定;Judge 推荐 0.0 以提高判分稳定性)
+        request_timeout_sec: 单次 LLM 调用超时(秒)
+    """
+
+    provider: str = "glm"
+    model: str = "glm-4"
+    api_key: str = ""
+    base_url: Optional[str] = None
+    temperature: float = 0.0
+    request_timeout_sec: int = 60
+
+
+@dataclass
+class EvaluationEmbeddingSettings:
+    """评估流程使用的 embedding 配置 (FR-017)。
+
+    所有字段为空时表示"复用顶层 settings.embedding 配置"(避免 train-eval skew)。
+    复用 EmbeddingFactory 注册的 provider(bge/openai/azure/ollama/glm)。
+
+    Attributes:
+        provider: embedding provider(空 = 复用顶层)
+        model: embedding 模型标识(空 = 复用顶层)
+        api_key: API key(支持 ${VAR} 环境变量注入)
+        base_url: API base URL(可选)
+    """
+
+    provider: str = ""
+    model: str = ""
+    api_key: str = ""
+    base_url: Optional[str] = None
+
+
+@dataclass
+class AcceptanceThresholds:
+    """8 项主聚合指标的 pass/fail 阈值 (FR-013)。
+
+    默认值为 spec § FR-013 锁定的业界参考值(2026-04-25 clarify 决议)。
+    用户可在 settings.yaml 中覆盖任一字段;未覆盖字段使用本默认值。
+
+    切换 Judge LLM 后建议重新校准本阈值——见 spec.md § Assumptions
+    "Judge 切换与阈值校准"。
+    """
+
+    ragas__context_recall: float = 0.70
+    ragas__context_precision: float = 0.65
+    ragas__faithfulness: float = 0.85
+    ragas__answer_relevancy: float = 0.75
+    custom__hit_rate: float = 0.60
+    custom__mrr: float = 0.55
+    custom__recall: float = 0.70
+    custom__ndcg: float = 0.55
+
+    def to_dict(self) -> dict[str, float]:
+        """返回 8 项阈值的快照字典(用于 EvaluationReport.acceptance_thresholds_snapshot)。"""
+        return {
+            "ragas__context_recall": self.ragas__context_recall,
+            "ragas__context_precision": self.ragas__context_precision,
+            "ragas__faithfulness": self.ragas__faithfulness,
+            "ragas__answer_relevancy": self.ragas__answer_relevancy,
+            "custom__hit_rate": self.custom__hit_rate,
+            "custom__mrr": self.custom__mrr,
+            "custom__recall": self.custom__recall,
+            "custom__ndcg": self.custom__ndcg,
+        }
+
+
+@dataclass
+class EvaluationSettings:
+    """评估配置(Feature-001 后扩展)。
+
+    详见 specs/001-rag-acceptance/data-model.md § 1.1 与
+    specs/001-rag-acceptance/contracts/settings.evaluation.schema.md。
+
+    Attributes:
+        schema_version: YAML 中的 _schema_version 字段(本 build 仅支持 1)
+        backends: 启用的评估后端(custom 永久启用,ragas 视场景启用)
+        golden_test_set: 占位金标路径(US1 阶段使用)
+        golden_test_sets_by_lang: 中英分语种金标(US2 完成后填充)
+        judge_llm: Judge LLM 配置(ragas backend 启用时必须填)
+        embedding: 评估期 embedding 配置(默认空 = 复用 production)
+        acceptance_thresholds: 8 项主聚合指标的 pass/fail 阈值
+        by_tag_dimensions: 切片维度白名单(MVP 仅支持 content_type / difficulty)
+        tag_slice_min_samples: 切片样本量下限(< 此值的切片标 null + _skipped_reason)
+        report_archive_dir: 评估报告归档目录
+        baseline_store_path: 基线标记单文件路径
+        chunk_id_validation: 评估前是否校验 expected_chunk_ids 在 vector store 中存在
+    """
+
+    schema_version: int = 1
     backends: list[str] = field(default_factory=lambda: ["custom"])
     golden_test_set: str = "./tests/fixtures/golden_test_set.json"
+    golden_test_sets_by_lang: dict[str, str] = field(default_factory=dict)
+    judge_llm: JudgeLLMSettings = field(default_factory=JudgeLLMSettings)
+    embedding: EvaluationEmbeddingSettings = field(default_factory=EvaluationEmbeddingSettings)
+    acceptance_thresholds: AcceptanceThresholds = field(default_factory=AcceptanceThresholds)
+    by_tag_dimensions: list[str] = field(default_factory=lambda: ["content_type", "difficulty"])
+    tag_slice_min_samples: int = 5
+    report_archive_dir: str = "./logs/evaluation_reports"
+    baseline_store_path: str = "./logs/baselines.json"
+    chunk_id_validation: bool = True
 
 
 @dataclass
@@ -433,6 +539,33 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
         ),
     )
 
+    # 构建 evaluation 嵌套结构 (Feature-001 引入 judge_llm / embedding /
+    # acceptance_thresholds 三个子 dataclass,需手动构造,沿用 ingestion 模式)
+    evaluation_raw = raw.get("evaluation") or {}
+    # YAML 中可写 _schema_version,Python 字段名不能以 _ 开头,做一次映射
+    if "_schema_version" in evaluation_raw and "schema_version" not in evaluation_raw:
+        evaluation_raw["schema_version"] = evaluation_raw.pop("_schema_version")
+    judge_llm_raw = evaluation_raw.get("judge_llm") or {}
+    eval_embedding_raw = evaluation_raw.get("embedding") or {}
+    acceptance_thresholds_raw = evaluation_raw.get("acceptance_thresholds") or {}
+    # 顶层 EvaluationSettings 字段(去掉嵌套子段,后续显式注入)
+    eval_top_raw = {
+        k: v for k, v in evaluation_raw.items()
+        if k not in {"judge_llm", "embedding", "acceptance_thresholds"}
+    }
+    evaluation_settings = EvaluationSettings(
+        **{k: v for k, v in eval_top_raw.items() if v is not None}
+    )
+    evaluation_settings.judge_llm = _build_sub_settings(
+        judge_llm_raw, JudgeLLMSettings, "evaluation.judge_llm"
+    )
+    evaluation_settings.embedding = _build_sub_settings(
+        eval_embedding_raw, EvaluationEmbeddingSettings, "evaluation.embedding"
+    )
+    evaluation_settings.acceptance_thresholds = _build_sub_settings(
+        acceptance_thresholds_raw, AcceptanceThresholds, "evaluation.acceptance_thresholds"
+    )
+
     settings = Settings(
         llm=_build_sub_settings(raw.get("llm"), LLMSettings, "llm"),
         embedding=_build_sub_settings(
@@ -460,9 +593,7 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
             raw.get("splitter"), SplitterSettings, "splitter"
         ),
         ingestion=ingestion_settings,
-        evaluation=_build_sub_settings(
-            raw.get("evaluation"), EvaluationSettings, "evaluation"
-        ),
+        evaluation=evaluation_settings,
         observability=_build_sub_settings(
             raw.get("observability"), ObservabilitySettings, "observability"
         ),
@@ -517,3 +648,176 @@ def validate_settings(settings: Settings) -> None:
             "Invalid query.max_images_per_response: "
             f"{settings.query.max_images_per_response}. Expected a positive integer (> 0)."
         )
+
+    # Feature-001 评估配置校验
+    _validate_evaluation_settings(settings)
+
+
+# ---------------------------------------------------------------------------
+# Feature-001: evaluation 段启动期校验 (宪法 § III 快速失败)
+# ---------------------------------------------------------------------------
+
+# LLMFactory / EmbeddingFactory 注册的 provider 白名单
+# 与 src/libs/llm/llm_factory.py + src/libs/embedding/embedding_factory.py 保持一致;
+# 后续若新增 provider,需同步更新本白名单
+_VALID_LLM_PROVIDERS: frozenset[str] = frozenset(
+    {"glm", "azure", "openai", "ollama", "deepseek"}
+)
+_VALID_EMBEDDING_PROVIDERS: frozenset[str] = frozenset(
+    {"bge", "openai", "azure", "ollama", "glm"}
+)
+# evaluation.backends 白名单
+_VALID_EVAL_BACKENDS: frozenset[str] = frozenset({"custom", "ragas"})
+# evaluation.by_tag_dimensions 白名单 (MVP 仅支持 content_type / difficulty)
+_VALID_BY_TAG_DIMENSIONS: frozenset[str] = frozenset({"content_type", "difficulty"})
+# acceptance_thresholds 必含的 8 个 metric key
+_REQUIRED_THRESHOLD_KEYS: frozenset[str] = frozenset({
+    "ragas__context_recall",
+    "ragas__context_precision",
+    "ragas__faithfulness",
+    "ragas__answer_relevancy",
+    "custom__hit_rate",
+    "custom__mrr",
+    "custom__recall",
+    "custom__ndcg",
+})
+
+
+def _validate_evaluation_settings(settings: Settings) -> None:
+    """Feature-001 评估配置启动期校验。
+
+    实现见 specs/001-rag-acceptance/contracts/settings.evaluation.schema.md
+    § Field Validation Rules 中列出的全部规则。任一规则失败立即抛
+    ``SettingsError``(宪法 § III 快速失败原则)。
+
+    Args:
+        settings: 已加载但未校验的 Settings 实例。
+
+    Raises:
+        SettingsError: 任一校验规则失败。
+    """
+    eval_s = settings.evaluation
+
+    # _schema_version >= 1
+    if eval_s.schema_version < 1:
+        raise SettingsError(
+            f"evaluation._schema_version={eval_s.schema_version} invalid (>= 1 required)"
+        )
+
+    # backends 元素白名单
+    invalid_backends = [b for b in eval_s.backends if b not in _VALID_EVAL_BACKENDS]
+    if invalid_backends:
+        raise SettingsError(
+            f"evaluation.backends contains unknown backend: {invalid_backends!r}. "
+            f"Valid options: {sorted(_VALID_EVAL_BACKENDS)}"
+        )
+
+    # ragas 启用时 judge_llm.provider / model 必填
+    if "ragas" in eval_s.backends:
+        if not eval_s.judge_llm.provider.strip():
+            raise SettingsError(
+                "evaluation.backends contains 'ragas' but evaluation.judge_llm.provider "
+                "is empty. Configure judge_llm or remove 'ragas' from backends."
+            )
+        if not eval_s.judge_llm.model.strip():
+            raise SettingsError(
+                "evaluation.judge_llm.model cannot be empty when 'ragas' is enabled."
+            )
+
+    # judge_llm.provider 在 LLMFactory 注册列表
+    if eval_s.judge_llm.provider and eval_s.judge_llm.provider not in _VALID_LLM_PROVIDERS:
+        raise SettingsError(
+            f"evaluation.judge_llm.provider={eval_s.judge_llm.provider!r} not in "
+            f"LLMFactory registry. Valid options: {sorted(_VALID_LLM_PROVIDERS)}"
+        )
+
+    # judge_llm.temperature ∈ [0, 2]
+    if not 0.0 <= eval_s.judge_llm.temperature <= 2.0:
+        raise SettingsError(
+            f"evaluation.judge_llm.temperature={eval_s.judge_llm.temperature} "
+            "out of range [0, 2]"
+        )
+
+    # judge_llm.request_timeout_sec > 0
+    if eval_s.judge_llm.request_timeout_sec <= 0:
+        raise SettingsError(
+            f"evaluation.judge_llm.request_timeout_sec={eval_s.judge_llm.request_timeout_sec} "
+            "must be > 0"
+        )
+
+    # embedding.provider 在 EmbeddingFactory 注册列表 (空表示复用顶层)
+    if eval_s.embedding.provider and eval_s.embedding.provider not in _VALID_EMBEDDING_PROVIDERS:
+        raise SettingsError(
+            f"evaluation.embedding.provider={eval_s.embedding.provider!r} not in "
+            f"EmbeddingFactory registry. Valid options: {sorted(_VALID_EMBEDDING_PROVIDERS)}"
+        )
+
+    # acceptance_thresholds 每项 ∈ [0, 1]
+    thresholds_dict = eval_s.acceptance_thresholds.to_dict()
+    # 校验完整性 (dataclass 默认值保证存在,但若用户用 ** 解包传部分字段会触发)
+    missing = _REQUIRED_THRESHOLD_KEYS - set(thresholds_dict.keys())
+    if missing:
+        raise SettingsError(
+            f"evaluation.acceptance_thresholds missing keys: {sorted(missing)}"
+        )
+    # 校验取值范围
+    for key, value in thresholds_dict.items():
+        if not isinstance(value, (int, float)):
+            raise SettingsError(
+                f"evaluation.acceptance_thresholds.{key} must be a number, "
+                f"got {type(value).__name__}"
+            )
+        if not 0.0 <= float(value) <= 1.0:
+            raise SettingsError(
+                f"evaluation.acceptance_thresholds.{key}={value} out of range [0, 1]"
+            )
+
+    # by_tag_dimensions 必须 ⊆ 白名单
+    invalid_dims = [d for d in eval_s.by_tag_dimensions if d not in _VALID_BY_TAG_DIMENSIONS]
+    if invalid_dims:
+        raise SettingsError(
+            f"evaluation.by_tag_dimensions contains unknown dimension: {invalid_dims!r}. "
+            f"Valid options: {sorted(_VALID_BY_TAG_DIMENSIONS)}"
+        )
+
+    # tag_slice_min_samples >= 1
+    if eval_s.tag_slice_min_samples < 1:
+        raise SettingsError(
+            f"evaluation.tag_slice_min_samples={eval_s.tag_slice_min_samples} must be >= 1"
+        )
+
+    # report_archive_dir 父目录可写
+    archive_parent = Path(eval_s.report_archive_dir).parent
+    _ensure_writable_parent(archive_parent, "evaluation.report_archive_dir")
+
+    # baseline_store_path 父目录可写
+    baseline_parent = Path(eval_s.baseline_store_path).parent
+    _ensure_writable_parent(baseline_parent, "evaluation.baseline_store_path")
+
+    # chunk_id_validation 必须是 bool
+    if not isinstance(eval_s.chunk_id_validation, bool):
+        raise SettingsError(
+            f"evaluation.chunk_id_validation must be bool, "
+            f"got {type(eval_s.chunk_id_validation).__name__}"
+        )
+
+
+def _ensure_writable_parent(parent: Path, field_path: str) -> None:
+    """确认 parent 目录存在且可写;不存在时尝试创建一次。
+
+    Args:
+        parent: 待检查的父目录 Path。
+        field_path: 用于错误消息的配置字段路径(如 "evaluation.report_archive_dir")。
+
+    Raises:
+        SettingsError: 父目录不可写或无法创建。
+    """
+    if not parent.exists():
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise SettingsError(
+                f"{field_path} parent not writable: {parent} ({exc})"
+            ) from exc
+    elif not os.access(str(parent), os.W_OK):
+        raise SettingsError(f"{field_path} parent not writable: {parent}")

@@ -1,0 +1,93 @@
+{
+  "_schema_version": 1,
+  "language": "zh",
+  "_synthesis_metadata": {
+    "generator": "ragas.testset.TestsetGenerator",
+    "ragas_version": "0.1.21",
+    "judge_llm_identifier": "glm:z-ai/glm-4.7",
+    "embedding_identifier": "openai:text-embedding-3-small",
+    "distribution": {
+      "multi_context": 0.2,
+      "reasoning": 0.3,
+      "simple": 0.5
+    },
+    "synthesized_at": "2026-04-27T03:24:30.627178+00:00"
+  },
+  "test_cases": [
+    {
+      "query": "MetaTrader 5 API \\u4e3a\\u63a5\\u5165\\u6570\\u636e\\u5e93\\u63d0\\u4f9b\\u4e86\\u4ec0\\u4e48\\uff1f",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MetaTrader 5 API provides interfaces for connecting to databases.",
+      "_synth_contexts": [
+        "MetaTrader 5 API另外提供了接口，用于接入[配置](reference_configurations.htm)和[数据库](reference_bases.htm)促进日常操作的辅助[工具](reference_tools.htm)，和传送数据的[结构](reference_structures.htm)。\n\n© 2000-2024, [MetaQuotes Ltd](https://www.metaquotes.net/ru)"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What must happen to the sink object until IMTServerAPI::TimeUnsubscribe is called?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The object pointed to by the sink must be retained in memory (must not be deleted).",
+      "_synth_contexts": [
+        "sink指向的对象必须保留在内存中（不得删除），直至调用 [IMTServerAPI::TimeUnsubscribe](imtserverapi_timeunsubscribe.htm) 或删除插件。\n\n###### TimeUnsubscribe\n\nTimeUnsubscribe\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [主 API 接口](imtserverapi.htm) / [配置数据库](serverapi_configuration.htm) / [时间](serverapi_config_time.htm) / TimeUnsubscribe | [Previous](imtserverapi_timesubscribe.htm)  [Next](imtserverapi_timecurrent.htm) | | |"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTConHoliday::Release method?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The purpose of the IMTConHoliday::Release method is to delete the created object.",
+      "_synth_contexts": [
+        "IMTServerAPI::HolidayCreate\n\n创建假期配置的对象。\n\n| |\n| --- |\n| IMTConHoliday*  IMTServerAPI::HolidayCreate() |\n\n返回值\n\n其返回一个指向实现 [IMTConHoliday](imtconholiday.htm) 接口的已创建对象的指针。如果出现故障，将返回 NULL。\n\n注意\n\n已创建的对象必须通过调用该对象的 [IMTConHoliday::Release](imtconholiday_release.htm) 方法删除。\n\n###### HolidaySubscribe\n\nHolidaySubscribe"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the function of the NetServerShift method in IMTServerAPI?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Modifies the position of the server configuration in the list.",
+      "_synth_contexts": [
+        "###### NetServerShift\n\nNetServerShift\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [主 API 接口](imtserverapi.htm) / [配置数据库](serverapi_configuration.htm) / [网络](serverapi_config_network.htm) / NetServerShift | [Previous](imtserverapi_netserverdelete.htm)  [Next](imtserverapi_netservertotal.htm) | | |\n\nIMTServerAPI::NetServerShift\n\n更改列表中服务器配置的位置。"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does `IMTServerAPI::GatewayUnsubscribe` do to gateway configuration events?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It unsubscribes from events and hooks related to gateway configuration.",
+      "_synth_contexts": [
+        "IMTServerAPI::GatewayUnsubscribe\n\n退订与网关配置相关的事件和挂钩。\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::GatewayUnsubscribe(    IMTConGatewaySink*  sink      // 指向 IMTConGatewaySink 对象的指针    ) |\n\n参数\n\nsink\n\n[in]  指向实现 [IMTConGatewaySink](imtcongatewaysink.htm) 接口的对象的指针。\n\n返回值\n\n成功执行的标志是 [MT_RET_OK](retcodes_successful.htm) 响应代码。否则将返回错误代码。\n\n注意\n\n这是 [IMTServerAPI::GatewaySubscribe](imtserverapi_gatewaysubscribe.htm)的配对法。如果尝试从其尚未订阅的接口取消订阅，则将返回 [MT_RET_ERR_NOTFOUND](retcodes_common.htm) 错误。\n\n###### GatewayAdd"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    }
+  ]
+}
