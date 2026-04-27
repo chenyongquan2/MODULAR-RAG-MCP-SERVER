@@ -71,7 +71,20 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Pull this many chunks from the collection as RAGAS source corpus. "
-            "Default: target_count * 5"
+            "Default: target_count * 5 (or *50 when --source-filter is used)"
+        ),
+    )
+    parser.add_argument(
+        "--source-filter",
+        type=str,
+        default=None,
+        help=(
+            "Optional substring filter on metadata.source; only chunks whose "
+            "source contains this string are used as RAGAS seed corpus. "
+            "Useful for mixed-language collections — e.g., for default "
+            "collection containing both MetaTrader5SDK_Chinese.chm and "
+            "_English.chm, pass '--source-filter Chinese.chm' to synthesize "
+            "Chinese-only candidates."
         ),
     )
     return parser.parse_args()
@@ -115,6 +128,7 @@ def main() -> int:
             target_count=args.target_count,
             distribution=distribution,
             chunk_sample_size=args.chunk_sample_size,
+            source_filter=args.source_filter,
         )
     except ValueError as exc:
         logger.error("Synthesis validation failed: %s", exc)

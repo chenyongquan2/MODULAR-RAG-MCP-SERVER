@@ -153,6 +153,71 @@ class TestCandidateSchema:
             synth.synthesize(collection="empty", lang="zh", target_count=10)
 
 
+class TestSourceFilter:
+    """``source_filter`` substring 过滤(用于混合语种 collection 按文件名分流)。"""
+
+    def test_source_filter_keeps_only_matching_chunks(self) -> None:
+        """source_filter='Chinese.chm' 只保留含该子串的 chunks。"""
+        synth = TestsetSynthesizer(settings=_make_settings())
+        # 模拟混合 source 的 raw chromadb output
+        all_chunks = [
+            {"id": "zh-1", "text": "中文内容 1", "metadata": {"source": "MetaTrader5SDK_Chinese.chm"}},
+            {"id": "en-1", "text": "English content 1", "metadata": {"source": "MetaTrader5SDK_English.chm"}},
+            {"id": "zh-2", "text": "中文内容 2", "metadata": {"source": "MetaTrader5SDK_Chinese.chm"}},
+            {"id": "noise-1", "text": "其他", "metadata": {"source": "company_policy.md"}},
+        ]
+        # 直接通过 mock chromadb 的 col.get() 来测试 _fetch_chunks 的过滤逻辑
+        from unittest.mock import patch
+        mock_col = MagicMock()
+        mock_col.count.return_value = len(all_chunks)
+        mock_col.get.return_value = {
+            "ids": [c["id"] for c in all_chunks],
+            "documents": [c["text"] for c in all_chunks],
+            "metadatas": [c["metadata"] for c in all_chunks],
+        }
+        mock_client = MagicMock()
+        mock_client.get_collection.return_value = mock_col
+        with patch("chromadb.PersistentClient", return_value=mock_client):
+            result = synth._fetch_chunks(
+                collection="default", limit=100, source_filter="Chinese.chm"
+            )
+        # 只剩 2 条中文
+        assert len(result) == 2
+        assert all("Chinese.chm" in c["metadata"]["source"] for c in result)
+        assert {c["id"] for c in result} == {"zh-1", "zh-2"}
+
+    def test_source_filter_empty_returns_all(self) -> None:
+        """source_filter=None 时不过滤,所有非空 chunks 返回。"""
+        synth = TestsetSynthesizer(settings=_make_settings())
+        all_chunks = [
+            {"id": "a", "text": "x", "metadata": {"source": "a.md"}},
+            {"id": "b", "text": "y", "metadata": {"source": "b.md"}},
+        ]
+        from unittest.mock import patch
+        mock_col = MagicMock()
+        mock_col.count.return_value = 2
+        mock_col.get.return_value = {
+            "ids": ["a", "b"],
+            "documents": ["x", "y"],
+            "metadatas": [{"source": "a.md"}, {"source": "b.md"}],
+        }
+        mock_client = MagicMock()
+        mock_client.get_collection.return_value = mock_col
+        with patch("chromadb.PersistentClient", return_value=mock_client):
+            result = synth._fetch_chunks(collection="default", limit=10)
+        assert len(result) == 2
+
+    def test_source_filter_no_matches_yields_value_error(self) -> None:
+        """source_filter 过滤后 0 chunks → synthesize 抛 ValueError。"""
+        synth = TestsetSynthesizer(settings=_make_settings())
+        synth._fetch_chunks = MagicMock(return_value=[])  # type: ignore[method-assign]
+        with pytest.raises(ValueError, match="source_filter"):
+            synth.synthesize(
+                collection="default", lang="zh",
+                target_count=10, source_filter="nonexistent",
+            )
+
+
 class TestRagasVersionTracking:
     def test_ragas_version_recorded_in_metadata(self) -> None:
         """verify _synthesis_metadata.ragas_version 反映装版本。"""

@@ -65,6 +65,7 @@ class TestsetSynthesizer:
         target_count: int = 100,
         distribution: Optional[dict[str, float]] = None,
         chunk_sample_size: Optional[int] = None,
+        source_filter: Optional[str] = None,
     ) -> dict[str, Any]:
         """合成候选测试集。
 
@@ -77,6 +78,9 @@ class TestsetSynthesizer:
             chunk_sample_size: 从 collection 取多少 chunk 作为合成语料。
                 None 时取 ``min(target_count * 5, collection.count)`` —— 经验值,
                 让 RAGAS 有足够的多样性可挑。
+            source_filter: 可选 substring 过滤;只保留 ``metadata.source`` 含此
+                子串的 chunks(用于混合语种 collection 中按文件名筛选,
+                例如 ``"Chinese.chm"`` / ``"English.chm"``)。默认 None = 不过滤。
 
         Returns:
             ``{"_schema_version": 1, "language": ..., "_synthesis_metadata": {...},
@@ -84,18 +88,27 @@ class TestsetSynthesizer:
 
         Raises:
             ValueError: 配置非法(distribution 总和远离 1.0、target_count <= 0、
-                collection 不存在或为空)。
+                collection 不存在或为空、过滤后无 chunks)。
             RuntimeError: RAGAS 合成失败。
         """
         if target_count <= 0:
             raise ValueError(f"target_count must be > 0, got {target_count}")
         dist = self._validate_distribution(distribution or DEFAULT_DISTRIBUTION)
 
-        chunks = self._fetch_chunks(collection, chunk_sample_size or target_count * 5)
+        # 过滤后的样本量需要 enough 给 RAGAS 选种子,所以拉取上限放到
+        # target_count * 50 让 source_filter 有足够过滤空间;无过滤场景仍是 *5
+        fetch_limit = chunk_sample_size or (
+            target_count * 50 if source_filter else target_count * 5
+        )
+        chunks = self._fetch_chunks(collection, fetch_limit, source_filter=source_filter)
         if not chunks:
+            extra = (
+                f" (with source_filter='{source_filter}')" if source_filter else ""
+            )
             raise ValueError(
-                f"collection '{collection}' contains no chunks; "
-                "please run scripts/ingest.py first to populate it."
+                f"collection '{collection}' contains no chunks{extra}; "
+                "please run scripts/ingest.py first to populate it, or relax "
+                "the source_filter substring."
             )
 
         documents = self._chunks_to_langchain_docs(chunks)
@@ -170,12 +183,23 @@ class TestsetSynthesizer:
         splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
         return InMemoryDocumentStore(splitter=splitter, embeddings=embedding)
 
-    def _fetch_chunks(self, collection: str, limit: int) -> list[dict[str, Any]]:
+    def _fetch_chunks(
+        self,
+        collection: str,
+        limit: int,
+        source_filter: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
         """从 vector store 拉取 chunks 用作合成语料。
 
         直接通过 chromadb 客户端读取(本工具是数据准备脚本,不走 query 链路;
         provider-agnostic 约束适用于 query path,不适用于 ingestion-time / 数据
         准备工具,符合 spec § Architecture stability rule)。
+
+        Args:
+            collection: ChromaDB collection 名。
+            limit: 上限拉取量。
+            source_filter: 可选 substring,只保留 metadata.source 含此子串
+                的 chunks(用于混合语种 collection 按文件名分流)。
         """
         try:
             import chromadb
@@ -199,28 +223,33 @@ class TestsetSynthesizer:
         if count == 0:
             return []
 
-        # ChromaDB get(limit=N) 不支持 random sampling;peek 是顺序取前 N 个
-        # 这对 RAGAS 合成已足够(它内部会再随机选种子节点)
+        # ChromaDB get(limit=N) 不支持 random sampling;按需多取以便过滤
         n = min(limit, count)
         result = col.get(limit=n, include=["documents", "metadatas"])
         ids = result.get("ids", [])
         docs = result.get("documents", []) or []
         metas = result.get("metadatas", []) or []
 
-        chunks = []
+        chunks: list[dict[str, Any]] = []
         for cid, text, meta in zip(ids, docs, metas):
             if not text or not isinstance(text, str) or not text.strip():
                 continue
+            meta_dict = dict(meta) if meta else {}
+            if source_filter:
+                src = str(meta_dict.get("source") or meta_dict.get("source_path") or "")
+                if source_filter not in src:
+                    continue
             chunks.append({
                 "id": cid,
                 "text": text,
-                "metadata": dict(meta) if meta else {},
+                "metadata": meta_dict,
             })
         logger.info(
-            "Fetched %d non-empty chunks from collection '%s' (collection size: %d)",
+            "Fetched %d non-empty chunks from collection '%s' (collection size: %d, source_filter=%r)",
             len(chunks),
             collection,
             count,
+            source_filter,
         )
         return chunks
 
