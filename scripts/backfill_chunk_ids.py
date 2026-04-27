@@ -69,18 +69,22 @@ def _backfill_one(
     top_k: int,
     threshold: float,
 ) -> tuple[list[str], list[float]]:
-    """Embed ground_truth + query vector store; return (chunk_ids_above_threshold, scores)."""
+    """Embed ground_truth + query vector store; return (chunk_ids_above_threshold, scores).
+
+    Note: ``collection`` 参数当前被记录但实际查询走 ``settings.vector_store.collection_name``
+    (BaseVectorStore.query 不接受 collection 重载)。CLI 调用方需保证 settings 已指向
+    正确 collection,或在调用前临时改 settings。
+    """
     if not ground_truth or not ground_truth.strip():
         return [], []
     vectors = embedding_factory_instance.embed([ground_truth])
     if not vectors:
         return [], []
     query_vec = vectors[0]
-    # base_vector_store.query expects a query vector + top_k
+    # base_vector_store.query signature: query(vector, top_k, filters=None, trace=None)
     results = vector_store.query(
-        query_vector=query_vec,
+        vector=query_vec,
         top_k=top_k,
-        collection_name=collection,
     )
     # results is List[Dict] with keys id/score/text/metadata (or similar);
     # normalize to id+score

@@ -25,6 +25,16 @@ from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Windows 默认 stdout 用 GBK 编码,遇到非 ASCII 字符(中文 / NBSP \xa0)会炸。
+# 强制 UTF-8 让 case 预览正常打印(MT5 中文语料 / RAGAS 输出常含此类字符)。
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass  # Python 3.6 及以下没有 reconfigure;此分支不会发生(项目 >= 3.10)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

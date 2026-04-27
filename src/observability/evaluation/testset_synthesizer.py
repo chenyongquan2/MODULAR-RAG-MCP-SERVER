@@ -95,10 +95,11 @@ class TestsetSynthesizer:
             raise ValueError(f"target_count must be > 0, got {target_count}")
         dist = self._validate_distribution(distribution or DEFAULT_DISTRIBUTION)
 
-        # 过滤后的样本量需要 enough 给 RAGAS 选种子,所以拉取上限放到
-        # target_count * 50 让 source_filter 有足够过滤空间;无过滤场景仍是 *5
+        # source_filter 设置时,匹配的 chunks 可能集中在 collection 末尾(例如
+        # 中英混合 collection 中英文 chunks 在中文之后);保险起见拉取 None 表示
+        # 全量(_fetch_chunks 内部会用 col.count() 做上限)。无过滤场景仍是 *5。
         fetch_limit = chunk_sample_size or (
-            target_count * 50 if source_filter else target_count * 5
+            None if source_filter else target_count * 5
         )
         chunks = self._fetch_chunks(collection, fetch_limit, source_filter=source_filter)
         if not chunks:
@@ -194,7 +195,7 @@ class TestsetSynthesizer:
     def _fetch_chunks(
         self,
         collection: str,
-        limit: int,
+        limit: Optional[int],
         source_filter: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """从 vector store 拉取 chunks 用作合成语料。
@@ -232,7 +233,8 @@ class TestsetSynthesizer:
             return []
 
         # ChromaDB get(limit=N) 不支持 random sampling;按需多取以便过滤
-        n = min(limit, count)
+        # limit=None 表示拉全集(用于 source_filter 在 collection 末尾的场景)
+        n = count if limit is None else min(limit, count)
         result = col.get(limit=n, include=["documents", "metadatas"])
         ids = result.get("ids", [])
         docs = result.get("documents", []) or []
@@ -244,8 +246,12 @@ class TestsetSynthesizer:
                 continue
             meta_dict = dict(meta) if meta else {}
             if source_filter:
+                # 检查多个候选 metadata 字段:source / source_path 是物理文件名,
+                # collection 是项目内"逻辑 collection 名"标签。只要任一字段含
+                # source_filter 子串即认为匹配。
                 src = str(meta_dict.get("source") or meta_dict.get("source_path") or "")
-                if source_filter not in src:
+                logical_col = str(meta_dict.get("collection") or "")
+                if source_filter not in src and source_filter not in logical_col:
                     continue
             chunks.append({
                 "id": cid,

@@ -1,0 +1,105 @@
+{
+  "_schema_version": 1,
+  "language": "zh",
+  "version": "v1.0",
+  "created_at": "2026-04-27T03:30:24.546645+00:00",
+  "source_corpus_collection": "",
+  "_refine_summary": {
+    "keep": 5,
+    "edit": 0,
+    "drop": 0,
+    "skip": 0
+  },
+  "test_cases": [
+    {
+      "query": "MetaTrader 5 API \\u4e3a\\u63a5\\u5165\\u6570\\u636e\\u5e93\\u63d0\\u4f9b\\u4e86\\u4ec0\\u4e48\\uff1f",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8_7c3b142e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_5_9c43448e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_0_d8e2d4ed",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_0_b5d1e1df",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_12815_d3ccd16b"
+      ],
+      "expected_sources": [],
+      "ground_truth": "MetaTrader 5 API provides interfaces for connecting to databases.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What must happen to the sink object until IMTServerAPI::TimeUnsubscribe is called?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7540_fb7c8b05",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7925_fbd64264",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8281_d01d3128",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8272_b0d30458",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2271_c60c0dae"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The object pointed to by the sink must be retained in memory (must not be deleted).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTConHoliday::Release method?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18181_ffa7c934",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_11890_e1488116",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18180_f4af92d6",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_60_ba98a2a6",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_10214_d9b2b07e"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The purpose of the IMTConHoliday::Release method is to delete the created object.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the function of the NetServerShift method in IMTServerAPI?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_381_37e812a9",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3521_34220a51",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_229_f9f7c826",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3522_16c9182d",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1017_79a8cbc9"
+      ],
+      "expected_sources": [],
+      "ground_truth": "Modifies the position of the server configuration in the list.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does `IMTServerAPI::GatewayUnsubscribe` do to gateway configuration events?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_541_caa93bd5",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_831_b06a1ff9",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2629_45eb00db",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4205_a1cc392e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_849_39d4550a"
+      ],
+      "expected_sources": [],
+      "ground_truth": "It unsubscribes from events and hooks related to gateway configuration.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    }
+  ]
+}
