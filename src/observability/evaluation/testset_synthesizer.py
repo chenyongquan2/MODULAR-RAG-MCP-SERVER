@@ -95,11 +95,11 @@ class TestsetSynthesizer:
             raise ValueError(f"target_count must be > 0, got {target_count}")
         dist = self._validate_distribution(distribution or DEFAULT_DISTRIBUTION)
 
-        # source_filter 设置时,匹配的 chunks 可能集中在 collection 末尾(例如
-        # 中英混合 collection 中英文 chunks 在中文之后);保险起见拉取 None 表示
-        # 全量(_fetch_chunks 内部会用 col.count() 做上限)。无过滤场景仍是 *5。
+        # source_filter 设置时,_fetch_chunks 优先走 chromadb server-side where
+        # filter(O(K) 而非 O(N)),所以这里的 limit 仅用于 fallback 客户端过滤
+        # 路径。无过滤场景 limit = target_count * 5 经验值。
         fetch_limit = chunk_sample_size or (
-            None if source_filter else target_count * 5
+            target_count * 100 if source_filter else target_count * 5
         )
         chunks = self._fetch_chunks(collection, fetch_limit, source_filter=source_filter)
         if not chunks:
@@ -232,10 +232,35 @@ class TestsetSynthesizer:
         if count == 0:
             return []
 
-        # ChromaDB get(limit=N) 不支持 random sampling;按需多取以便过滤
-        # limit=None 表示拉全集(用于 source_filter 在 collection 末尾的场景)
-        n = count if limit is None else min(limit, count)
-        result = col.get(limit=n, include=["documents", "metadatas"])
+        # 当 source_filter 设置时,优先尝试 chromadb 的 server-side where clause
+        # 在 metadata 上精确匹配,O(K) 而非 O(N)。ChromaDB 支持 $eq;若 source_filter
+        # 与某个常见 metadata key 的 value 匹配(典型:collection / source / source_path
+        # 完整值),server-side 路径直接命中,避免拉全集 + 客户端过滤的 O(N) 嵌入开销。
+        # 失败 → fallback 客户端 substring 过滤(此时仍受 limit 上限保护)。
+        result = None
+        if source_filter:
+            for key in ("collection", "source", "source_path"):
+                try:
+                    r = col.get(
+                        where={key: source_filter},
+                        include=["documents", "metadatas"],
+                    )
+                    if r.get("ids"):
+                        logger.info(
+                            "server-side where filter '%s == %s' returned %d chunks",
+                            key, source_filter, len(r["ids"]),
+                        )
+                        result = r
+                        break
+                except Exception as exc:
+                    logger.debug("server-side where '%s' failed: %s", key, exc)
+                    continue
+
+        # 客户端路径(无 source_filter,或 server-side 没命中):按 limit 拉,客户端过滤
+        if result is None:
+            n = count if limit is None else min(limit, count)
+            result = col.get(limit=n, include=["documents", "metadatas"])
+
         ids = result.get("ids", [])
         docs = result.get("documents", []) or []
         metas = result.get("metadatas", []) or []
@@ -245,13 +270,17 @@ class TestsetSynthesizer:
             if not text or not isinstance(text, str) or not text.strip():
                 continue
             meta_dict = dict(meta) if meta else {}
+            # server-side filter 已在 DB 层应用,client-side 仍做一次 substring fallback
+            # (覆盖 server-side 没匹配但 substring 可匹配的场景,例如部分文件名)
             if source_filter:
-                # 检查多个候选 metadata 字段:source / source_path 是物理文件名,
-                # collection 是项目内"逻辑 collection 名"标签。只要任一字段含
-                # source_filter 子串即认为匹配。
                 src = str(meta_dict.get("source") or meta_dict.get("source_path") or "")
                 logical_col = str(meta_dict.get("collection") or "")
-                if source_filter not in src and source_filter not in logical_col:
+                if (
+                    source_filter not in src
+                    and source_filter not in logical_col
+                    and source_filter != src
+                    and source_filter != logical_col
+                ):
                     continue
             chunks.append({
                 "id": cid,
