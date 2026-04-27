@@ -95,11 +95,12 @@ class TestsetSynthesizer:
             raise ValueError(f"target_count must be > 0, got {target_count}")
         dist = self._validate_distribution(distribution or DEFAULT_DISTRIBUTION)
 
-        # source_filter 设置时,_fetch_chunks 优先走 chromadb server-side where
-        # filter(O(K) 而非 O(N)),所以这里的 limit 仅用于 fallback 客户端过滤
-        # 路径。无过滤场景 limit = target_count * 5 经验值。
+        # source_filter 模式下设上限:RAGAS InMemoryDocumentStore 会 embed 每个
+        # 拉取到的 chunk(实测 ~750 chunks 跑 ~10 min;再多就拖 LLM 时间)。
+        # T026 zh 实证 *50 (target=15 → 750 chunks) 跑通 ~10 min;> 50 倍数会
+        # 让 embedding 步骤拖到几十分钟以上。无过滤场景仍是 *5。
         fetch_limit = chunk_sample_size or (
-            target_count * 100 if source_filter else target_count * 5
+            target_count * 50 if source_filter else target_count * 5
         )
         chunks = self._fetch_chunks(collection, fetch_limit, source_filter=source_filter)
         if not chunks:
@@ -232,10 +233,19 @@ class TestsetSynthesizer:
         if count == 0:
             return []
 
+        # 关键约束:server-side where 路径仍要传 limit,否则会一次拉全部匹配的
+        # chunks(可能数万条),让下游 RAGAS InMemoryDocumentStore 按全量 embed —
+        # 实测拉 31K 英文 chunks 后 RAGAS embedding 跑了 60K+ 节点,ETA 7+ 小时。
+        # 真实使用 chunk_sample_size 上限(target_count * 100 经验值,够 RAGAS 选种子)。
+        effective_limit = (
+            count if limit is None
+            else min(int(limit), count)
+        )
+
         # 当 source_filter 设置时,优先尝试 chromadb 的 server-side where clause
         # 在 metadata 上精确匹配,O(K) 而非 O(N)。ChromaDB 支持 $eq;若 source_filter
         # 与某个常见 metadata key 的 value 匹配(典型:collection / source / source_path
-        # 完整值),server-side 路径直接命中,避免拉全集 + 客户端过滤的 O(N) 嵌入开销。
+        # 完整值),server-side 路径直接命中,避免拉全集 + 客户端过滤的开销。
         # 失败 → fallback 客户端 substring 过滤(此时仍受 limit 上限保护)。
         result = None
         if source_filter:
@@ -243,12 +253,14 @@ class TestsetSynthesizer:
                 try:
                     r = col.get(
                         where={key: source_filter},
+                        limit=effective_limit,
                         include=["documents", "metadatas"],
                     )
                     if r.get("ids"):
                         logger.info(
-                            "server-side where filter '%s == %s' returned %d chunks",
-                            key, source_filter, len(r["ids"]),
+                            "server-side where filter '%s == %s' returned %d chunks "
+                            "(limit=%d)",
+                            key, source_filter, len(r["ids"]), effective_limit,
                         )
                         result = r
                         break
@@ -258,8 +270,7 @@ class TestsetSynthesizer:
 
         # 客户端路径(无 source_filter,或 server-side 没命中):按 limit 拉,客户端过滤
         if result is None:
-            n = count if limit is None else min(limit, count)
-            result = col.get(limit=n, include=["documents", "metadatas"])
+            result = col.get(limit=effective_limit, include=["documents", "metadatas"])
 
         ids = result.get("ids", [])
         docs = result.get("documents", []) or []

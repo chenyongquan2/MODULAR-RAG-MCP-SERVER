@@ -82,10 +82,11 @@ evaluation:
   # 占位金标 (US1 阶段使用)
   golden_test_set: ./tests/fixtures/golden_test_set.json
 
-  # 中英分语种金标 (US2 完成后填充)
-  golden_test_sets_by_lang: {}
-    # zh: ./tests/fixtures/golden_test_set_zh.json
-    # en: ./tests/fixtures/golden_test_set_en.json
+  # 中英分语种金标 (T027-T029 完成,5 zh + 2 en cases — 小样本验证用,
+  # 完整 SC-002 验收需要重跑 target_count=100 产出 ≥ 40/language)
+  golden_test_sets_by_lang:
+    zh: ./tests/fixtures/golden_test_set_zh.json
+    en: ./tests/fixtures/golden_test_set_en.json
 
   # Judge LLM (仅 ragas backend 启用时必须填)
   # 复用 LLMFactory 的 5 个 provider: glm/azure/openai/ollama/deepseek
