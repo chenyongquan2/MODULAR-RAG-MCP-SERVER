@@ -4,23 +4,23 @@
   "_synthesis_metadata": {
     "generator": "ragas.testset.TestsetGenerator",
     "ragas_version": "0.1.21",
-    "judge_llm_identifier": "glm:z-ai/glm-4.7",
+    "judge_llm_identifier": "glm:minimax/minimax-m2.7",
     "embedding_identifier": "openai:text-embedding-3-small",
     "distribution": {
-      "multi_context": 0.2,
       "simple": 0.5,
+      "multi_context": 0.2,
       "reasoning": 0.3
     },
-    "synthesized_at": "2026-04-27T04:57:13.496083+00:00"
+    "synthesized_at": "2026-04-28T04:19:50.102473+00:00"
   },
   "test_cases": [
     {
-      "query": "What can be downloaded from the MetaQuotes Software Corp. support site?",
+      "query": "Question: \"Why is it recommended to perform group operations separately for each trading account?",
       "expected_chunk_ids": [],
       "expected_sources": [],
-      "ground_truth": "A single installation file used for all five MetaTrader 5 APIs.",
+      "ground_truth": "It is recommended because performing group operations separately for each trading account improves performance, particularly for bulk deletions, reducing overhead compared to handling orders across multiple accounts together.",
       "_synth_contexts": [
-        "### Setup\n\nSetup\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Getting Started](getting_started.htm) / Setup | [Previous](system_requirements.htm)  [Next](files_folders_structure.htm) | | |\n\nSetup\n\nA single installation file is used for all five MetaTrader 5 APIs. Download it from the [MetaQuotes Software Corp. support site](https://support.metaquotes.net/en/download/mt5 \"Download MetaTrader 5 Manager API\"). Run the file and follow the instructions."
+        "The bulk deletion works faster than the deletion of the same number of orders in a loop one by one using [IMTServerAPI::OrderDelete](imtserverapi_orderdelete.htm). The faster operation is particularly noticeable when deleting orders of the same account.\n\nTo improve performance, it is recommended to create arrays and perform group operations separately for each trading account.\n\n###### HistoryGet\n\nHistoryGet"
       ],
       "tags": {
         "content_type": "text",
@@ -30,16 +30,716 @@
       }
     },
     {
-      "query": "What global time settings of a trading platform can be managed using the MetaTrader 5 Server API?",
+      "query": "What triggers the MT_RET_ERR_NOTFOUND error?",
       "expected_chunk_ids": [],
       "expected_sources": [],
-      "ground_truth": "The MetaTrader 5 Server API allows managing the working time, the time zone, and the address of the server for synchronizing time.",
+      "ground_truth": "Trying to unsubscribe from an interface that has not been subscribed triggers the MT_RET_ERR_NOTFOUND error.",
       "_synth_contexts": [
-        "Time Configuration\n\nMetaTrader 5 Server API allows managing global time settings of a trading platform: adjust working time, retrieve and change the time zone and the address of the server for synchronizing time.\n\nFunctions described in this section allow managing the time configurations of the platform, as well subscribe and unsubscribe from events associated with its change."
+        "An indication of successful completion is the [MT_RET_OK](retcodes_successful.htm) response code. Otherwise, an error code will be returned.\n\nNote\n\nThis is a pair method to [IMTServerAPI::OrderSubscribe](imtserverapi_ordersubscribe.htm). If an attempt is made to unsubscribe from the interface to which it has not subscribed, [MT_RET_ERR_NOTFOUND](retcodes_common.htm) error is returned.\n\n###### OrderAdd\n\nOrderAdd"
       ],
       "tags": {
         "content_type": "text",
         "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "How does the IMTServerAPI::PositionGetByLoginsSymbol function retrieve open positions?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The IMTServerAPI::PositionGetByLoginsSymbol function retrieves open positions by taking an array of client logins, the number of those logins, a symbol identifier, and an IMTPositionArray object as parameters. It queries the server for open positions that match the specified logins and symbol, and then fills the supplied IMTPositionArray with the retrieved position data.",
+      "_synth_contexts": [
+        "IMTServerAPI::PositionRequestByLoginsSymbol\n\nGet open positions from the server by list of logins and symbol.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::PositionGetByLoginsSymbol(    const UINT64*      logins,       // logins    const UINT         logins_total, // number of logins    LPCWSTR            symbol,       // symbol    IMTPositionArray*  positions     // object of positions array    ) |\n\nParameters\n\nlogins\n\n[in]  Array of client logins.\n\nlogins_total"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does TickHistoryGet do?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It gets the history of quotes processed in accordance with the symbol configuration in the specified time range.",
+      "_synth_contexts": [
+        "##### TickHistoryGet\n\nTickHistoryGet\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Tick Data](serverapi_ticks.htm) / TickHistoryGet | [Previous](imtserverapi_tickhistorygetraw.htm)  [Next](serverapi_book.htm) | | |\n\nIMTServerAPI::TickHistoryGet\n\nGet the history of quotes processed in accordance with the symbol configuration in the specified time range."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the Server API do in the context of MailUnsubscribe?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The answer to given question is not present in context",
+      "_synth_contexts": [
+        "##### MailUnsubscribe\n\nMailUnsubscribe\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Mail Database](serverapi_mail.htm) / MailUnsubscribe | [Previous](imtserverapi_mailsubscribe.htm)  [Next](imtserverapi_mailsend.htm) | | |\n\nIMTServeAPI::MailUnsubscribe\n\nUndubscribe from events and hooks associated with changes in the mail database."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the IMTServerAPI::DealSubscribe method do?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It subscribes to events and hooks associated with changes in the database of deals.",
+      "_synth_contexts": [
+        "###### DealSubscribe\n\nDealSubscribe\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Trade](serverapi_trading.htm) / [Deals](serverapi_trading_deal.htm) / DealSubscribe | [Previous](imtserverapi_dealcreatearray.htm)  [Next](imtserverapi_dealunsubscribe.htm) | | |\n\nIMTServerAPI::DealSubscribe\n\nSubscribe to events and hooks associated with changes in the database of deals."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What actions can you perform with the internal mail system of MetaTrader 5 using the Server API?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "You can receive and send emails, as well as handle events associated with changes in the mail database of the server using the MetaTrader 5 Server API.",
+      "_synth_contexts": [
+        "Mail Database\n\nThe MetaTrader 5 Server API provides functions for working with the internal mail system of the platform. Using them you can receive and send emails, as well as handle events associated with changes in the mail database of the server."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does IMTServerAPI::CommentGetByClient do?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::CommentGetByClient retrieves comments on a client document based on a specified position, returning an array of comments. It takes a document identifier, a start position, the total number of comments to retrieve, and an output array for the comments.",
+      "_synth_contexts": [
+        "IMTServerAPI::CommentGetByClient\n\nGet comments on client documents by position.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::CommentGetByClient(    const UINT64        document_id,  // Document identifier    const UINT          position,     // Start position    const UINT          total,        // Number    IMTCommentArray*    comments      // Array of documents    ) |\n\nParameters\n\ndocument_id\n\n[in]  Document ID ([IMTDocument::RecordID](imtdocument_recordid.htm)).\n\nposition"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "**Question:**  \nWhat does the “date in seconds since 01.01.1970” indicate for the *from* and *to* parameters?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It indicates that the 'from' and 'to' parameters expect a Unix timestamp expressed as the number of seconds that have elapsed since 1 January 1970, thereby specifying the beginning and end of the desired time period.",
+      "_synth_contexts": [
+        "Parameters\n\nlogins\n\n[in]  Array of client logins.\n\nlogins_total\n\n[in]  Number of logins in the 'logins' array.\n\nfrom\n\n[in]  The beginning of the period you want to receive orders for. The date is specified in seconds which have elapsed since 01.01.1970.\n\nto\n\n[in]  The end of the period you want to receive orders for. The date is specified in seconds which have elapsed since 01.01.1970.\n\norders"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the TradeUnsubscribe method do in relation to trade requests?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The TradeUnsubscribe method unsubscribes from events and hooks associated with trade requests.",
+      "_synth_contexts": [
+        "IMTServerAPI::TradeUnsubscribe\n\nUnsubscribe from events and hooks associated with trade requests.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::TradeUnsubscribe(    IMTTradeSink*  sink      // A pointer to the IMTTradeSink object    ) |\n\nParameters\n\nsink\n\n[in]  A pointer to the object that implements the [IMTTradeSink](imttradesink.htm) interface.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What do the response codes (MT_RET_OK and MT_RET_ERR_PARTIAL) indicate about the status of orders?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK indicates that all orders have been updated, while MT_RET_ERR_PARTIAL indicates that only some of the orders have been added (partial update).",
+      "_synth_contexts": [
+        "Return value\n\nThe [MT_RET_OK](retcodes_successful.htm) response code indicates that all orders have been updated. The [MT_RET_ERR_PARTIAL](retcodes_common.htm) response code means that only some of orders have been added. Analyze the 'results' array for a detailed information on execution results. The result of update of each order from the 'orders' array is added to 'results'. The index of a result corresponds to the index of an order in the source array.\n\nNote"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of IMTServerAPI::CommonSubscribe?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The purpose of IMTServerAPI::CommonSubscribe is to subscribe to events and hooks associated with the common configuration of the platform.",
+      "_synth_contexts": [
+        "IMTServerAPI::CommonSubscribe\n\nSubscribe to events and hooks associated with the common configuration of the platform.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::CommonSubscribe(    IMTConCommonSink*  sink      // A pointer to the IMTConCommonSink object    ) |\n\nParameters\n\nsink\n\n[in]  A pointer to the object that implements the [IMTConCommonSink](imtconcommonsink.htm) interface.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "question: \"What does the MT_RET_OK response code indicate?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK is an indication of successful completion.",
+      "_synth_contexts": [
+        "Return Value\n\nAn indication of successful completion is the [MT_RET_OK](retcodes_successful.htm) response code. Otherwise, an error code will be returned.\n\nNote\n\nThe method returns an array of document descriptions: all the document states after changes by the specified author in the specified time period.\n\n##### CommentCreate\n\nCommentCreate"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTPosition object in the IMTServerAPI::PositionGet function?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The IMTPosition object is used as an output parameter to receive the trade position data for the specified user login and symbol.",
+      "_synth_contexts": [
+        "IMTServerAPI::PositionGet\n\nGet a trade position.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::PositionGet(    const UINT64  login,        // User's login    LPCWSTR       symbol,       // Symbol    IMTPosition*  position      // Position object    ) |\n\nParameters\n\nlogin\n\n[in]  The login of a user whose position should be obtained.\n\nsymbol\n\n[in]  The symbol, for which you need to get a position.\n\nposition"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "question: \"Which method must be called to delete the object created by IMTServerAPI::NewsCreate?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTNews::Release",
+      "_synth_contexts": [
+        "IMTServerAPI::NewsCreate\n\nCreate an object of a news item.\n\n| |\n| --- |\n| IMTNews*  IMTServerAPI::NewsCreate() |\n\nReturn Value\n\nIt returns a pointer to the created object that implements the [IMTNews](imtnews.htm) interface. In case of failure, it returns NULL.\n\nNote\n\nThe created object must be deleted by calling the [IMTNews::Release](imtnews_release.htm) method of this object.\n\nThis method can be used only on history servers.\n\n##### NewsSubscribe\n\nNewsSubscribe"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the “pos” parameter represent in the IMTServerAPI::AutomationShift function?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The pos parameter specifies the position of the configuration in the list, with the index starting at 0.",
+      "_synth_contexts": [
+        "IMTServerAPI::AutomationShift\n\nChange the position of an automation configuration in the list.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::AutomationShift(    const UINT  pos,       // Configuration position    const int   shift      // Shift    ) |\n\nParameters\n\npos\n\n[in]  Position of the configuration, starting at 0.\n\nshift\n\n[in]  The shift of the configuration relative to its current position. A negative value means shift to the top of the list, a positive value - to its end.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What happens after the final check in the account creation process?\"\n\nThis question can be fully answered from the context, which states: \"After a final check, the manager can move the account to the appropriate real group.",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "After a final check, the manager can move the account to the appropriate real group.",
+      "_synth_contexts": [
+        "* The user requests an account from the terminal by filling our a simple form and uploading the relevant documents\n* The data is automatically verified through the KYC provider\n* A verification report is added to the client record, and the corresponding status is assigned to it\n* After a final check, the manager can move the account to the appropriate real group"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "**Question:**  \nWhat is the purpose of the `IMTServerAPI::DealGetByGroup` function?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "To retrieve (receive) deals related to a specified group of accounts.",
+      "_synth_contexts": [
+        "IMTServerAPI::DealGetByGroup\n\nReceive deals related to a group of accounts.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::DealGetByGroup(    LPCWSTR       group,      // Group    const INT64   from,       // Period from    const INT64   to,         // Period to    IMTDealArray* deals       // Array of deals    ) |\n\nParameters\n\ngroup\n\n[in] The group for which deals are requested.\n\nfrom"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTServerAPI::KYCDelete function, and what does it return on successful completion?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The IMTServerAPI::KYCDelete function deletes a KYC provider configuration by its index (position). On successful completion, it returns the MT_RET_OK response code; otherwise, an error code is returned.",
+      "_synth_contexts": [
+        "The [IMTConKYC::Name](imtconkyc_name.htm) value is used as the configuration name.\n\nIMTServerAPI::KYCDelete\n\nDelete a KYC provider configuration by index.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::KYCDelete(    const UINT  pos      // Position of configuration    ) |\n\nParameters\n\npos\n\n[in]  Position of the configuration, starting with 0.\n\nReturn Value\n\nAn indication of successful completion is the [MT_RET_OK](retcodes_successful.htm) response code. Otherwise, an error code will be returned."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does HolidayCreate do in the IMTServerAPI?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "HolidayCreate creates an object of the configuration of holidays.",
+      "_synth_contexts": [
+        "###### HolidayCreate\n\nHolidayCreate\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [Holidays](serverapi_config_holiday.htm) / HolidayCreate | [Previous](serverapi_config_holiday.htm)  [Next](imtserverapi_holidaysubscribe.htm) | | |\n\nIMTServerAPI::HolidayCreate\n\nCreate an object of the configuration of holidays."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "**Question:** From which plugins can a configuration be added or updated?\n\n**Answer:** A configuration can be added or updated only from the plugins that run on the main server.",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "A configuration can be added or updated only from the plugins that run on the main server.",
+      "_synth_contexts": [
+        "A configuration can be added or updated only from the plugins that run on the main server. For all other plugins, the response code [MT_RET_ERR_NOTMAIN](retcodes_common.htm) will be returned.\n\nBefore adding, the correctness of the account is checked. If the record is incorrect, the error code [MT_RET_ERR_PARAMS](retcodes_common.htm) is returned.\n\n###### SubscriptionCfgDelete\n\nSubscriptionCfgDelete"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTOrderArray parameter in the OrderGetByGroupSymbol function?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The IMTOrderArray parameter is an output array that receives the list of open orders matching the specified group and symbol.",
+      "_synth_contexts": [
+        "IMTAdminAPI::OrderGetByGroupSymbol\n\nGet open orders from the server by group and symbol.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::OrderGetByGroupSymbol(    LPCWSTR            group,         // group    LPCWSTR            symbol,        // symbol    IMTOrderArray*     orders         // order array object    ) |\n\nParameters\n\ngroup"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the role of IMTConRoute::Name() according to the documentation?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTConRoute::Name() is used as the name.",
+      "_synth_contexts": [
+        "Return Value\n\nAn indication of successful completion is the [MT_RET_OK](retcodes_successful.htm) response code. Otherwise, an error code will be returned.\n\nNote\n\nThe [IMTConRoute::Name()](imtconroute_name.htm) value is used as the name.\n\n##### Reports\n\nReport Configuration"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the KYCGroupCreate function?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It creates an object of an account group for which the messenger will be used.",
+      "_synth_contexts": [
+        "###### KYCGroupCreate\n\nKYCGroupCreate\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [KYC](serverapi_kyc.htm) / KYCGroupCreate | [Previous](imtserverapi_kyccountrycreate.htm)  [Next](imtserverapi_kycsubscribe.htm) | | |\n\nIMTServerAPI::KYCGroupCreate\n\nCreate an object of an account group for which the messenger will be used."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What response code indicates a successful completion of the MessengerVerifyPhone operation?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK",
+      "_synth_contexts": [
+        "Return Value\n\nAn indication of successful completion is the [MT_RET_OK](retcodes_successful.htm) response code. Otherwise, an error code will be returned.\n\nNote\n\nThe [IMTConMessenger::Name](imtconmessenger_name.htm) value is used for the name.\n\n###### MessengerVerifyPhone\n\nMessengerVerifyPhone"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Under what circumstances does a plugin off the main trade server receive MT_RET_ERR_NOTMAIN when updating a deal, and what code is returned if the deal isn’t found?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "A plugin that runs on a different trade server than the one where the deal was created will receive the MT_RET_ERR_NOTMAIN response code when updating a deal. If the deal is not found, the response code MT_RET_ERR_NOTFOUND is returned.",
+      "_synth_contexts": [
+        "Note\n\nDeals can only be updated from the plugins, which run on the same trade server where the deals have been created. For all other plugins the response code [MT_RET_ERR_NOTMAIN](retcodes_api.htm) will be returned. If the object is not found, the response code [MT_RET_ERR_NOTFOUND](retcodes_common.htm) will be returned.",
+        "Note\n\nDeals can be updated only from the plugins, which run on the same trade server where the deals were created. For all other plugins the response code [MT_RET_ERR_NOTMAIN](retcodes_api.htm) will be returned. If the object is not found, the response code [MT_RET_ERR_NOTFOUND](retcodes_common.htm) will be returned."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Adding deals directly to a client’s TH—what’s the effect on bal/pos, and what inconsistency does IMTAdminAPI::PositionCheck show for pos vs. TH?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Adding deals directly to a client's trading history does not affect their balances or positions. Consequently, IMTAdminAPI::PositionCheck shows that the clients' positions do not match (or coincide with) the history of deals.",
+      "_synth_contexts": [
+        "Use this method very carefully. Deals are added directly to clients' trading histories. The addition of deals does not affect clients' balances and positions. Therefore, [IMTAdminAPI::PositionCheck](imtadminapi_positioncheck.htm) will show that clients' positions do not match the history of deals",
+        "You should use the method carefully. Deals are directly added to clients' trading history. Addition of a deal does not affect the clients' balances and positions. Therefore, [IMTAdminAPI::PositionCheck](imtadminapi_positioncheck.htm) will show that the clients' positions do not coincide with their trading history"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::VPSCreate returns? Which method releases it?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::VPSCreate returns a pointer to the created object that implements the IMTConVPS interface (or NULL on failure). The created object should be destroyed by calling the IMTConVPS::Release method.",
+      "_synth_contexts": [
+        "###### VPSCreate\n\nVPSCreate\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [VPS](serverapi_vps.htm) / VPSCreate | [Previous](serverapi_vps.htm)  [Next](imtserverapi_vpscreaterule.htm) | | |\n\nIMTServerAPI::VPSCreate\n\nCreate the VPS sponsorship settings object.\n\n| |\n| --- |\n| IMTConVPS*  IMTServerAPI::VPSCreate() |\n\nReturn Value",
+        "IMTServerAPI::VPSCreate\n\nCreate the VPS sponsorship settings object.\n\n| |\n| --- |\n| IMTConVPS*  IMTServerAPI::VPSCreate() |\n\nReturn Value\n\nIt returns a pointer to the created object that implements the [IMTConVPS](imtconvps.htm) interface. In case of failure, it returns NULL.\n\nNote\n\nThe created object should be destroyed by calling the [IMTConVPS::Release](imtconvps_release.htm) method of this object.\n\n###### VPSCreateRule\n\nVPSCreateRule"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does GrpAdd do to a grp config, and how does it differ from GrpCreate?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "GroupAdd adds or updates a group configuration, while GroupCreate creates an object of the group configuration. The key difference is that GroupAdd can both add new configurations and update existing ones, whereas GroupCreate specifically creates new object configurations.",
+      "_synth_contexts": [
+        "###### GroupAdd\n\nGroupAdd\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [Groups](serverapi_config_group.htm) / GroupAdd | [Previous](imtserverapi_groupunsubscribe.htm)  [Next](imtserverapi_groupdelete.htm) | | |\n\nIMTServerAPI::GroupAdd\n\nAdds or updates a group configuration.",
+        "###### GroupCreate\n\nGroupCreate\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [Groups](serverapi_config_group.htm) / GroupCreate | [Previous](serverapi_config_group.htm)  [Next](imtserverapi_groupsymbolcreate.htm) | | |\n\nIMTServerAPI::GroupCreate\n\nCreate an object of the group configuration."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which IMTSrvAPI method ret UINT gives tot srv configs?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::NetServerTotal",
+      "_synth_contexts": [
+        "###### NetServerTotal\n\nNetServerTotal\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [Network](serverapi_config_network.htm) / NetServerTotal | [Previous](imtserverapi_netservershift.htm)  [Next](imtserverapi_netservernext.htm) | | |\n\nIMTServerAPI::NetServerTotal",
+        "IMTServerAPI::NetServerTotal\n\nThe total number of server configurations available in the platform.\n\n| |\n| --- |\n| UINT  IMTServerAPI::NetServerTotal() |\n\nReturn Value\n\nThe number of server configurations in the trading platform.\n\n###### NetServerNext\n\nNetServerNext"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What’s the purpose of the sink param IMTConRouteSink in RouteUnsubscribe vs IMTConPluginSink in PluginUnsubscribe?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The sink parameter in RouteUnsubscribe is a pointer to an IMTConRouteSink object that allows unsubscribing from events and hooks related to request routing configuration. In PluginUnsubscribe, the sink parameter is a pointer to an IMTConPluginSink object that enables unsubscribing from events and hooks associated with plugin configuration. Both parameters serve the purpose of specifying the sink object to receive unsubscription notifications, but they target different configuration domains (routing vs. plugins).",
+      "_synth_contexts": [
+        "IMTServerAPI::RouteUnsubscribe\n\nUnsubscribe from events and hooks associated with the configuration of request routing.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::RouteUnsubscribe(    IMTConRouteSink*  sink      // A pointer to the IMTConRouteSink object    ) |\n\nParameters\n\nsink\n\n[in]  A pointer to the object that implements the [IMTConRouteSink](imtconroutesink.htm) interface.\n\nReturn Value",
+        "IMTServerAPI::PluginUnsubscribe\n\nUnsubscribe from events and hooks associated with the configuration of plugins.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::PluginUnsubscribe(    IMTConPluginSink*  sink      // A pointer to the IMTConPluginSink object    ) |\n\nParameters\n\nsink\n\n[in]  A pointer to the object that implements the [IMTConPluginSink](imtconpluginsink.htm) interface.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "MTE+TS: which two prohibited practices—custom sync primitives on server threads & DB API calls in hooks—should be avoided?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The two prohibited practices are: (1) using custom synchronization primitives that affect the operation of server threads, and (2) making calls to the trading database API (e.g., IMTServerAPI methods) within hooks or client base events.",
+      "_synth_contexts": [
+        "| |\n| --- |\n| All the plugin components must be implemented thread-safe, except for calls of IMTServerAPI methods. |\n\nMultithreaded interaction with the trade server\n\nWe strongly advise you against interfering with the server threads operation and interaction logic. In particular, we urge you not to implement your own synchronization primitives affecting the server threads operation (i.e. not to use them in the [hooks](serverapi_hooks.htm)).",
+        "* Do not try to directly control the interaction of server internal threads by explicitly stopping them or applying synchronization primitives.\n* The hooks and client base events (for example, [IMTUserSink::OnUser*](imtusersink_onuseradd.htm), [IMTUserSink::HookUser*](imtusersink_hookuseradd.htm)) should not contain calls of the API methods associated with the trading databases (for example, [IMTServerAPI::PositionGet](imtserverapi_positionget.htm))."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "TradeSubscribe in IMTServerAPI vs TradeSubscribeEOD – what's the diff?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The answer to given question is not present in context",
+      "_synth_contexts": [
+        "###### TradeSubscribe\n\nTradeSubscribe\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Trade](serverapi_trading.htm) / [Trade Requests](serverapi_trading_request.htm) / TradeSubscribe | [Previous](imtserverapi_tradeexecutioncreate.htm)  [Next](imtserverapi_tradeunsubscribe.htm) | | |\n\nIMTServerAPI::TradeSubscribe\n\nSubscribe to events and hooks associated with trade requests.",
+        "###### TradeSubscribeEOD\n\nTradeSubscribeEOD\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Trade](serverapi_trading.htm) / [Trade Requests](serverapi_trading_request.htm) / TradeSubscribeEOD | [Previous](imtserverapi_tradebalancecheck.htm)  [Next](imtserverapi_tradeunsubscribeeod.htm) | | |\n\nIMTServerAPI::TradeSubscribeEOD"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::ManagerShift: how does it reorder the mgr config list, and what are pos and shift for?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::ManagerShift reorders the manager configuration list by moving the configuration at the position specified by pos (starting from 0) by the amount indicated by shift. A negative shift moves the configuration toward the top of the list, while a positive shift moves it toward the end.",
+      "_synth_contexts": [
+        "###### ManagerShift\n\nManagerShift\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [Managers](serverapi_config_manager.htm) / ManagerShift | [Previous](imtserverapi_managerdelete.htm)  [Next](imtserverapi_managertotal.htm) | | |\n\nIMTServerAPI::ManagerShift\n\nChange the position of a manager configuration in the list.",
+        "IMTServerAPI::ManagerShift\n\nChange the position of a manager configuration in the list.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::ManagerShift(    const UINT  pos,       // Position of the configuration    const int   shift      // Shift    ) |\n\nParameters\n\npos\n\n[in]  Position of the configuration, starting with 0.\n\nshift\n\n[in]  Shift of the configuration relative to its current position. A negative value means the shift to the top of the list, a positive value - to its end.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::NetServerGet – purpose & ID(in)/config(out) params?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::NetServerGet retrieves a server configuration by its ID. The id parameter is an input specifying the server ID, while the config parameter is an output pointer to a server configuration object that must be created beforehand using IMTServerAPI::NetServerCreate.",
+      "_synth_contexts": [
+        "###### NetServerGet\n\nNetServerGet\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [Network](serverapi_config_network.htm) / NetServerGet | [Previous](imtserverapi_netservernext.htm)  [Next](imtserverapi_tlscertificateupdate.htm) | | |\n\nIMTServerAPI::NetServerGet\n\nGet a server configuration by the ID.",
+        "IMTServerAPI::NetServerGet\n\nGet a server configuration by the ID.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::NetServerGet(    const UINT64   id,         // ID    IMTConServer*  config      // Comment    ) |\n\nParameters\n\nid\n\n[in]  Server ID.\n\nconfig\n\n[out]  The server configuration object. The config object must first be created using the [IMTServerAPI::NetServerCreate](imtserverapi_netservercreate.htm) method.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What codes signal failure and when?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Failure is signaled by error codes: MT_RET_ERR_NOTMAIN is returned when attempting to delete a configuration from a plugin that does not run on the main server, and MT_RET_ERR_NOTFOUND is returned when the object is not found. Any other error code indicates a failure.",
+      "_synth_contexts": [
+        "An indication of successful completion is the [MT_RET_OK](retcodes_successful.htm) response code. Otherwise, an error code will be returned.\n\nNote\n\nA configuration can be deleted only from the applications that run on the main server. For all other plugins the response code [MT_RET_ERR_NOTMAIN](retcodes_api.htm) will be returned. If the object is not found, the response code [MT_RET_ERR_NOTFOUND](retcodes_common.htm) is returned."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which interface does sink need for IMTServeAPI::MailSubscribe to hook mail DB changes?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The sink must implement the IMTMailSink interface.",
+      "_synth_contexts": [
+        "IMTServeAPI::MailSubscribe\n\nSubscribe to events and hooks associated with changes in the mail database.\n\n| |\n| --- |\n| MTAPIRES  IMTServerAPI::MailSubscribe(    IMTMailSink*  sink      // A pointer at the IMTMailSink object    ) |\n\nParameters\n\nsink\n\n[in]  A pointer to the object that implements the [IMTMailSink](imtmailsink.htm) interface.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::NetServerCreate object's interface & which Release frees it?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It implements the IMTConServer interface, and it is freed by calling the IMTConServer::Release method of that object.",
+      "_synth_contexts": [
+        "IMTServerAPI::NetServerCreate\n\nCreate an object of configuration of the platform components.\n\n| |\n| --- |\n| IMTConServer*  IMTServerAPI::NetServerCreate() |\n\nReturn Value\n\nIt returns a pointer to the created object that implements the [IMTConServer](imtconserver.htm) interface. In case of failure, it returns NULL.\n\nNote\n\nThe created object must be deleted by calling the [IMTConServer::Release](imtconserver_release.htm) method of this object.\n\n###### NetServerClusterStateCreate"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "When does MT_RET_ERR_DUPLICATE trigger, and which op requires sink mem pers?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_ERR_DUPLICATE is returned when the same IMTConVPSSink interface tries to subscribe to an event a second time. The sink object must stay in memory (i.e., must not be removed) until the VPSUnsubscribe call (or until the plugin is deleted).",
+      "_synth_contexts": [
+        "Note\n\nSubscribing to events is thread safe. The same [IMTConVPSSink](imtconvpssink.htm) interface cannot subscribe to an event twice. The [MT_RET_ERR_DUPLICATE](retcodes_common.htm) response code is returned in this case.\n\nThe object at which sink points, must remain in the memory (must not be removed) until the call of [IMTServerAPI::VPSUnsubscribe](imtserverapi_vpsunsubscribe.htm) or until the plugin is deleted.\n\n###### VPSUnsubscribe\n\nVPSUnsubscribe"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "FeederAdd's dual effect on a feed cfg?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Adds or updates a data feed configuration.",
+      "_synth_contexts": [
+        "###### FeederAdd\n\nFeederAdd\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Configuration Databases](serverapi_configuration.htm) / [Data Feeds](serverapi_config_datafeeds.htm) / FeederAdd | [Previous](imtserverapi_feederunsubscribe.htm)  [Next](imtserverapi_feederdelete.htm) | | |\n\nIMTServerAPI::FeederAdd\n\nAdds or updates a data feed configuration."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which IMTAccount field holds the actual balance, and what do docs say about its uniqueness?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The Balance field holds the actual balance in the IMTAccount object. According to the docs, only the Balance field is used in the IMTAccount object for passing the actual balance value.",
+      "_synth_contexts": [
+        "account\n\n[in] [Trading account object](imtaccount.htm). Only [Balance](imtaccount_balance.htm) field is used in IMTAccount object for passing the actual balance value.\n\norders\n\n[in] [An object of the array of orders](imtorderarray.htm) placed for the specified account.\n\npositions\n\n[in] [An object of the array of positions](imtpositionarray.htm) placed for the specified account.\n\nReturn Value"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which events/hooks does IMTServerAPI::ClientUnsubscribe deactivate?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::ClientUnsubscribe deactivates the events and hooks associated with changes in the client base.",
+      "_synth_contexts": [
+        "##### ClientUnsubscribe\n\nClientUnsubscribe\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Clients](serverapi_clients.htm) / ClientUnsubscribe | [Previous](imtserverapi_clientsubscribe.htm)  [Next](imtserverapi_clientadd.htm) | | |\n\nIMTServerAPI::ClientUnsubscribe\n\nUnsubscribe from the events and hooks associated with changes in the client base."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::CommentSubscribe hooks which evts?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Subscribe to events and hooks associated with changes in the comment database.",
+      "_synth_contexts": [
+        "##### CommentSubscribe\n\nCommentSubscribe\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Clients](serverapi_clients.htm) / CommentSubscribe | [Previous](imtserverapi_commentcreatearray.htm)  [Next](imtserverapi_commentunsubscribe.htm) | | |\n\nIMTServerAPI::CommentSubscribe\n\nSubscribe to events and hooks associated with changes in the comment database."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "When unsubbing an unsubbed interface, what error does MT_RET_OK signal?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The answer to given question is not present in context",
+      "_synth_contexts": [
+        "An indication of successful completion is the [MT_RET_OK](retcodes_successful.htm) response code. Otherwise, an error code will be returned.\n\nNote\n\nThis is a pair method to [IMTServerAPI::HistorySubscribe](imtserverapi_historysubscribe.htm). If an attempt is made to unsubscribe from the interface to which it has not subscribed, [MT_RET_ERR_NOTFOUND](retcodes_common.htm) error is returned.\n\n###### HistoryAdd\n\nHistoryAdd"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does HistoryAddBatch do w/ closed orders?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It adds closed orders to a server database in bulk.",
+      "_synth_contexts": [
+        "###### HistoryAddBatch\n\nHistoryAddBatch\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Server API](serverapi.htm) / [Main API Interface](imtserverapi.htm) / [Trade](serverapi_trading.htm) / [Orders](serverapi_trading_order.htm) / HistoryAddBatch | [Previous](imtserverapi_historyadd.htm)  [Next](imtserverapi_historyaddbatcharray.htm) | | |\n\nIMTServerAPI::HistoryAddBatch\n\nAdds closed orders to a server database in bulk."
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "After AG fetches cfg, what does AT do?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "AutomationTrigger sends an event to trigger an automation rule with the specified name.",
+      "_synth_contexts": [
+        "| [AutomationGet](imtserverapi_automationget.htm) | Get an automation configuration by name. |\n| [AutomationTrigger](imtserverapi_automationtrigger.htm) | Send an event to trigger an automation rule with the specified name. |"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What releases IMTCon from Spread?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTConSpread::Release method",
+      "_synth_contexts": [
+        "IMTServerAPI::SpreadCreate\n\nCreate an object of the configuration of a spread.\n\n| |\n| --- |\n| IMTConSpread*  IMTServerAPI::SpreadCreate() |\n\nReturn Value\n\nIt returns a pointer to the created object that implements [IMTConSpread](imtconspread.htm) interface. In case of failure, it returns NULL.\n\nNote\n\nThe created object must be destroyed by calling [IMTConSpread::Release](imtconspread_release.htm) method of this object.\n\n###### SpreadLegCreate\n\nSpreadLegCreate"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which adj ratio for old shares in spl/consol, and which rounding rule for price conv?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The answer to given question is not present in context",
+      "_synth_contexts": [
+        "[in] Number of old shares. Shares are split/consolidated in a certain ratio, while their prices are also converted accordingly.\n\nrounding_rule\n\n[in] The rounding rule in case the number of digital places of a new price exceeds the value set in the symbol's Digits parameter ([IMTConSymbol::Digits](imtconsymbol_digits.htm)). The following three options are available:\n\n* 0 standard rounding\n* 1 round down\n* 2 round up"
+      ],
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
         "language": "en",
         "doc_version": "v1"
       }

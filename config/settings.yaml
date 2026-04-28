@@ -95,7 +95,12 @@ evaluation:
   # 这样 production 答案生成与 evaluation 判分用同一可用上游
   judge_llm:
     provider: glm
-    model: z-ai/glm-4.7
+    # 2026-04-27 切换:z-ai/glm-4.7 对 RAGAS 英文 JSON schema 遵从差(T029 yield 仅 ~13%),
+    # 改用 minimax/minimax-m2.7。注意 FR-013 默认阈值在新 Judge 下需重新校准
+    # (spec.md § Assumptions § Judge 切换与阈值校准)。
+    # 2026-04-28 已知限制:minimax 无法完成 RAGAS adapt(中文 prompt 翻译需返 valid JSON),
+    # 中文金标合成被 deferred 到下个 feature(见 Feature-004 follow-up)。en 不受影响。
+    model: minimax/minimax-m2.7
     api_key: ${GLM_API_KEY}
     base_url: ${GLM_BASE_URL}
     temperature: 0.0          # Judge 推荐 0.0 提高判分稳定性

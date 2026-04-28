@@ -1,27 +1,41 @@
 {
   "_schema_version": 1,
   "language": "zh",
-  "version": "v1.0",
-  "created_at": "2026-04-27T03:30:24.546645+00:00",
-  "source_corpus_collection": "",
+  "version": "v0.1-partial",
+  "created_at": "2026-04-28T08:37:32.449006+00:00",
+  "source_corpus_collection": "default",
   "_refine_summary": {
-    "keep": 5,
-    "edit": 0,
-    "drop": 0,
-    "skip": 0
+    "keep": 6,
+    "drop": 41,
+    "drop_reasons": {
+      "language_mismatch_en_query_in_zh_set": 33,
+      "mixed_lang_en_query_zh_gt": 4,
+      "gt_not_present_in_context": 2,
+      "answer_leakage_in_query": 2
+    },
+    "kept_indices_in_candidates": [
+      10,
+      13,
+      16,
+      21,
+      23,
+      31
+    ]
   },
+  "_reviewer": "claude-sonnet-4.5 via user delegation 2026-04-28",
+  "_review_notes": "ZH set under SC-002 ≥40 threshold (have 6) — minimax/minimax-m2.7 cannot complete RAGAS adapt(language=chinese) (output non-JSON), so RAGAS internal prompts stay in English and synthesized Chinese-tagged questions came out mostly in English. Deferred to Feature-004.",
   "test_cases": [
     {
-      "query": "MetaTrader 5 API \\u4e3a\\u63a5\\u5165\\u6570\\u636e\\u5e93\\u63d0\\u4f9b\\u4e86\\u4ec0\\u4e48\\uff1f",
+      "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
       "expected_chunk_ids": [
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8_7c3b142e",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_5_9c43448e",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_0_d8e2d4ed",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_0_b5d1e1df",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_12815_d3ccd16b"
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2401_9ff41a18",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2886_a5237051",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2323_b48b9c46",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2835_610f192b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_4206_9174b80f"
       ],
       "expected_sources": [],
-      "ground_truth": "MetaTrader 5 API provides interfaces for connecting to databases.",
+      "ground_truth": "是的，文档明确说明只能从在主服务器上运行的应用程序添加或更新配置。对于其他应用程序，将返回错误代码 MT_RET_ERR_NOTMAIN。",
       "tags": {
         "content_type": "text",
         "difficulty": "simple",
@@ -30,16 +44,16 @@
       }
     },
     {
-      "query": "What must happen to the sink object until IMTServerAPI::TimeUnsubscribe is called?",
+      "query": "账户组交易的作用是什么？",
       "expected_chunk_ids": [
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7540_fb7c8b05",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7925_fbd64264",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8281_d01d3128",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8272_b0d30458",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2271_c60c0dae"
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1954_9611fe5c",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1268_533077e8",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_4871_59693cd0",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1213_3c3c9423",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1212_563a2c04"
       ],
       "expected_sources": [],
-      "ground_truth": "The object pointed to by the sink must be retained in memory (must not be deleted).",
+      "ground_truth": "账户组交易的主要作用是接收和处理与账户组相关的交易。根据上下文信息，DealGetByGroup用于接收账户组相关的交易，DealGetByGroupSymbol则根据组和交易品种获取交易。这两个API接口都服务于账户组交易的处理和检索功能。",
       "tags": {
         "content_type": "text",
         "difficulty": "simple",
@@ -48,16 +62,16 @@
       }
     },
     {
-      "query": "What is the purpose of the IMTConHoliday::Release method?",
+      "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
       "expected_chunk_ids": [
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18181_ffa7c934",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_11890_e1488116",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18180_f4af92d6",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_60_ba98a2a6",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_10214_d9b2b07e"
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1956_d65d241a",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1966_228ea928",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3236_07bc28bc",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1992_1d298533",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1969_7baa32fa"
       ],
       "expected_sources": [],
-      "ground_truth": "The purpose of the IMTConHoliday::Release method is to delete the created object.",
+      "ground_truth": "在 MTAdminCreate 中，admin 作为输出参数用于返回已创建的 IMTAdminAPI 接口指针，调用者通过该指针可以访问并使用该接口。",
       "tags": {
         "content_type": "text",
         "difficulty": "simple",
@@ -66,16 +80,16 @@
       }
     },
     {
-      "query": "What is the function of the NetServerShift method in IMTServerAPI?",
+      "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
       "expected_chunk_ids": [
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_381_37e812a9",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3521_34220a51",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_229_f9f7c826",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3522_16c9182d",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1017_79a8cbc9"
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_16821_e66ee6ac",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_16822_dd119f56",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_5660_16f31d1f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1777_6e713744",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_5243_610130c1"
       ],
       "expected_sources": [],
-      "ground_truth": "Modifies the position of the server configuration in the list.",
+      "ground_truth": "request 参数指向的是交易请求对象，即 IMTRequest 类型的对象。",
       "tags": {
         "content_type": "text",
         "difficulty": "simple",
@@ -84,16 +98,34 @@
       }
     },
     {
-      "query": "What does `IMTServerAPI::GatewayUnsubscribe` do to gateway configuration events?",
+      "query": "在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是什么？",
       "expected_chunk_ids": [
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_541_caa93bd5",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_831_b06a1ff9",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2629_45eb00db",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4205_a1cc392e",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_849_39d4550a"
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_322_05a0a9da",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_6137_1476446b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_4172_e425fd4e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_6136_cb3b480e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_323_fb844ea5"
       ],
       "expected_sources": [],
-      "ground_truth": "It unsubscribes from events and hooks related to gateway configuration.",
+      "ground_truth": "该方法将具有指定索引的源的配置数据复制到数据源对象。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "交易品种组在假期里允许客户进行哪些操作？",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_352_59357f73",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_11881_0e5e12e2",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_351_9e35b2ff",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_10184_8b586ae2",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_9188_2acb56ab"
+      ],
+      "expected_sources": [],
+      "ground_truth": "在假期里，客户可以连接、查看图表和交易历史，但不能交易。",
       "tags": {
         "content_type": "text",
         "difficulty": "simple",

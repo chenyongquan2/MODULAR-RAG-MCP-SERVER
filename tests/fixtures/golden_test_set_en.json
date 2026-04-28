@@ -2,26 +2,47 @@
   "_schema_version": 1,
   "language": "en",
   "version": "v1.0",
-  "created_at": "2026-04-27T05:08:04.095195+00:00",
-  "source_corpus_collection": "",
+  "created_at": "2026-04-28T08:38:34.214655+00:00",
+  "source_corpus_collection": "default",
   "_refine_summary": {
-    "keep": 2,
-    "edit": 0,
-    "drop": 0,
-    "skip": 0
+    "keep": 42,
+    "drop": 6,
+    "drop_indices": [
+      4,
+      16,
+      20,
+      32,
+      43,
+      47
+    ],
+    "drop_reasons_by_index": {
+      "4": "gt_not_present_in_context",
+      "16": "answer_leakage_in_query",
+      "20": "answer_leakage_in_query",
+      "32": "gt_not_present_in_context",
+      "43": "gt_not_present_in_context",
+      "47": "gt_not_present_in_context"
+    },
+    "by_difficulty": {
+      "simple": 22,
+      "reasoning": 11,
+      "multi_context": 9
+    }
   },
+  "_reviewer": "claude-sonnet-4.5 via user delegation 2026-04-28",
+  "_review_notes": "EN set: 48 candidates → 42 kept (≥40 SC-002 ✅). Dropped 4 cases where RAGAS produced 'answer not present in context' GT (useless for evaluation), and 2 cases where the answer leaked into the question. Cleaned 'question:'/'**Question:**' meta-prefix pollution from queries. Reviewer = Claude (Anthropic), independent from synthesizer (minimax/minimax-m2.7), so blind spots are orthogonal.",
   "test_cases": [
     {
-      "query": "What can be downloaded from the MetaQuotes Software Corp. support site?",
+      "query": "Why is it recommended to perform group operations separately for each trading account?",
       "expected_chunk_ids": [
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16_17949e22",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18_ded050dc",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_0_d8e2d4ed",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_9_f59f010f",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_9105_c779dc5b"
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7444_9692ddea",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5353_9692ddea",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5344_f1f00497",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7435_f1f00497",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1680_5ba8a41f"
       ],
       "expected_sources": [],
-      "ground_truth": "A single installation file used for all five MetaTrader 5 APIs.",
+      "ground_truth": "It is recommended because performing group operations separately for each trading account improves performance, particularly for bulk deletions, reducing overhead compared to handling orders across multiple accounts together.",
       "tags": {
         "content_type": "text",
         "difficulty": "simple",
@@ -30,19 +51,739 @@
       }
     },
     {
-      "query": "What global time settings of a trading platform can be managed using the MetaTrader 5 Server API?",
+      "query": "What triggers the MT_RET_ERR_NOTFOUND error?",
       "expected_chunk_ids": [
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_542_08dc6d3f",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_334_1effbe52",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18117_18d4ce37",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_43_5e3015b1",
-        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_49_f98290f9"
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16214_fb40ca31",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_6358_59d4f34b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16213_51954891",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_275_4e43e468",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8544_0fde738c"
       ],
       "expected_sources": [],
-      "ground_truth": "The MetaTrader 5 Server API allows managing the working time, the time zone, and the address of the server for synchronizing time.",
+      "ground_truth": "Trying to unsubscribe from an interface that has not been subscribed triggers the MT_RET_ERR_NOTFOUND error.",
       "tags": {
         "content_type": "text",
         "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "How does the IMTServerAPI::PositionGetByLoginsSymbol function retrieve open positions?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2080_abca78a9",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5731_1028f518",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2079_3d7c1b93",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7797_f861bb8b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7742_783ecd63"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The IMTServerAPI::PositionGetByLoginsSymbol function retrieves open positions by taking an array of client logins, the number of those logins, a symbol identifier, and an IMTPositionArray object as parameters. It queries the server for open positions that match the specified logins and symbol, and then fills the supplied IMTPositionArray with the retrieved position data.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does TickHistoryGet do?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2398_618a15e3",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_11831_e9170e76",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2391_9a23416b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2384_c121f246",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2383_2ee0c96d"
+      ],
+      "expected_sources": [],
+      "ground_truth": "It gets the history of quotes processed in accordance with the symbol configuration in the specified time range.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the IMTServerAPI::DealSubscribe method do?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1847_965921d9",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1860_347fb185",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7536_7b6fe79e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1849_13990b97",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1864_2f0b43ab"
+      ],
+      "expected_sources": [],
+      "ground_truth": "It subscribes to events and hooks associated with changes in the database of deals.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What actions can you perform with the internal mail system of MetaTrader 5 using the Server API?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2419_d156ea42",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_28867_f8d2f4b1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_21730_4fd9e702",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1552_64fd7efa",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2452_bc290d11"
+      ],
+      "expected_sources": [],
+      "ground_truth": "You can receive and send emails, as well as handle events associated with changes in the mail database of the server using the MetaTrader 5 Server API.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does IMTServerAPI::CommentGetByClient do?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1415_01d08218",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1414_11baafb1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_923_336026e8",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1411_ebe71529",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4990_45fdee68"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::CommentGetByClient retrieves comments on a client document based on a specified position, returning an array of comments. It takes a document identifier, a start position, the total number of comments to retrieve, and an output array for the comments.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the “date in seconds since 01.01.1970” indicate for the *from* and *to* parameters?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_8721_e8fb256c",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_6242_e8fb256c",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_11121_56dc59bd",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_300_56dc59bd",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3331_56dc59bd"
+      ],
+      "expected_sources": [],
+      "ground_truth": "It indicates that the 'from' and 'to' parameters expect a Unix timestamp expressed as the number of seconds that have elapsed since 1 January 1970, thereby specifying the beginning and end of the desired time period.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the TradeUnsubscribe method do in relation to trade requests?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2146_8811eaf9",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1397_e90ea17f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2147_0602c403",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2142_6abe8959",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2221_9b74ce08"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The TradeUnsubscribe method unsubscribes from events and hooks associated with trade requests.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What do the response codes (MT_RET_OK and MT_RET_ERR_PARTIAL) indicate about the status of orders?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1644_f6194391",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1772_f6194391",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7430_b324134e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5339_b324134e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7439_b324134e"
+      ],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK indicates that all orders have been updated, while MT_RET_ERR_PARTIAL indicates that only some of the orders have been added (partial update).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of IMTServerAPI::CommonSubscribe?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3447_2274fb51",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_329_e7f26a34",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_328_b18306da",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_9568_22a75d4f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1292_aea5d3fe"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The purpose of IMTServerAPI::CommonSubscribe is to subscribe to events and hooks associated with the common configuration of the platform.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the MT_RET_OK response code indicate?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_810_739dc661",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_6346_db00eee2",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_15930_3e6cf260",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_15945_3e6cf260",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_15598_3e6cf260"
+      ],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK is an indication of successful completion.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTPosition object in the IMTServerAPI::PositionGet function?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_24613_f110d088",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_24608_4d4a3fcc",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7738_dea190ba",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5757_be9ecd92",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5768_be9ecd92"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The IMTPosition object is used as an output parameter to receive the trade position data for the specified user login and symbol.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which method must be called to delete the object created by IMTServerAPI::NewsCreate?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_28948_6e3784e1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_28956_2aea663f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_23254_b3fe6967",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_19421_ba903eb0",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_23258_d02db5a1"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTNews::Release",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the “pos” parameter represent in the IMTServerAPI::AutomationShift function?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16668_ea6ebddb",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4691_658a7b1d",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16742_72d99386",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1259_12e9018b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4761_12e9018b"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The pos parameter specifies the position of the configuration in the list, with the index starting at 0.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the `IMTServerAPI::DealGetByGroup` function?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1954_9611fe5c",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5483_74e53a75",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7555_a37a7242",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7525_69efbcc1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1853_e887328e"
+      ],
+      "expected_sources": [],
+      "ground_truth": "To retrieve (receive) deals related to a specified group of accounts.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTServerAPI::KYCDelete function, and what does it return on successful completion?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1199_4cf1c46f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1200_ff9a2a6d",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1202_78c878fb",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4677_1ff331c7",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_778_b16be2e7"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The IMTServerAPI::KYCDelete function deletes a KYC provider configuration by its index (position). On successful completion, it returns the MT_RET_OK response code; otherwise, an error code is returned.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does HolidayCreate do in the IMTServerAPI?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_570_dc1459f8",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_11436_f4f27e87",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_6424_6f9efb61",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3756_53b5f35b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_355_97e35ae9"
+      ],
+      "expected_sources": [],
+      "ground_truth": "HolidayCreate creates an object of the configuration of holidays.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the IMTOrderArray parameter in the OrderGetByGroupSymbol function?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_24054_e1f913b2",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_23784_9f72a654",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_23778_7ec6a903",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_29293_201e51fa",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1702_54a54057"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The IMTOrderArray parameter is an output array that receives the list of open orders matching the specified group and symbol.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the role of IMTConRoute::Name() according to the documentation?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_926_3847eb74",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4326_a91e5947",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_21313_e284dc53",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_21314_9b8ed830",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_14081_6490f8ac"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTConRoute::Name() is used as the name.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What is the purpose of the KYCGroupCreate function?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_669_a0ba22c1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1046_d77ee992",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4479_3b7d97c6",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1036_f7c17be5",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4467_9574ddbf"
+      ],
+      "expected_sources": [],
+      "ground_truth": "It creates an object of an account group for which the messenger will be used.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What response code indicates a successful completion of the MessengerVerifyPhone operation?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16149_bbd17309",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3267_f8be600d",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3231_2bf08734",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_17375_04e860ec",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_23911_70670529"
+      ],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Under what circumstances does a plugin off the main trade server receive MT_RET_ERR_NOTMAIN when updating a deal, and what code is returned if the deal isn’t found?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1910_8feb686e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1918_a0973c74",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1925_a0973c74",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1933_23bfa8d6",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1939_95490105"
+      ],
+      "expected_sources": [],
+      "ground_truth": "A plugin that runs on a different trade server than the one where the deal was created will receive the MT_RET_ERR_NOTMAIN response code when updating a deal. If the deal is not found, the response code MT_RET_ERR_NOTFOUND is returned.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Adding deals directly to a client’s TH—what’s the effect on bal/pos, and what inconsistency does IMTAdminAPI::PositionCheck show for pos vs. TH?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5563_e08dcb4b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7613_e08dcb4b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_5574_05ffaab3",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_7624_05ffaab3",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1902_f1ccd097"
+      ],
+      "expected_sources": [],
+      "ground_truth": "Adding deals directly to a client's trading history does not affect their balances or positions. Consequently, IMTAdminAPI::PositionCheck shows that the clients' positions do not match (or coincide with) the history of deals.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::VPSCreate returns? Which method releases it?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4616_2a2c6ec5",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1152_ca8df954",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4625_be16e74e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_742_e0eec506",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4619_0dad5482"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::VPSCreate returns a pointer to the created object that implements the IMTConVPS interface (or NULL on failure). The created object should be destroyed by calling the IMTConVPS::Release method.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does GrpAdd do to a grp config, and how does it differ from GrpCreate?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_734_0309e525",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_716_636bdca1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_11449_8cae8616",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4007_3660d887",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_15798_e36b6ae4"
+      ],
+      "expected_sources": [],
+      "ground_truth": "GroupAdd adds or updates a group configuration, while GroupCreate creates an object of the group configuration. The key difference is that GroupAdd can both add new configurations and update existing ones, whereas GroupCreate specifically creates new object configurations.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which IMTSrvAPI method ret UINT gives tot srv configs?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_384_9944f24f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3525_02621a86",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_9745_a01c3fb4",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_11350_dfb8bf10",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_232_25de9894"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::NetServerTotal",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What’s the purpose of the sink param IMTConRouteSink in RouteUnsubscribe vs IMTConPluginSink in PluginUnsubscribe?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_902_6a03dde8",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_436_988b6124",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2687_c696c3e0",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4285_cb549620",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3584_800af461"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The sink parameter in RouteUnsubscribe is a pointer to an IMTConRouteSink object that allows unsubscribing from events and hooks related to request routing configuration. In PluginUnsubscribe, the sink parameter is a pointer to an IMTConPluginSink object that enables unsubscribing from events and hooks associated with plugin configuration. Both parameters serve the purpose of specifying the sink object to receive unsubscription notifications, but they target different configuration domains (routing vs. plugins).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "MTE+TS: which two prohibited practices—custom sync primitives on server threads & DB API calls in hooks—should be avoided?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_224_8656f0f6",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_215_152f8dff",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_223_d244aa44",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_213_7e7a7397",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_221_c147b43f"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The two prohibited practices are: (1) using custom synchronization primitives that affect the operation of server threads, and (2) making calls to the trading database API (e.g., IMTServerAPI methods) within hooks or client base events.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::ManagerShift: how does it reorder the mgr config list, and what are pos and shift for?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_781_170c4723",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_780_21b583a4",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4109_72a34054",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4108_004e4859",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2562_60e7fdcd"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::ManagerShift reorders the manager configuration list by moving the configuration at the position specified by pos (starting from 0) by the amount indicated by shift. A negative shift moves the configuration toward the top of the list, while a positive shift moves it toward the end.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::NetServerGet – purpose & ID(in)/config(out) params?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_390_e907ef2a",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3532_0f4f3edd",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_235_662ab845",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_9752_177bc94d",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_11356_bf08d02b"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::NetServerGet retrieves a server configuration by its ID. The id parameter is an input specifying the server ID, while the config parameter is an output pointer to a server configuration object that must be created beforehand using IMTServerAPI::NetServerCreate.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What codes signal failure and when?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_859_0a01e4a4",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_448_0a01e4a4",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_956_0a01e4a4",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_959_0a01e4a4",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1013_d8b009cf"
+      ],
+      "expected_sources": [],
+      "ground_truth": "Failure is signaled by error codes: MT_RET_ERR_NOTMAIN is returned when attempting to delete a configuration from a plugin that does not run on the main server, and MT_RET_ERR_NOTFOUND is returned when the object is not found. Any other error code indicates a failure.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which interface does sink need for IMTServeAPI::MailSubscribe to hook mail DB changes?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_28868_d6b4a996",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_21777_5da90cfa",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_25744_4fc1330d",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_27561_885c96eb",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_28525_c3261522"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The sink must implement the IMTMailSink interface.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::NetServerCreate object's interface & which Release frees it?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16982_69366178",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_16842_604aa651",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_17397_5276a305",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_17516_b3fe7631",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_17667_0d3b5747"
+      ],
+      "expected_sources": [],
+      "ground_truth": "It implements the IMTConServer interface, and it is freed by calling the IMTConServer::Release method of that object.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "When does MT_RET_ERR_DUPLICATE trigger, and which op requires sink mem pers?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1163_264fced7",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_4630_264fced7",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_9570_510cd75e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1239_f5cb5c4f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_6676_f5cb5c4f"
+      ],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_ERR_DUPLICATE is returned when the same IMTConVPSSink interface tries to subscribe to an event a second time. The sink object must stay in memory (i.e., must not be removed) until the VPSUnsubscribe call (or until the plugin is deleted).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "FeederAdd's dual effect on a feed cfg?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_508_ab45afb5",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3645_7b57ee0d",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_13876_dc662ad9",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_18108_a5b677ec",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3673_15c7bbc6"
+      ],
+      "expected_sources": [],
+      "ground_truth": "Adds or updates a data feed configuration.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which IMTAccount field holds the actual balance, and what do docs say about its uniqueness?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_23500_49906691",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_25005_0ec7bebf",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_23501_6cbdcca4",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_25006_35a770df",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_28326_4845dc3e"
+      ],
+      "expected_sources": [],
+      "ground_truth": "The Balance field holds the actual balance in the IMTAccount object. According to the docs, only the Balance field is used in the IMTAccount object for passing the actual balance value.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which events/hooks does IMTServerAPI::ClientUnsubscribe deactivate?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1296_8af915b8",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1445_946be94e",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1297_423f1284",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_842_d46e895f",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_2616_c94a65d1"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::ClientUnsubscribe deactivates the events and hooks associated with changes in the client base.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTServerAPI::CommentSubscribe hooks which evts?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1386_6b4e1a10",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1390_873f6b3b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1284_83652bdc",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1387_8f010918",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_906_1be4f9d8"
+      ],
+      "expected_sources": [],
+      "ground_truth": "Subscribe to events and hooks associated with changes in the comment database.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does HistoryAddBatch do w/ closed orders?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1744_1fe52737",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1613_988cb1fa",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1753_e925a568",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1587_e05da7a6",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1581_f0bbac9a"
+      ],
+      "expected_sources": [],
+      "ground_truth": "It adds closed orders to a server database in bulk.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "After AG fetches cfg, what does AT do?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1135_37753485",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1094_3c38243b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_733_a807f0f6",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_732_2c8c46b1",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_1134_1325bd34"
+      ],
+      "expected_sources": [],
+      "ground_truth": "AutomationTrigger sends an event to trigger an automation rule with the specified name.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "en",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What releases IMTCon from Spread?",
+      "expected_chunk_ids": [
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_19331_9fd66fac",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_19275_3670c6fb",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_12706_ca51849b",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_19330_792afedb",
+        "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_12669_6a3d93f7"
+      ],
+      "expected_sources": [],
+      "ground_truth": "IMTConSpread::Release method",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
         "language": "en",
         "doc_version": "v1"
       }

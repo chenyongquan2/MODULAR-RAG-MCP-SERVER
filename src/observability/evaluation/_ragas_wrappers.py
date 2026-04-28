@@ -205,6 +205,110 @@ def build_ragas_embedding(settings: "Settings") -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Batched docstore(性能优化, 2026-04-28)
+# ---------------------------------------------------------------------------
+
+
+def _make_batched_docstore_class() -> Any:
+    """返回 ``BatchedInMemoryDocumentStore`` 类(延迟构建,避免顶层 import ragas)。
+
+    重写 ``add_nodes`` 把 N 次单条 embed_text 改为一次批量 embed_documents:
+
+    原 RAGAS 行为:
+        for node: executor.submit(embed_text, node.text)  # N 次 1-text HTTP
+    实测:5000 nodes ~50 min(asyncio 线程池束缚到 ~1.4 it/s)
+
+    优化后行为:
+        embeddings.embed_documents([all node texts])  # 1-2 次批量 HTTP
+        executor.submit(extractor.extract, node)      # keyphrase 仍并发
+    实测:5000 nodes embed 阶段 ~1 min(60x);extract 不变。
+
+    Returns:
+        BatchedInMemoryDocumentStore 类(继承自 InMemoryDocumentStore)。
+    """
+    from ragas.exceptions import ExceptionInRunner
+    from ragas.executor import Executor
+    from ragas.testset.docstore import InMemoryDocumentStore
+    import numpy as np
+
+    class BatchedInMemoryDocumentStore(InMemoryDocumentStore):
+        """覆盖 ``add_nodes`` 让 embedding 一次批量调用,而非 per-node 串行。"""
+
+        def add_nodes(self, nodes: Any, show_progress: bool = True) -> None:
+            assert self.embeddings is not None, "Embeddings must be set"
+            assert self.extractor is not None, "Extractor must be set"
+
+            # 分两阶段:embedding 批量;keyphrase 仍并发(LLM 调用)
+            # ----------- 阶段 1: embedding 批量 -----------
+            need_embed_indices: list[int] = []
+            need_embed_texts: list[str] = []
+            for i, n in enumerate(nodes):
+                if n.embedding is None:
+                    need_embed_indices.append(i)
+                    need_embed_texts.append(n.page_content)
+
+            if need_embed_texts:
+                logger.info(
+                    "BatchedDocstore: embed_documents batch call (%d texts)",
+                    len(need_embed_texts),
+                )
+                # 调用 wrapper 的 embed_documents → 项目 BaseEmbedding.embed
+                # → openai_embedding 批量(一次 HTTP, 最多 500/批, 自动分批)
+                embeddings_list = self.embeddings.embed_documents(need_embed_texts)
+                for idx, emb in zip(need_embed_indices, embeddings_list):
+                    nodes[idx].embedding = emb
+
+            # ----------- 阶段 2: keyphrase 提取(并发,LLM) -----------
+            need_extract_indices: list[int] = []
+            executor = Executor(
+                desc="extracting keyphrases",
+                keep_progress_bar=False,
+                raise_exceptions=True,
+                run_config=self.run_config,
+            )
+            for i, n in enumerate(nodes):
+                if not n.keyphrases:
+                    need_extract_indices.append(i)
+                    executor.submit(
+                        self.extractor.extract,
+                        n,
+                        name=f"keyphrase-extraction[{i}]",
+                    )
+
+            if need_extract_indices:
+                results = executor.results()
+                if not results:
+                    raise ExceptionInRunner()
+                for k, idx in enumerate(need_extract_indices):
+                    nodes[idx].keyphrases = results[k]
+
+            # ----------- 阶段 3: 落库(沿用父类逻辑) -----------
+            for n in nodes:
+                if n.embedding is not None and n.keyphrases != []:
+                    self.nodes.append(n)
+                    self.node_map[n.doc_id] = n
+                    assert isinstance(
+                        n.embedding, (list, np.ndarray)
+                    ), "Embedding must be list or np.ndarray"
+                    self.node_embeddings_list.append(n.embedding)
+
+            self.calculate_nodes_docs_similarity()
+            self.set_node_relataionships()
+
+    return BatchedInMemoryDocumentStore
+
+
+# 模块级延迟绑定:第一次 import BatchedInMemoryDocumentStore 时才触发构建
+def __getattr__(name: str) -> Any:
+    if name == "BatchedInMemoryDocumentStore":
+        cls = _make_batched_docstore_class()
+        # 缓存到模块命名空间,后续 import 直接拿
+        globals()[name] = cls
+        return cls
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# ---------------------------------------------------------------------------
 # Identifier 助手(供 EvaluationReport 的 judge_llm_identifier /
 # embedding_identifier 字段使用)
 # ---------------------------------------------------------------------------

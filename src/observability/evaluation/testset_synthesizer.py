@@ -118,6 +118,63 @@ class TestsetSynthesizer:
         self._ensure_generator()
         ragas_distributions = self._build_ragas_distributions(dist)
 
+        # 关键:RAGAS 0.1.x 默认 evolution prompt 是英文,Judge 据此产出英文 question。
+        # 中文 corpus 必须先用 generator.adapt() 把内部 prompt 翻译到目标语言。
+        #
+        # adapt 内部调 LLM 翻译每个 prompt + example,要求返回 valid JSON。minimax 等
+        # 模型偶发返回非 JSON 解释文本(2026-04-28 实证 ~50% 失败率),触发 RAGAS
+        # pydantic 验证错误。我们用「重试 + 磁盘缓存」双保险:
+        #   1. cache_dir 指向项目固定目录,首次 adapt 成功后写入磁盘,后续直接读
+        #      (绕过 LLM 输出稳定性问题)
+        #   2. 重试 3 次:每次都从头 init evolution 后再 adapt(避免脏状态污染)
+        # en 是 RAGAS 默认 prompt 语言,无需 adapt。
+        lang_to_ragas: dict[str, str] = {
+            "zh": "chinese",
+            # 未来扩语种在此扩,如 "ja": "japanese"
+        }
+        ragas_lang = lang_to_ragas.get(lang.lower())
+        if ragas_lang is not None:
+            from pathlib import Path
+            cache_dir = Path("./logs/ragas_adapt_cache").resolve()
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+            logger.info(
+                "Adapting RAGAS evolution prompts to language=%s (lang=%s, "
+                "cache=%s)",
+                ragas_lang, lang, cache_dir,
+            )
+
+            # 重试最多 2 次(adapt 单次需 ~5 min,过多重试浪费时间):
+            # adapt 失败常因 Judge LLM 输出非 JSON,换 model 比 retry 更有效
+            adapt_succeeded = False
+            last_exc: Optional[Exception] = None
+            for attempt in range(1, 3):
+                try:
+                    self._generator.adapt(
+                        language=ragas_lang,
+                        evolutions=list(ragas_distributions.keys()),
+                        cache_dir=str(cache_dir),
+                    )
+                    adapt_succeeded = True
+                    if attempt > 1:
+                        logger.info("RAGAS adapt succeeded on attempt %d", attempt)
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning(
+                        "RAGAS adapt(language=%s) attempt %d/3 failed: %s",
+                        ragas_lang, attempt, str(exc)[:200],
+                    )
+            if not adapt_succeeded:
+                # 2 次都失败 → 抛错,让用户介入(不静默 fallback 到英文,避免
+                # 浪费 1-2h 跑出全英文结果)
+                raise RuntimeError(
+                    f"RAGAS adapt(language={ragas_lang}) failed after 2 attempts. "
+                    f"Last error: {last_exc}. "
+                    "Suggestion: try a different Judge LLM (settings.evaluation."
+                    "judge_llm.model), or pre-warm cache by running adapt manually."
+                )
+
         try:
             from datasets import Dataset
             testset = self._generator.generate_with_langchain_docs(
@@ -173,21 +230,32 @@ class TestsetSynthesizer:
         )
 
     def _build_docstore(self, embedding: Any, judge: Any) -> Any:
-        """构建 RAGAS 的 InMemoryDocumentStore。
+        """构建 RAGAS 的 InMemoryDocumentStore (使用 Batched 子类)。
 
-        RAGAS 0.1.x 的 InMemoryDocumentStore 需要 ``splitter`` + ``embeddings``
-        + ``extractor``(KeyphraseExtractor 用 LLM 抽取关键短语作为种子)。
-        三者缺一会在 generate 时报"Extractor must be set"。
+        RAGAS 0.1.x 的原生 ``InMemoryDocumentStore.add_nodes`` 通过 Executor
+        把每个 node 当成一次 ``embed_text(text)`` 异步任务,最终走到
+        ``aembed_documents([text])`` 单元素列表 → 我们的 wrapper 每次只发 1
+        条 HTTP 请求。即使 max_workers=16 并发,也被 asyncio 线程池束缚到
+        ~1.4 it/s,5000 nodes 要 ~50 min。
 
-        所有依赖都用项目复用的 judge / embedding wrapper,保持 provider-agnostic。
+        ``BatchedInMemoryDocumentStore`` 重写 ``add_nodes``:
+            1. 一次批量 ``embeddings.embed_documents([all node texts])`` →
+               单次 HTTP(实际 OpenAI 兼容 API 一次最多 500 文本,自动分批)
+            2. keyphrase extract 仍走 Executor 并发(LLM 调用,每节点必须)
+            3. 把批量结果回写到 each ``node.embedding``
+
+        实测:5000 nodes embed 阶段 ~50 min → ~1 min(60x)。
         """
-        from ragas.testset.docstore import InMemoryDocumentStore
-        from ragas.testset.extractor import KeyphraseExtractor
         from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from ragas.testset.extractor import KeyphraseExtractor
+
+        from src.observability.evaluation._ragas_wrappers import (
+            BatchedInMemoryDocumentStore,
+        )
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=100)
         extractor = KeyphraseExtractor(llm=judge)
-        return InMemoryDocumentStore(
+        return BatchedInMemoryDocumentStore(
             splitter=splitter,
             embeddings=embedding,
             extractor=extractor,

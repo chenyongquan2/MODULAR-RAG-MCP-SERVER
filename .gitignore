@@ -76,3 +76,8 @@ secrets.yaml
 
 # Claude Code
 .claude/
+
+# Feature-001: RAGAS adapt cache (machine-specific, regenerable)
+logs/ragas_adapt_cache/
+# Feature-001: smoke test artifacts
+tests/fixtures/candidates/*_smoke*.json
