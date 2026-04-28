@@ -225,3 +225,145 @@ class TestRagasVersionTracking:
         v = synth._ragas_version()
         # 装版本 0.1.21 → 应不是 'unavailable' 也不是 'unknown'
         assert v not in ("unavailable",)
+
+
+# ---------------------------------------------------------------------------
+# adapt(language) + retry + cache (Feature-001 closeout, 2026-04-28)
+# ---------------------------------------------------------------------------
+
+
+class TestRagasAdapt:
+    """RAGAS adapt(language=chinese) 翻译内部 prompt + 2 次 retry + cache_dir。
+
+    背景:RAGAS 0.1.x 默认 evolution prompt 是英文,中文 corpus 必须先 adapt
+    才能让 Judge 据此产中文 question。adapt 内部调 LLM 翻译,要求返 valid JSON;
+    部分 model(如 minimax)输出非 JSON 解释文本 → 失败。需要重试 + cache 容错。
+    """
+
+    def _setup_synth_with_mocked_pipeline(
+        self,
+        adapt_side_effects: list,
+    ) -> TestsetSynthesizer:
+        """配好 synth + 跳过 chromadb / generator,只留 adapt 这一段真跑。
+
+        Args:
+            adapt_side_effects: 给 _generator.adapt 的 side_effect 列表。
+                None 元素 = 成功(无返回);Exception 子类 = 抛错。
+        """
+        synth = TestsetSynthesizer(settings=_make_settings())
+
+        # 跳过 chromadb 拉 chunks
+        synth._fetch_chunks = MagicMock(  # type: ignore[method-assign]
+            return_value=[
+                {"id": "c1", "text": "中文内容", "metadata": {"source": "doc.md"}},
+            ]
+        )
+
+        # mock generator + adapt + generate
+        synth._ensure_generator = MagicMock()  # type: ignore[method-assign]
+        gen = MagicMock()
+        gen.adapt = MagicMock(side_effect=adapt_side_effects)
+
+        # generate 返回 1 条空 case 让 synthesize 走完
+        fake_testset = MagicMock()
+        fake_testset.test_data = [
+            MagicMock(
+                question="问题?",
+                ground_truth="答案",
+                contexts=["上下文"],
+                evolution_type="simple",
+            ),
+        ]
+        del fake_testset.to_pandas
+        gen.generate_with_langchain_docs.return_value = fake_testset
+        synth._generator = gen
+        return synth
+
+    def test_adapt_called_for_zh_lang(self, tmp_path) -> None:
+        """lang='zh' → adapt(language='chinese', cache_dir=...) 必须被调用。"""
+        synth = self._setup_synth_with_mocked_pipeline(adapt_side_effects=[None])
+        with patch(
+            "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
+            return_value="glm:test",
+        ), patch(
+            "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
+            return_value="openai:test",
+        ):
+            synth.synthesize(collection="x", lang="zh", target_count=1)
+
+        assert synth._generator.adapt.call_count == 1
+        kwargs = synth._generator.adapt.call_args.kwargs
+        assert kwargs["language"] == "chinese"
+        # cache_dir 必须传(防止后续无 cache 反复调 LLM)
+        assert "cache_dir" in kwargs and kwargs["cache_dir"]
+
+    def test_adapt_skipped_for_en_lang(self) -> None:
+        """lang='en' → 不调 adapt(英文是 RAGAS 默认 prompt 语言)。"""
+        synth = self._setup_synth_with_mocked_pipeline(adapt_side_effects=[None])
+        with patch(
+            "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
+            return_value="glm:test",
+        ), patch(
+            "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
+            return_value="openai:test",
+        ):
+            synth.synthesize(collection="x", lang="en", target_count=1)
+
+        assert synth._generator.adapt.call_count == 0
+
+    def test_adapt_retries_once_on_first_failure(self) -> None:
+        """第 1 次 adapt 失败 → retry → 第 2 次成功 → 整体不抛错。"""
+        synth = self._setup_synth_with_mocked_pipeline(
+            adapt_side_effects=[ValueError("invalid JSON"), None],
+        )
+        with patch(
+            "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
+            return_value="glm:test",
+        ), patch(
+            "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
+            return_value="openai:test",
+        ):
+            # 不应抛错
+            synth.synthesize(collection="x", lang="zh", target_count=1)
+
+        assert synth._generator.adapt.call_count == 2
+
+    def test_adapt_two_failures_raise_runtime_error(self) -> None:
+        """2 次 adapt 都失败 → 抛 RuntimeError(不静默 fallback 到英文)。
+
+        关键:之前曾有静默 fallback 设计,导致跑 1-2h 后才发现产出全英文。
+        现在必须显式 fail-fast,把控制权给 user。
+        """
+        synth = self._setup_synth_with_mocked_pipeline(
+            adapt_side_effects=[
+                ValueError("attempt 1 fail"),
+                ValueError("attempt 2 fail"),
+            ],
+        )
+        with patch(
+            "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
+            return_value="glm:test",
+        ), patch(
+            "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
+            return_value="openai:test",
+        ):
+            with pytest.raises(RuntimeError, match="adapt.*failed after 2 attempts"):
+                synth.synthesize(collection="x", lang="zh", target_count=1)
+
+        # 验证抛错前确实尝试了 2 次
+        assert synth._generator.adapt.call_count == 2
+
+    def test_adapt_unknown_lang_skipped(self) -> None:
+        """非 zh/en 的 lang(假设未来扩展)默认跳过 adapt 直到映射添加。"""
+        synth = self._setup_synth_with_mocked_pipeline(adapt_side_effects=[None])
+        with patch(
+            "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
+            return_value="glm:test",
+        ), patch(
+            "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
+            return_value="openai:test",
+        ):
+            # lang='ja' 当前没在 lang_to_ragas 映射,不 adapt 也不抛
+            synth.synthesize(collection="x", lang="ja", target_count=1)
+
+        assert synth._generator.adapt.call_count == 0
