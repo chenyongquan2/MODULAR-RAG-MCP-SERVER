@@ -1,0 +1,3 @@
+[submodule ".claude/skills/code-review-expert"]
+	path = .claude/skills/code-review-expert
+	url = git@github.com:sanyuan0704/code-review-expert.git
