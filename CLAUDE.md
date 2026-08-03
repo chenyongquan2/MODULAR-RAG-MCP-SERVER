@@ -224,7 +224,9 @@ The MCP server runs on stdio transport and exposes three tools:
 
 MCP clients (GitHub Copilot, Claude Desktop, etc.) connect via stdio and can call these tools to retrieve knowledge context.
 
-**MCP Client Configuration**: The `.claude/mcp.json` file configures the MCP server connection for Claude Code. Update paths in this file if the project is moved to a different location.
+**MCP Client Configuration**: The project-root `.mcp.json` file configures the MCP server connection for Claude Code. Paths are relative to the project root, so the file works unchanged if the project is moved.
+
+> Windows 注意:`command` 指向 `.venv/Scripts/python.exe`。若在 Linux/macOS 使用,改为 `.venv/bin/python`。
 
 ## Streamlit Dashboard
 
