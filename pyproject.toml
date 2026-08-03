@@ -50,6 +50,11 @@ dev = [
     "pytest-cov>=4.0",
     "pytest-asyncio>=0.23",
 ]
+# 文档工具链依赖（scripts/md_to_pdf_with_watermark.py 用于把 Markdown
+# 渲染成带水印的 PDF）。不属于 RAG 运行时，单独成组以免拖累核心安装。
+docs = [
+    "markdown>=3.5",
+]
 
 # 使用 src 布局，将 src 作为顶级包
 # 这样 "from src.xxx" 导入在 editable install 后可以正常工作
