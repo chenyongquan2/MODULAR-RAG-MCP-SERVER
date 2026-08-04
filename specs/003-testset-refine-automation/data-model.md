@@ -107,10 +107,25 @@ LLM 调用失败 / 返回不可解析 / 字段非法 ─────────
 | 字段 | 类型 | 说明 | 对应需求 |
 |---|---|---|---|
 | `sampled_case_indices` | list[int] | 实际抽中的用例序号(不固定 seed,靠记录结果保证可复核) | research § D7 |
-| `sample_size` | int | `max(1, ceil(保留数 × 0.10))` —— 保留数 < 10 时仍抽 1 条 | FR-006 |
+| `sample_size` | int | `max(1, ceil(保留数 × 0.10))`,保留数为 0 时为 `0`(不抽样) | FR-006 |
 | `compliant` | int | 判定合规条数 | FR-006 |
-| `compliance_rate` | float | `compliant / sample_size` | FR-006 |
+| `compliance_rate` | float | `compliant / sample_size`;`sample_size == 0` 时为 `None` | FR-006 |
 | `gate_passed` | bool | `compliance_rate ≥ 门控阈值(默认 0.90)` | FR-007 |
+| `auto_kept_sampled` | int | 抽中用例中**由机器自动保留**的条数 | SC-006 |
+| `auto_kept_compliant` | int | 上述子集中判定合规的条数 | SC-006 |
+| `auto_kept_noncompliance_rate` | float \| null | `1 - auto_kept_compliant / auto_kept_sampled`;子集为空时为 `null` | SC-006 |
+
+> **为什么需要后 3 个字段** —— 这是 analyze 阶段发现的设计缺口:
+>
+> SC-006 要求「**机器自动保留的**用例中,经抽样复核不合规的比例 ≤ 10%」,而抽样池按 Assumptions 是**全部保留用例**(为与 SC-002 口径对齐)。若只记 `compliance_rate`,SC-006 **无法计算** —— 分不清抽中的那几条是机器决定的还是人工确认过的。
+>
+> 因此抽样结果必须额外按「决策来源」拆分出 auto-kept 子集。`compliance_rate` 服务 SC-003(全量口径),`auto_kept_noncompliance_rate` 服务 SC-006(机器准确性口径),两者并存不冲突。
+
+#### 决策来源的追踪方式(不污染 case 结构)
+
+计算上述拆分需要知道每条保留用例的决策来源(机器自动保留 / 人工保留)。**不在 case 内部写 provenance 字段** —— 那会改变金标的 case 结构并触发既有测试的键集合断言(见 § 1 约束)。
+
+改为在运行期维护 `case_index → provenance` 的内存映射:`screen_all()` 已按 `case_index` 产出 verdict 列表,auto 流程再记录哪些 index 走了人工。抽样时按 index 反查来源即可。落盘只落聚合数字,不落逐条来源。
 
 ---
 
