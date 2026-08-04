@@ -335,17 +335,29 @@ class EvaluationService:
         lock_path = self._history_file.with_suffix(".jsonl.lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         deadline = time.monotonic() + timeout_seconds
+        last_error: OSError | None = None
         while True:
             try:
                 fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
                 break
-            except FileExistsError:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(
-                        f"could not acquire history lock {lock_path} within "
-                        f"{timeout_seconds}s; stale lock file may need manual removal"
-                    )
-                time.sleep(0.05)
+            except FileExistsError as exc:
+                # 正常竞争：锁已被别人持有。
+                last_error = exc
+            except PermissionError as exc:
+                # Windows 特有竞态：上一个持锁者刚 unlink()，但只要仍有句柄未
+                # 关闭，文件就处于 pending-delete 状态。此时 O_CREAT 拿到的是
+                # ERROR_ACCESS_DENIED(errno 13) 而不是 EEXIST。
+                # 该 errno 与"目录真的不可写"无法区分，所以这里同样重试，靠下面
+                # 的 deadline 兜底 —— 真实权限问题会在超时后带原始异常报出，
+                # 而不是像以前那样把异常直接抛给调用方、让写入线程静默死掉。
+                last_error = exc
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"could not acquire history lock {lock_path} within "
+                    f"{timeout_seconds}s (last error: {last_error!r}); "
+                    f"stale lock file may need manual removal"
+                ) from last_error
+            time.sleep(0.05)
         try:
             yield
         finally:

@@ -195,3 +195,61 @@ def test_file_lock_serializes_appends(tmp_path: Path) -> None:
         t.join()
 
     assert len(svc._read_all_history()) == thread_count * records_per_thread
+
+
+def test_file_lock_retries_transient_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """抢锁遇到瞬时 PermissionError 应重试，而不是把异常抛给调用方。
+
+    Windows 上前一个持锁者 unlink() 之后，锁文件可能仍处于 pending-delete
+    状态；此时 O_CREAT 返回 ERROR_ACCESS_DENIED(errno 13) 而不是 EEXIST。
+    历史上这里只捕 FileExistsError，导致异常逃出写入线程、静默丢记录。
+    """
+    import os as os_module
+
+    svc = _svc(tmp_path)
+    real_open = os_module.open
+    calls = {"n": 0}
+
+    def _flaky_open(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        # 只让第一次抢锁失败，模拟 pending-delete 竞态窗口
+        if str(path).endswith(".lock"):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise PermissionError(13, "Permission denied")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os_module, "open", _flaky_open)
+
+    svc.append_history({"timestamp": "t-0", "hit_rate": 0.5})
+
+    assert calls["n"] >= 2, "第一次 PermissionError 之后应重试抢锁"
+    assert len(svc._read_all_history()) == 1
+
+
+def test_file_lock_persistent_permission_error_still_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """持续 PermissionError（例如目录真的不可写）不能无限重试。
+
+    重试瞬时错误的代价是无法与"真实权限问题"区分，因此必须仍然受
+    timeout 约束，且报错信息要带上底层异常，避免问题被吞掉。
+    """
+    import os as os_module
+
+    svc = _svc(tmp_path)
+    real_open = os_module.open
+
+    def _always_denied(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        if str(path).endswith(".lock"):
+            raise PermissionError(13, "Permission denied")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os_module, "open", _always_denied)
+
+    with pytest.raises(TimeoutError) as excinfo:
+        with svc._file_lock(timeout_seconds=0.2):
+            pass
+
+    assert "PermissionError" in str(excinfo.value), "超时信息应带上底层异常以便定位"
