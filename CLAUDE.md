@@ -299,14 +299,19 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 > 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->` 与 `<!-- SPECKIT END -->` 之间的内容。
 
 <!-- SPECKIT START -->
-**Active SDD Plan**: [specs/001-rag-acceptance/plan.md](specs/001-rag-acceptance/plan.md)
+**Active SDD Plan**: [specs/003-testset-refine-automation/plan.md](specs/003-testset-refine-automation/plan.md)
 
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-above (Feature-001: RAG 质量验收(中英双语基线)). Sibling artifacts in the
-same directory: [spec.md](specs/001-rag-acceptance/spec.md),
-[research.md](specs/001-rag-acceptance/research.md),
-[data-model.md](specs/001-rag-acceptance/data-model.md),
-[contracts/](specs/001-rag-acceptance/contracts/),
-[quickstart.md](specs/001-rag-acceptance/quickstart.md).
+above (Feature-003: 金标精修自动化(异源预筛 + borderline 路由)). Sibling
+artifacts in the same directory:
+[spec.md](specs/003-testset-refine-automation/spec.md),
+[research.md](specs/003-testset-refine-automation/research.md),
+[data-model.md](specs/003-testset-refine-automation/data-model.md),
+[contracts/](specs/003-testset-refine-automation/contracts/),
+[quickstart.md](specs/003-testset-refine-automation/quickstart.md).
+
+> 注:本 feature 不单开 git 分支,沿用 `dev-from-clean-start`。speckit 脚本
+> 需要 `003-*` 形式的分支名,故调用时用 `SPECIFY_FEATURE=003-testset-refine-automation`
+> 旁路 `check_feature_branch` 校验(该变量是 spec-kit 官方支持的覆写点)。
 <!-- SPECKIT END -->
