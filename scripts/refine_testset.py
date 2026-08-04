@@ -60,6 +60,26 @@ def parse_args() -> argparse.Namespace:
         default="interactive",
         help="Refine mode (only 'interactive' supported in MVP)",
     )
+    # --- Feature-003 新增 ---
+    parser.add_argument(
+        "--auto-mode",
+        action="store_true",
+        help=(
+            "Screen every case with a cross-source LLM first and only prompt for "
+            "borderline ones. Requires evaluation.screening_llm.* to be configured "
+            "and to differ from the synthesis judge. Omit for the original "
+            "case-by-case interactive flow."
+        ),
+    )
+    parser.add_argument(
+        "--allow-same-source",
+        action="store_true",
+        help=(
+            "Proceed in auto mode even when the candidate does not record which LLM "
+            "synthesized it, so cross-source cannot be verified. Does NOT bypass a "
+            "confirmed same-source config."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -117,6 +137,70 @@ def _strip_synth_artifacts(case: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in case.items() if not k.startswith("_synth")}
 
 
+def _read_decision(stream: Any) -> str:
+    """打印提示并读取一个合法选项,返回 y/e/d/s/q 之一。
+
+    空输入等同于 ``y``(保留原有默认行为)。无法识别的输入会重新提示,
+    直到读到合法选项。
+
+    Args:
+        stream: 输入流(测试时注入)。
+
+    Returns:
+        单字符选项:``y`` / ``e`` / ``d`` / ``s`` / ``q``。
+    """
+    while True:
+        print(
+            "  [y]keep / [e]edit / [d]drop / [s]skip / [q]quit-and-save: ",
+            end="",
+            flush=True,
+        )
+        choice = (stream.readline() or "").strip().lower()
+        if not choice:
+            return "y"
+        if choice in {"y", "e", "d", "s", "q"}:
+            return choice
+        print(f"  ! unrecognized choice {choice!r}; please re-enter")
+
+
+def _apply_decision(
+    choice: str,
+    case: dict[str, Any],
+    kept: list[dict[str, Any]],
+    counts: dict[str, int],
+) -> bool:
+    """把一个人工选项应用到 kept / counts 上(不处理 ``q``)。
+
+    Args:
+        choice: ``y`` / ``e`` / ``d`` / ``s``。
+        case: 当前用例。
+        kept: 保留列表(原地追加)。
+        counts: 计数字典(原地累加)。
+
+    Returns:
+        该用例是否被保留(供调用方记录决策来源)。
+    """
+    if choice == "y":
+        kept.append(_strip_synth_artifacts(case))
+        counts["keep"] += 1
+        return True
+    if choice == "e":
+        edited = _edit_case_in_editor(case)
+        if edited is not None:
+            kept.append(_strip_synth_artifacts(edited))
+            counts["edit"] += 1
+        else:
+            kept.append(_strip_synth_artifacts(case))
+            counts["keep"] += 1
+        return True
+    if choice == "d":
+        counts["drop"] += 1
+        return False
+    # choice == "s"
+    counts["skip"] += 1
+    return False
+
+
 def interactive_refine(
     candidate: dict[str, Any],
     input_stream: Any = None,
@@ -126,6 +210,11 @@ def interactive_refine(
     Args:
         candidate: 合成阶段产出的 candidate dict。
         input_stream: 用于测试时注入 stdin(默认 sys.stdin)。
+
+    Note:
+        Feature-003 把逐条提示与选项应用抽成 ``_read_decision`` /
+        ``_apply_decision`` 供 auto 模式复用,**行为与抽取前完全一致**
+        (空输入仍等同 y、无法识别仍重新提示、q 仍保存部分进度)。
     """
     stream = input_stream if input_stream is not None else sys.stdin
 
@@ -135,36 +224,11 @@ def interactive_refine(
 
     for idx, case in enumerate(cases):
         print(_format_case_for_review(case, idx, len(cases)))
-        while True:
-            print(
-                "  [y]keep / [e]edit / [d]drop / [s]skip / [q]quit-and-save: ",
-                end="",
-                flush=True,
-            )
-            choice = (stream.readline() or "").strip().lower()
-            if not choice or choice == "y":
-                kept.append(_strip_synth_artifacts(case))
-                counts["keep"] += 1
-                break
-            if choice == "e":
-                edited = _edit_case_in_editor(case)
-                if edited is not None:
-                    kept.append(_strip_synth_artifacts(edited))
-                    counts["edit"] += 1
-                else:
-                    kept.append(_strip_synth_artifacts(case))
-                    counts["keep"] += 1
-                break
-            if choice == "d":
-                counts["drop"] += 1
-                break
-            if choice == "s":
-                counts["skip"] += 1
-                break
-            if choice == "q":
-                print(f"  saving progress and quitting at case {idx + 1}/{len(cases)}")
-                return _build_final(candidate, kept, counts, partial=True)
-            print(f"  ! unrecognized choice {choice!r}; please re-enter")
+        choice = _read_decision(stream)
+        if choice == "q":
+            print(f"  saving progress and quitting at case {idx + 1}/{len(cases)}")
+            return _build_final(candidate, kept, counts, partial=True)
+        _apply_decision(choice, case, kept, counts)
 
     return _build_final(candidate, kept, counts, partial=False)
 
@@ -187,6 +251,227 @@ def _build_final(
         "_refine_summary": dict(counts),
         "test_cases": kept_cases,
     }
+
+
+# ---------------------------------------------------------------------------
+# auto 模式 (Feature-003 US1)
+# ---------------------------------------------------------------------------
+
+# 退出码(见 specs/003-testset-refine-automation/contracts/cli_contract.md § 2)
+EXIT_OK = 0
+EXIT_BAD_INPUT = 1
+EXIT_AUTO_PRECONDITION = 2
+EXIT_SCREENING_UNAVAILABLE = 3
+EXIT_INTERRUPTED = 130
+
+PROVENANCE_AUTO = "auto"
+PROVENANCE_HUMAN = "human"
+
+
+class AutoRefineOutcome:
+    """auto 模式的一次运行结果。
+
+    Attributes:
+        final: 待落盘的 golden test set(尚未注入 ``_review_metadata``,
+            该注入是 US2 的职责)。
+        screening: 批量预筛结果(含 verdict 列表与 borderline 占比)。
+        kept_provenance: 与 ``final["test_cases"]`` **同序**的决策来源列表,
+            取值 ``"auto"`` / ``"human"``。US3 的 SC-006 拆分靠它反查
+            —— 抽中的用例到底是机器决定的还是人工确认过的。
+        auto_decided: 机器自动决策数(自动保留 + 自动丢弃)。
+        human_reviewed: 经人工处置数。
+        warnings: 本次运行触发的告警(如 borderline 占比超限)。
+        partial: 是否为中断/提前退出产生的部分结果。
+        interrupted: 是否因 Ctrl-C 中断(供 main 返回 130)。
+
+    Note:
+        **这里刻意不用 ``@dataclass``**。本脚本被单测用
+        ``importlib.util.spec_from_file_location`` 动态加载且不注册进
+        ``sys.modules``;而 ``@dataclass`` 在处理类型注解时会去查
+        ``sys.modules[cls.__module__]``,取到 ``None`` 后抛
+        ``AttributeError: 'NoneType' object has no attribute '__dict__'``,
+        导致整个测试模块无法收集。改动本文件时请勿引入 dataclass。
+    """
+
+    def __init__(
+        self,
+        final: dict[str, Any],
+        screening: Any,
+        kept_provenance: list[str] | None = None,
+        auto_decided: int = 0,
+        human_reviewed: int = 0,
+        warnings: list[str] | None = None,
+        partial: bool = False,
+        interrupted: bool = False,
+    ) -> None:
+        self.final = final
+        self.screening = screening
+        self.kept_provenance = kept_provenance if kept_provenance is not None else []
+        self.auto_decided = auto_decided
+        self.human_reviewed = human_reviewed
+        self.warnings = warnings if warnings is not None else []
+        self.partial = partial
+        self.interrupted = interrupted
+
+
+def check_auto_preconditions(
+    settings: Any,
+    candidate: dict[str, Any],
+    allow_same_source: bool,
+) -> str | None:
+    """校验 auto 模式的前置条件 (FR-002)。
+
+    Args:
+        settings: 全局 Settings。
+        candidate: 已解析的 candidate dict。
+        allow_same_source: 是否允许在「无法确认异源」时继续。
+
+    Returns:
+        ``None`` 表示可以继续;否则返回应打印给用户的错误说明。
+    """
+    from src.observability.evaluation.testset_screener import (
+        SourceRelation,
+        check_source_divergence,
+    )
+
+    screening = settings.evaluation.screening_llm
+    if not screening.is_enabled():
+        return (
+            "auto mode requires evaluation.screening_llm.provider and .model to be set "
+            "in config/settings.yaml (they are empty by default).\n"
+            "  See specs/003-testset-refine-automation/quickstart.md for a working example,\n"
+            "  or drop --auto-mode to use the original interactive flow."
+        )
+
+    relation = check_source_divergence(settings, candidate)
+    if relation is SourceRelation.SAME_SOURCE:
+        from src.observability.evaluation._ragas_wrappers import get_screening_identifier
+
+        return (
+            f"screening LLM ({get_screening_identifier(settings)}) is the same model that "
+            "synthesized this candidate.\n"
+            "  Cross-source screening is the whole point: a model grading its own output "
+            "shares its blind spots.\n"
+            "  Change evaluation.screening_llm.model to a different model. "
+            "--allow-same-source does NOT bypass this."
+        )
+    if relation is SourceRelation.UNVERIFIABLE and not allow_same_source:
+        return (
+            "this candidate does not record which LLM synthesized it "
+            "(_synthesis_metadata.judge_llm_identifier is missing or empty), so "
+            "cross-source cannot be verified.\n"
+            "  Pass --allow-same-source to proceed anyway if you know the models differ."
+        )
+    return None
+
+
+def auto_refine(
+    candidate: dict[str, Any],
+    settings: Any,
+    screener: Any = None,
+    input_stream: Any = None,
+) -> AutoRefineOutcome:
+    """预筛 → 自动决策 + borderline 交人工 (FR-003, FR-008, FR-010, FR-011)。
+
+    Args:
+        candidate: 合成阶段产出的 candidate dict。
+        settings: 全局 Settings。
+        screener: 预筛器实例;``None`` = 按配置创建(测试可注入替身)。
+        input_stream: 输入流(默认 sys.stdin)。
+
+    Returns:
+        本次运行结果。
+
+    Raises:
+        ScreeningUnavailableError: 预筛模型整体不可用(由 screen_all 抛出,
+            main 将其映射为退出码 3)。
+    """
+    from src.observability.evaluation.testset_screener import (
+        ScreeningDecision,
+        TestsetScreener,
+    )
+
+    stream = input_stream if input_stream is not None else sys.stdin
+    cases = candidate.get("test_cases", [])
+    screening_cfg = settings.evaluation.screening_llm
+
+    if screener is None:
+        screener = TestsetScreener(settings)
+
+    print(f"Screening {len(cases)} case(s) with a cross-source LLM ...")
+    result = screener.screen_all(candidate)
+
+    warnings: list[str] = []
+    if result.borderline_ratio > screening_cfg.borderline_ratio_warn:
+        warning = (
+            f"borderline ratio {result.borderline_ratio:.0%} exceeds configured limit "
+            f"{screening_cfg.borderline_ratio_warn:.0%} — screening barely narrowed the "
+            f"work down. Consider lowering keep_threshold/drop_threshold or switching "
+            f"the screening model."
+        )
+        warnings.append(warning)
+        print(f"  ! {warning}", file=sys.stderr)
+
+    print(
+        f"  auto-keep {len(result.auto_keep_indices)} / "
+        f"auto-drop {len(result.auto_drop_indices)} / "
+        f"borderline {len(result.borderline_indices)} "
+        f"-> {len(result.borderline_indices)} case(s) need you"
+    )
+
+    verdict_by_index = {v.case_index: v for v in result.verdicts}
+    kept: list[dict[str, Any]] = []
+    kept_provenance: list[str] = []
+    counts = {"keep": 0, "edit": 0, "drop": 0, "skip": 0}
+    auto_decided = 0
+    human_reviewed = 0
+    partial = False
+    interrupted = False
+
+    try:
+        for idx, case in enumerate(cases):
+            verdict = verdict_by_index.get(idx)
+
+            # 没有判定结果的用例按 borderline 处理 —— 宁可多问一次,
+            # 也不能因为查不到 verdict 就静默保留或丢弃(FR-008)
+            if verdict is None or verdict.decision is ScreeningDecision.BORDERLINE:
+                print(_format_case_for_review(case, idx, len(cases)))
+                if verdict is not None and verdict.reason:
+                    print(f"  screening says borderline: {verdict.reason}")
+                choice = _read_decision(stream)
+                if choice == "q":
+                    print(f"  saving progress and quitting at case {idx + 1}/{len(cases)}")
+                    partial = True
+                    break
+                if _apply_decision(choice, case, kept, counts):
+                    kept_provenance.append(PROVENANCE_HUMAN)
+                human_reviewed += 1
+                continue
+
+            if verdict.decision is ScreeningDecision.KEEP:
+                kept.append(_strip_synth_artifacts(case))
+                kept_provenance.append(PROVENANCE_AUTO)
+                counts["keep"] += 1
+            else:  # ScreeningDecision.DROP
+                counts["drop"] += 1
+            auto_decided += 1
+    except KeyboardInterrupt:
+        # FR-010:auto 模式下中断必须保住已完成的决策。默认交互模式的中断
+        # 行为不变(见 main 的 KeyboardInterrupt 分支),以满足 FR-004。
+        print("\n  interrupted; saving progress made so far", file=sys.stderr)
+        partial = True
+        interrupted = True
+
+    return AutoRefineOutcome(
+        final=_build_final(candidate, kept, counts, partial=partial),
+        screening=result,
+        kept_provenance=kept_provenance,
+        auto_decided=auto_decided,
+        human_reviewed=human_reviewed,
+        warnings=warnings,
+        partial=partial,
+        interrupted=interrupted,
+    )
 
 
 def _resolve_output_path(arg_output: str | None, lang: str) -> Path:
@@ -219,12 +504,37 @@ def main() -> int:
     output_path = _resolve_output_path(args.output, lang)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    try:
-        final = interactive_refine(candidate)
-    except KeyboardInterrupt:
-        # Ctrl-C: 没有 already-built progress 状态,简单地把空集落盘
-        print("\nInterrupted by user; no progress saved.", file=sys.stderr)
-        return 130
+    exit_code = EXIT_OK
+
+    if args.auto_mode:
+        # --- auto 模式 (Feature-003) ---
+        # 仅本分支读取 settings / 触碰预筛模型;默认路径完全不受影响(FR-004)
+        from src.core.settings import load_settings
+        from src.observability.evaluation.testset_screener import ScreeningUnavailableError
+
+        settings = load_settings()
+        problem = check_auto_preconditions(settings, candidate, args.allow_same_source)
+        if problem is not None:
+            print(f"Error: {problem}", file=sys.stderr)
+            return EXIT_AUTO_PRECONDITION
+
+        try:
+            outcome = auto_refine(candidate, settings)
+        except ScreeningUnavailableError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return EXIT_SCREENING_UNAVAILABLE
+
+        final = outcome.final
+        if outcome.interrupted:
+            exit_code = EXIT_INTERRUPTED
+    else:
+        # --- 默认交互模式:行为与 Feature-003 之前完全一致 ---
+        try:
+            final = interactive_refine(candidate)
+        except KeyboardInterrupt:
+            # Ctrl-C: 没有 already-built progress 状态,简单地把空集落盘
+            print("\nInterrupted by user; no progress saved.", file=sys.stderr)
+            return 130
 
     output_path.write_text(
         json.dumps(final, ensure_ascii=False, indent=2),
@@ -238,7 +548,7 @@ def main() -> int:
         f"{summary.get('skip', 0)} skipped "
         f"-> {output_path}"
     )
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
