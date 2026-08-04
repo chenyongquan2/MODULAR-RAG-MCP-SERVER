@@ -206,6 +206,70 @@ class JudgeLLMSettings:
 
 
 @dataclass
+class ScreeningLLMSettings:
+    """金标精修的预筛 LLM 配置 (Feature-003 FR-009)。
+
+    仅 ``scripts/refine_testset.py --auto-mode`` 使用。与 JudgeLLMSettings 结构
+    对称,同样复用 LLMFactory 注册的 provider,切换预筛模型不需改代码。
+
+    **provider / model 默认为空 = 未启用**。默认交互模式不读本配置,故加载期
+    不强制两者非空——否则所有未配置本节的既有用法都会启动失败(违反 FR-004)。
+    非空校验推迟到 CLI 入口(仅 --auto-mode 时),见
+    specs/003-testset-refine-automation/contracts/settings.screening.schema.md § 3。
+
+    FR-002 要求预筛模型与合成端(evaluation.judge_llm)**异源**,判据是完整
+    标识串 ``"<provider>:<model>"`` 不相等而非 provider 不相等。该校验在 CLI
+    入口读取 candidate 后执行,不在本处。
+
+    Attributes:
+        provider: LLM provider(glm/azure/openai/ollama/deepseek);空 = 未启用
+        model: 模型标识;空 = 未启用
+        api_key: API key(支持 ${VAR} 环境变量注入)
+        base_url: API base URL(可选,如 OpenAI 兼容端点)
+        temperature: 采样温度(判定应尽量确定,推荐 0.0)
+        request_timeout_sec: 单次 LLM 调用超时(秒)
+        keep_threshold: keep 判定且置信度 ≥ 此值 → 自动保留
+        drop_threshold: drop 判定且置信度 ≥ 此值 → 自动丢弃
+        borderline_ratio_warn: borderline 占比超此值告警(FR-011)
+        sample_ratio: 抽样自检比例(FR-006,源自 Feature-001 SC-002)
+        compliance_gate: 抽样合规率门控(FR-007,源自 SC-002)
+
+    Note:
+        阈值默认值是初始猜测。不同模型的置信度标度不可互换,换预筛模型后必须
+        重新校准——与 FR-013「换 Judge 后阈值失效」是同一回事。
+    """
+
+    provider: str = ""
+    model: str = ""
+    api_key: str = ""
+    base_url: Optional[str] = None
+    temperature: float = 0.0
+    request_timeout_sec: int = 60
+    keep_threshold: float = 0.80
+    drop_threshold: float = 0.80
+    borderline_ratio_warn: float = 0.40
+    sample_ratio: float = 0.10
+    compliance_gate: float = 0.90
+
+    def is_enabled(self) -> bool:
+        """provider 与 model 均非空时视为已配置(可用于 --auto-mode)。"""
+        return bool(self.provider.strip()) and bool(self.model.strip())
+
+    def thresholds_snapshot(self) -> dict[str, float]:
+        """返回阈值快照(写入金标 _review_metadata.thresholds_snapshot)。
+
+        FR-005 要求阈值随金标落盘,使换模型后的历史金标仍可追溯当时判定条件。
+        """
+        return {
+            "keep_threshold": self.keep_threshold,
+            "drop_threshold": self.drop_threshold,
+            "borderline_ratio_warn": self.borderline_ratio_warn,
+            "sample_ratio": self.sample_ratio,
+            "compliance_gate": self.compliance_gate,
+        }
+
+
+@dataclass
 class EvaluationEmbeddingSettings:
     """评估流程使用的 embedding 配置 (FR-017)。
 
@@ -272,6 +336,7 @@ class EvaluationSettings:
         golden_test_set: 占位金标路径(US1 阶段使用)
         golden_test_sets_by_lang: 中英分语种金标(US2 完成后填充)
         judge_llm: Judge LLM 配置(ragas backend 启用时必须填)
+        screening_llm: 金标精修预筛 LLM 配置(Feature-003;默认空 = 未启用)
         embedding: 评估期 embedding 配置(默认空 = 复用 production)
         acceptance_thresholds: 8 项主聚合指标的 pass/fail 阈值
         by_tag_dimensions: 切片维度白名单(MVP 仅支持 content_type / difficulty)
@@ -286,6 +351,7 @@ class EvaluationSettings:
     golden_test_set: str = "./tests/fixtures/golden_test_set.json"
     golden_test_sets_by_lang: dict[str, str] = field(default_factory=dict)
     judge_llm: JudgeLLMSettings = field(default_factory=JudgeLLMSettings)
+    screening_llm: ScreeningLLMSettings = field(default_factory=ScreeningLLMSettings)
     embedding: EvaluationEmbeddingSettings = field(default_factory=EvaluationEmbeddingSettings)
     acceptance_thresholds: AcceptanceThresholds = field(default_factory=AcceptanceThresholds)
     by_tag_dimensions: list[str] = field(default_factory=lambda: ["content_type", "difficulty"])
@@ -546,18 +612,22 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     if "_schema_version" in evaluation_raw and "schema_version" not in evaluation_raw:
         evaluation_raw["schema_version"] = evaluation_raw.pop("_schema_version")
     judge_llm_raw = evaluation_raw.get("judge_llm") or {}
+    screening_llm_raw = evaluation_raw.get("screening_llm") or {}
     eval_embedding_raw = evaluation_raw.get("embedding") or {}
     acceptance_thresholds_raw = evaluation_raw.get("acceptance_thresholds") or {}
     # 顶层 EvaluationSettings 字段(去掉嵌套子段,后续显式注入)
     eval_top_raw = {
         k: v for k, v in evaluation_raw.items()
-        if k not in {"judge_llm", "embedding", "acceptance_thresholds"}
+        if k not in {"judge_llm", "screening_llm", "embedding", "acceptance_thresholds"}
     }
     evaluation_settings = EvaluationSettings(
         **{k: v for k, v in eval_top_raw.items() if v is not None}
     )
     evaluation_settings.judge_llm = _build_sub_settings(
         judge_llm_raw, JudgeLLMSettings, "evaluation.judge_llm"
+    )
+    evaluation_settings.screening_llm = _build_sub_settings(
+        screening_llm_raw, ScreeningLLMSettings, "evaluation.screening_llm"
     )
     evaluation_settings.embedding = _build_sub_settings(
         eval_embedding_raw, EvaluationEmbeddingSettings, "evaluation.embedding"
@@ -744,6 +814,49 @@ def _validate_evaluation_settings(settings: Settings) -> None:
             f"evaluation.judge_llm.request_timeout_sec={eval_s.judge_llm.request_timeout_sec} "
             "must be > 0"
         )
+
+    # --- screening_llm (Feature-003) -------------------------------------
+    # 注意:这里**不**校验 provider/model 非空。默认交互模式不需要预筛模型,
+    # 若在加载期强制要求,所有未配置本节的既有用法都会启动失败(违反 FR-004)。
+    # 非空校验推迟到 refine_testset.py 的 --auto-mode 入口。
+    # 这与上方 judge_llm「仅 ragas 启用时才要求非空」是同一处理原则。
+    screening = eval_s.screening_llm
+
+    # provider 非空时须在 LLMFactory 注册列表内
+    if screening.provider and screening.provider not in _VALID_LLM_PROVIDERS:
+        raise SettingsError(
+            f"evaluation.screening_llm.provider={screening.provider!r} not in "
+            f"LLMFactory registry. Valid options: {sorted(_VALID_LLM_PROVIDERS)}"
+        )
+
+    # temperature ∈ [0, 2]
+    if not 0.0 <= screening.temperature <= 2.0:
+        raise SettingsError(
+            f"evaluation.screening_llm.temperature={screening.temperature} "
+            "must be within [0.0, 2.0]"
+        )
+
+    # request_timeout_sec > 0
+    if screening.request_timeout_sec <= 0:
+        raise SettingsError(
+            f"evaluation.screening_llm.request_timeout_sec={screening.request_timeout_sec} "
+            "must be > 0"
+        )
+
+    # 5 个比例/阈值字段 ∈ (0.0, 1.0]
+    for _field_name in (
+        "keep_threshold",
+        "drop_threshold",
+        "borderline_ratio_warn",
+        "sample_ratio",
+        "compliance_gate",
+    ):
+        _value = getattr(screening, _field_name)
+        if not 0.0 < _value <= 1.0:
+            raise SettingsError(
+                f"evaluation.screening_llm.{_field_name}={_value} "
+                "must be within (0.0, 1.0]"
+            )
 
     # embedding.provider 在 EmbeddingFactory 注册列表 (空表示复用顶层)
     if eval_s.embedding.provider and eval_s.embedding.provider not in _VALID_EMBEDDING_PROVIDERS:

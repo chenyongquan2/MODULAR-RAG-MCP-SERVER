@@ -31,8 +31,12 @@ description: "Task list for Feature-003 金标精修自动化"
 
 **Purpose**:配置与提示词就位,不含代码逻辑
 
-- [ ] T001 [P] 在 [config/settings.yaml](../../config/settings.yaml) 的 `evaluation` 段下新增 `screening_llm` 节,字段与默认值照 [contracts/settings.screening.schema.md § 1](contracts/settings.screening.schema.md);`provider`/`model` 留空(默认交互模式不需要),阈值取默认 `keep_threshold: 0.80` / `drop_threshold: 0.80` / `borderline_ratio_warn: 0.40` / `sample_ratio: 0.10` / `compliance_gate: 0.90`
-- [ ] T002 [P] 新建 [config/prompts/testset_screening.txt](../../config/prompts/testset_screening.txt) 预筛提示词:输入单条用例的 query / ground_truth / expected_chunk_ids / 合成期 contexts,要求返回含「三态结论 + 置信度 + 理由」的 JSON;判定标准对齐 SC-002 三项(question 通顺 / ground_truth 可在语料中验证 / expected_chunk_ids 指向真实 chunk)(refs [research § Decision 4](research.md))
+> **实施期修正(2026-08-04)**:T001 被标为 Phase 1 独立任务是**错的**。实测 YAML 加了 `screening_llm` 节后,`load_settings()` 立刻抛
+> `TypeError: EvaluationSettings.__init__() got an unexpected keyword argument 'screening_llm'` —— 因为装配代码会把未知子节当顶层 kwarg 透传。
+> **T001 硬依赖 T003**(dataclass + 装配),两者必须同批落地,否则仓库处于 `load_settings()` 全线失败的坏状态。已按此顺序实施。
+
+- [x] T001 [P] 在 [config/settings.yaml](../../config/settings.yaml) 的 `evaluation` 段下新增 `screening_llm` 节,字段与默认值照 [contracts/settings.screening.schema.md § 1](contracts/settings.screening.schema.md);`provider`/`model` 留空(默认交互模式不需要),阈值取默认 `keep_threshold: 0.80` / `drop_threshold: 0.80` / `borderline_ratio_warn: 0.40` / `sample_ratio: 0.10` / `compliance_gate: 0.90`
+- [x] T002 [P] 新建 [config/prompts/testset_screening.txt](../../config/prompts/testset_screening.txt) 预筛提示词:输入单条用例的 query / ground_truth / expected_chunk_ids / 合成期 contexts,要求返回含「三态结论 + 置信度 + 理由」的 JSON;判定标准对齐 SC-002 三项(question 通顺 / ground_truth 可在语料中验证 / expected_chunk_ids 指向真实 chunk)(refs [research § Decision 4](research.md))
 
 ---
 
@@ -42,13 +46,13 @@ description: "Task list for Feature-003 金标精修自动化"
 
 **⚠️ CRITICAL**:T003-T005 完成前不能开始任何 user story
 
-- [ ] T003 在 [src/core/settings.py](../../src/core/settings.py) 新增 `ScreeningLLMSettings` dataclass(11 个字段见 [data-model.md § 4](data-model.md)),经既有 `_build_sub_settings` 装配进 `EvaluationSettings`,并在 `_validate_evaluation_settings` 中加数值区间校验(阈值均 `0.0 < x ≤ 1.0`,`temperature ∈ [0,2]`,`request_timeout_sec > 0`),非法立即抛 `ValueError`;**不在加载期强制 `provider`/`model` 非空**——否则未配置该节的既有用法全部启动失败,违反 FR-004(理由见 [contracts/settings.screening.schema.md § 3](contracts/settings.screening.schema.md);参照既有 `judge_llm` 在 settings.py:715 的同样处理)
+- [x] T003 在 [src/core/settings.py](../../src/core/settings.py) 新增 `ScreeningLLMSettings` dataclass(11 个字段见 [data-model.md § 4](data-model.md)),经既有 `_build_sub_settings` 装配进 `EvaluationSettings`,并在 `_validate_evaluation_settings` 中加数值区间校验(阈值均 `0.0 < x ≤ 1.0`,`temperature ∈ [0,2]`,`request_timeout_sec > 0`),非法立即抛 `ValueError`;**不在加载期强制 `provider`/`model` 非空**——否则未配置该节的既有用法全部启动失败,违反 FR-004(理由见 [contracts/settings.screening.schema.md § 3](contracts/settings.screening.schema.md);参照既有 `judge_llm` 在 settings.py:715 的同样处理)
 - [ ] T004 在 [src/observability/evaluation/_ragas_wrappers.py](../../src/observability/evaluation/_ragas_wrappers.py) 把「子配置节 → `BaseLLM`」的 settings 投影逻辑(现内联于 `build_ragas_judge` 第 78-92 行)抽成共享函数,并改造 `build_ragas_judge` 调用它。**这是对 Feature-001 生产路径的重构**,须单独提交且跑通既有 ragas 相关单测(refs [research § Decision 1](research.md))
 - [ ] T005 在 [src/observability/evaluation/_ragas_wrappers.py](../../src/observability/evaluation/_ragas_wrappers.py) 新增 `get_screening_identifier(settings) -> str`,返回 `f"{provider}:{model}"`,与既有 `get_judge_identifier`(第 317 行)对称(依赖 T004 同文件改动完成;refs [contracts/settings.screening.schema.md § 4](contracts/settings.screening.schema.md))
 
 ### Tests for Foundational(宪法 § VII NON-NEGOTIABLE)
 
-- [ ] T006 [P] 新建 [tests/unit/test_settings_screening.py](../../tests/unit/test_settings_screening.py):覆盖 `ScreeningLLMSettings` 默认值、`${VAR}` 注入、各阈值越界抛 `ValueError`、以及**未配置 `screening_llm` 时 `load_settings()` 仍正常返回**(FR-004 关键回归点)
+- [x] T006 [P] 新建 [tests/unit/test_settings_screening.py](../../tests/unit/test_settings_screening.py):覆盖 `ScreeningLLMSettings` 默认值、`${VAR}` 注入、各阈值越界抛 `ValueError`、以及**未配置 `screening_llm` 时 `load_settings()` 仍正常返回**(FR-004 关键回归点)
 - [ ] T007 运行既有 ragas / 评估相关单测,确认 T004 重构零回归:`pytest tests/unit -k "ragas or evaluation or settings" -v`
 
 **Checkpoint**:异源 LLM 可经配置构造,标识可比较 —— user story 可以开工

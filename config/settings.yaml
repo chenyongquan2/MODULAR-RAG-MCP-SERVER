@@ -106,6 +106,38 @@ evaluation:
     temperature: 0.0          # Judge 推荐 0.0 提高判分稳定性
     request_timeout_sec: 60
 
+  # 金标精修的预筛 LLM (Feature-003, 仅 refine_testset.py --auto-mode 时使用)
+  # FR-002: MUST 与上方 judge_llm 异源 —— 合成端用的就是 judge_llm,同源会带来
+  #         相同的盲点,预筛等于自己批自己的作业。判据是完整标识串
+  #         "<provider>:<model>" 不相等,不是 provider 不相等
+  #         (实测 judge 标识为 "glm:minimax/minimax-m2.7":provider 名义是 glm
+  #          但模型经 OpenAI 兼容端点路由到 minimax;只比 provider 会把真正异源的
+  #          glm:glm-4.6 误判为同源)
+  # 默认留空 = 未启用。留空时不影响任何既有用法(默认交互模式不读本节),
+  # 但带 --auto-mode 运行会以退出码 2 快速失败并提示配置(宪法 § III)
+  #
+  # 可用配置示例(与 judge_llm 的 minimax/minimax-m2.7 异源):
+  #   provider: glm
+  #   model: z-ai/glm-4.7        # 顶层 llm 用的就是它,已知可用
+  #   api_key: ${GLM_API_KEY}
+  #   base_url: ${GLM_BASE_URL}
+  screening_llm:
+    provider: ""
+    model: ""
+    api_key: ${GLM_API_KEY}
+    base_url: ${GLM_BASE_URL}
+    temperature: 0.0            # 判定应尽量确定,与 Judge 同取 0.0
+    request_timeout_sec: 60
+
+    # 路由与门控阈值。注意:不同模型的置信度标度不可互换,换预筛模型后
+    # 必须重新校准(与 FR-013「换 Judge 后阈值失效」是同一回事)。
+    # 下列默认值是初始猜测,需按首轮真实运行的 borderline_ratio 校准。
+    keep_threshold: 0.80        # keep 判定且置信度 ≥ 此值 → 自动保留
+    drop_threshold: 0.80        # drop 判定且置信度 ≥ 此值 → 自动丢弃
+    borderline_ratio_warn: 0.40 # borderline 占比超此值告警(FR-011,预期区间 10-20%)
+    sample_ratio: 0.10          # 抽样自检比例(FR-006, 源自 Feature-001 SC-002)
+    compliance_gate: 0.90       # 抽样合规率门控(FR-007, 源自 SC-002)
+
   # 评估流程使用的 embedding (默认全空 = 复用顶层 settings.embedding)
   # FR-017: 评估流程所有 embedding 环节 MUST 用同一配置 (避免 train-eval skew)
   embedding:
