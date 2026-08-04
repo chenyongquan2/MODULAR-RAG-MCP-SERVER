@@ -33,6 +33,54 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# 子配置节 → 项目 BaseLLM(Judge / Screening 共用, Feature-003 T004 抽出)
+# ---------------------------------------------------------------------------
+
+
+def build_project_llm_from_sub_settings(settings: "Settings", sub: Any) -> Any:
+    """把 ``evaluation`` 下的某个子 LLM 配置节投影成顶层 LLMSettings 并创建实例。
+
+    ``LLMFactory.create()`` 只读 ``settings.llm.provider``,且 ``override_kwargs``
+    是透传给 provider 构造函数的,**无法用来覆写 provider**。因此想用一个与顶层
+    不同的 provider,唯一的办法是浅拷贝 settings 并替换 ``.llm`` 子节。
+
+    本函数由 :func:`build_ragas_judge`(``evaluation.judge_llm``)与 Feature-003
+    的预筛流程(``evaluation.screening_llm``)共用 —— 两者需求同构,抽出以免第三次
+    复制同样的投影逻辑。
+
+    Args:
+        settings: 全局 Settings 实例。
+        sub: 子配置节,需具备 ``provider`` / ``model`` / ``api_key`` / ``base_url``
+            四个属性(``JudgeLLMSettings`` 与 ``ScreeningLLMSettings`` 均满足)。
+
+    Returns:
+        项目 ``BaseLLM`` 实例(由 ``LLMFactory`` 按 ``sub.provider`` 创建)。
+
+    Raises:
+        ValueError: provider 未注册或配置非法(由 ``LLMFactory.create`` 抛出)。
+
+    Note:
+        宪法 § I:本函数只经 ``LLMFactory`` 创建实例,不 import 任何具体 provider。
+    """
+    from src.core.settings import LLMSettings as _LLMSettings
+    from src.libs.llm.llm_factory import LLMFactory
+
+    sub_llm_settings = _LLMSettings(
+        provider=sub.provider,
+        model=sub.model,
+        api_key=sub.api_key,
+        base_url=sub.base_url or "",
+    )
+
+    # 浅拷贝顶层 settings,把 .llm 替换为子配置节
+    # (LLMFactory.create() 只读 settings.llm,不读其他段)
+    projected = _copy_module.copy(settings)
+    projected.llm = sub_llm_settings
+
+    return LLMFactory.create(projected)
+
+
+# ---------------------------------------------------------------------------
 # Judge LLM 包装 (FR-016, research § Decision 2)
 # ---------------------------------------------------------------------------
 
@@ -70,26 +118,12 @@ def build_ragas_judge(settings: "Settings") -> Any:
             "中已固定 ragas==0.1.21 + langchain-openai)。"
         ) from exc
 
-    from src.core.settings import LLMSettings as _LLMSettings
-    from src.libs.llm.llm_factory import LLMFactory
-
     eval_judge = settings.evaluation.judge_llm
 
     # 把 evaluation.judge_llm.* 投影成顶层 LLMSettings,让 LLMFactory 复用
-    # 项目既有 provider 注册(glm/azure/openai/ollama/deepseek)
-    judge_llm_settings = _LLMSettings(
-        provider=eval_judge.provider,
-        model=eval_judge.model,
-        api_key=eval_judge.api_key,
-        base_url=eval_judge.base_url or "",
-    )
-
-    # 浅拷贝顶层 settings,把 .llm 替换为 judge_llm 配置
-    # (LLMFactory.create() 通常只读 settings.llm,不读其他段)
-    judge_settings = _copy_module.copy(settings)
-    judge_settings.llm = judge_llm_settings
-
-    project_llm = LLMFactory.create(judge_settings)
+    # 项目既有 provider 注册(glm/azure/openai/ollama/deepseek)。
+    # 投影逻辑已抽成共享函数,与 Feature-003 的预筛流程共用。
+    project_llm = build_project_llm_from_sub_settings(settings, eval_judge)
 
     class _ProjectLLMAsLangChain(_LangChainLLM):
         """把项目 BaseLLM 适配为 LangChain BaseLLM。
@@ -317,6 +351,23 @@ def __getattr__(name: str) -> Any:
 def get_judge_identifier(settings: "Settings") -> str:
     """返回 ``"<provider>:<model>"`` 形式的 Judge LLM 标识。"""
     return f"{settings.evaluation.judge_llm.provider}:{settings.evaluation.judge_llm.model}"
+
+
+def get_screening_identifier(settings: "Settings") -> str:
+    """返回 ``"<provider>:<model>"`` 形式的预筛 LLM 标识 (Feature-003 FR-002)。
+
+    与 :func:`get_judge_identifier` 同格式,使「预筛端 vs 合成端」可直接比对。
+    合成端把 ``get_judge_identifier()`` 的结果写入 candidate 的
+    ``_synthesis_metadata.judge_llm_identifier``,故同源判据是两个标识串相等。
+
+    Note:
+        判据必须是**完整标识串**相等,不能只比 provider。实测某 candidate 的
+        judge 标识为 ``"glm:minimax/minimax-m2.7"`` —— provider 名义是 ``glm``
+        但模型经 OpenAI 兼容端点路由到 minimax;若只比 provider,真正异源的
+        ``glm:glm-4.6`` 会被误判为同源而遭拒绝。
+    """
+    screening = settings.evaluation.screening_llm
+    return f"{screening.provider}:{screening.model}"
 
 
 def get_embedding_identifier(settings: "Settings") -> str:
