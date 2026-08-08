@@ -143,9 +143,9 @@ T018 的耗时实测通过即视为 MVP 达标 —— 本 feature 的核心价�
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T028 按 [quickstart.md](quickstart.md) 全流程实跑一遍(配置 → auto 模式 → 看审计记录 → 阈值校准),修正文档与实现的偏差
+- [x] T028 按 [quickstart.md](quickstart.md) 全流程实跑一遍(配置 → auto 模式 → 看审计记录 → 阈值校准),修正文档与实现的偏差
 - [x] T029 [P] 更新 [CLAUDE.md](../../CLAUDE.md) § Evaluation System 的「关键 CLI」表格,补 `refine_testset.py --auto-mode` 用法与 `evaluation.screening_llm` 配置指引
-- [ ] T030 用真实 candidate 跑一轮并记录 `borderline_ratio`,据实际分布校准 `keep_threshold` / `drop_threshold` 默认值(spec Assumptions 明确该阈值是初始猜测,需首轮后校准)
+- [x] T030 用真实 candidate 跑一轮并记录 `borderline_ratio`,据实际分布校准 `keep_threshold` / `drop_threshold` 默认值(spec Assumptions 明确该阈值是初始猜测,需首轮后校准)
 - [x] T031 FR / SC 覆盖度自查:逐条核对 FR-001..FR-011 与 SC-001..SC-006 均有对应实现与测试,缺口补齐(重点复核 analyze 曾标出的 FR-010 / FR-011 / SC-001 / SC-006 四项)
 - [x] T032 全量 `pytest tests/unit -v` 通过;确认 `src/` 内新增代码零 `print()`(宪法 § V):`git grep -n "print(" -- src/observability/evaluation/testset_screener.py` 应为空
 

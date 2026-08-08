@@ -129,7 +129,12 @@ evaluation:
     # 路由与门控阈值。注意:不同模型的置信度标度不可互换,换预筛模型后
     # 必须重新校准(与 FR-013「换 Judge 后阈值失效」是同一回事)。
     # 下列默认值是初始猜测,需按首轮真实运行的 borderline_ratio 校准。
-    keep_threshold: 0.80        # keep 判定且置信度 ≥ 此值 → 自动保留
+    # 2026-08-08 校准(z-ai/glm-5.2-free,zh.json 47 条实测扫描):
+    #   0.80 → borderline 4.3%   太松,几乎全自动
+    #   0.90 → borderline 10.6%  ← 落进预期 10-20% 区间,取此值
+    #   0.95 → borderline 29.8%  偏严,接近 40% 告警线
+    # 换预筛模型后须重新扫描 —— 置信度标度不可跨模型互换。
+    keep_threshold: 0.90        # keep 判定且置信度 ≥ 此值 → 自动保留
     drop_threshold: 0.80        # drop 判定且置信度 ≥ 此值 → 自动丢弃
     borderline_ratio_warn: 0.40 # borderline 占比超此值告警(FR-011,预期区间 10-20%)
     sample_ratio: 0.10          # 抽样自检比例(FR-006, 源自 Feature-001 SC-002)
