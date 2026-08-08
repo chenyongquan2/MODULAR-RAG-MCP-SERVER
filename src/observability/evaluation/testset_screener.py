@@ -42,9 +42,17 @@ DEFAULT_PROMPT_PATH = Path("config/prompts/testset_screening.txt")
 
 # 提示词文件缺失时的兜底(与 chunk_refiner 等既有模块同一约定)
 DEFAULT_PROMPT = """You are a quality screener for a RAG evaluation golden test set.
-Judge ONE candidate test case against two criteria: the question is well-formed,
-and the ground truth is supported by the supplied contexts. Answer "keep" if both
-hold, "drop" if either clearly fails, and "borderline" if you are unsure.
+Judge ONE candidate test case against three criteria:
+
+1. The QUESTION field contains a question and NOTHING else — no "**Question:**"
+   scaffolding, no leading "question:" label, no copied answer, no preamble,
+   no multiple lines. Check this first and literally; the field is used verbatim
+   as a retrieval query, so any artifact goes straight to the retriever.
+2. The question is well-formed and self-contained, and does not invent
+   abbreviations absent from the supplied contexts.
+3. The ground truth is supported by the supplied contexts.
+
+Answer "keep" if all hold, "drop" if any clearly fails, "borderline" if unsure.
 
 Do NOT judge the expected chunk id list — it is empty by design at this stage
 (synthesis leaves it blank; a later backfill step fills it in).

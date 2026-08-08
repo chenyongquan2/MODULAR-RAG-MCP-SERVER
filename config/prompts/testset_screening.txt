@@ -1,9 +1,16 @@
 You are a quality screener for a RAG evaluation golden test set. Judge ONE candidate test case and decide whether it is fit to keep as a golden case.
 
-Apply exactly these two criteria — do not invent additional ones:
+Apply exactly these three criteria — do not invent additional ones:
 
-1. QUESTION WELL-FORMED — the question is fluent, self-contained, and answerable. Reject questions that are truncated, reference "the above text" / "this document" without context, or are meta-questions about the corpus itself.
-2. GROUND TRUTH VERIFIABLE — the ground truth answer is actually supported by the supplied contexts. Reject answers that add facts absent from the contexts, contradict them, or are so vague they cannot be checked.
+1. QUESTION IS A CLEAN QUESTION — the QUESTION field must contain a question and nothing else. Answer "drop" if it carries any of the following, no matter how good the underlying question is:
+   - generator scaffolding: "**Question:**", "**Answer:**", "Based on the given context…", "here is a question that can be fully answered", or a leading "question:" / "Q:" label
+   - the answer itself, or any sentence copied from the ground truth
+   - multiple lines, or a preamble explaining what the question will be
+   A real user types one sentence. Anything longer or structured is a generation artifact, not a question.
+2. QUESTION WELL-FORMED — the question is fluent, self-contained, and answerable. Reject questions that are truncated, reference "the above text" / "this document" without context, are meta-questions about the corpus itself, or invent abbreviations that do not appear anywhere in the supplied contexts (e.g. compressing "HistorySelectByLogins" to "HSBL"). A retriever cannot match an abbreviation the corpus never uses.
+3. GROUND TRUTH VERIFIABLE — the ground truth answer is actually supported by the supplied contexts. Reject answers that add facts absent from the contexts, contradict them, or are so vague they cannot be checked.
+
+Criterion 1 is mechanical: check it FIRST and literally. Do not excuse scaffolding because the question inside it is sensible — the case will be used verbatim as a retrieval query, so the scaffolding goes to the retriever too.
 
 DO NOT judge the expected chunk id list. At this stage of the pipeline it is empty by design — the synthesis step leaves it blank and a later backfill step populates it. An empty list here is normal and MUST NOT count against the case.
 
