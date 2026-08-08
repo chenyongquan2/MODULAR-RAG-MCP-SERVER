@@ -18,6 +18,8 @@
 from __future__ import annotations
 
 import json
+import math
+import random
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -211,6 +213,136 @@ def check_source_divergence(settings: "Settings", candidate: dict[str, Any]) -> 
         synthesis_id,
     )
     return SourceRelation.DIVERGENT
+
+
+# ---------------------------------------------------------------------------
+# 抽样合规自检 (FR-006, FR-007, SC-006, US3)
+# ---------------------------------------------------------------------------
+
+PROVENANCE_AUTO = "auto"
+"""该保留用例由机器自动决定。"""
+
+PROVENANCE_HUMAN = "human"
+"""该保留用例经人工确认(borderline 处置或人工编辑)。"""
+
+
+def compute_sample_size(kept_count: int, sample_ratio: float) -> int:
+    """按比例算抽样数,不足 1 条时取 1(FR-006)。
+
+    Args:
+        kept_count: 保留用例总数。
+        sample_ratio: 抽样比例(默认 0.10,源自 Feature-001 SC-002)。
+
+    Returns:
+        抽样条数。``kept_count == 0`` 时返回 0 —— 没有用例可抽,
+        不能硬凑出 1 条(否则后续按索引取用例会越界)。
+    """
+    if kept_count <= 0:
+        return 0
+    return min(kept_count, max(1, math.ceil(kept_count * sample_ratio)))
+
+
+def pick_compliance_sample(
+    kept_count: int,
+    sample_ratio: float,
+    rng: Optional[random.Random] = None,
+) -> list[int]:
+    """从保留用例中随机抽取待复核的序号 (FR-006)。
+
+    Args:
+        kept_count: 保留用例总数。
+        sample_ratio: 抽样比例。
+        rng: 随机源;``None`` = 使用全局随机(**不固定 seed**)。
+
+    Returns:
+        升序排列的抽中序号(对应最终 ``test_cases`` 的下标)。
+
+    Note:
+        刻意不固定 seed(research § Decision 7)。可复核性靠**记录实际抽中的
+        序号**保证,而不是靠固定种子 —— 后者会让重复运行永远抽到同一批用例,
+        削弱抽样本身的覆盖意义。
+    """
+    size = compute_sample_size(kept_count, sample_ratio)
+    if size == 0:
+        return []
+    source = rng if rng is not None else random
+    return sorted(source.sample(range(kept_count), size))
+
+
+def summarize_compliance(
+    sampled_indices: list[int],
+    compliant_flags: list[bool],
+    kept_provenance: list[str],
+    compliance_gate: float,
+) -> dict[str, Any]:
+    """汇总抽样自检结果,并按决策来源拆出 auto-kept 子集 (FR-006, FR-007, SC-006)。
+
+    Args:
+        sampled_indices: 抽中的用例序号(``kept_provenance`` 的下标)。
+        compliant_flags: 与 ``sampled_indices`` 等长的人工合规判定。
+        kept_provenance: 与最终 ``test_cases`` **同序**的决策来源列表。
+        compliance_gate: 合规率门控(默认 0.90,源自 Feature-001 SC-002)。
+
+    Returns:
+        ComplianceSample dict(data-model § 3),含全量口径与 auto-kept 口径。
+
+    Raises:
+        ValueError: 标记数与抽样数不等,或抽样序号越出 provenance 范围
+            —— 两者都说明调用方传错了数据,快速失败而非静默算错(宪法 § III)。
+
+    Note:
+        **为什么要拆两个口径** —— 抽样池是全部保留用例(与 SC-002「对每份金标集
+        随机抽样 10%」对齐),但 SC-006 问的是「**机器自动保留的**用例中不合规
+        的比例」。只记全量合规率的话,分不清抽中的那几条是机器决定的还是人工
+        确认过的,SC-006 无法计算。这是 analyze 阶段发现的设计缺口。
+    """
+    if len(sampled_indices) != len(compliant_flags):
+        raise ValueError(
+            f"compliant_flags length {len(compliant_flags)} does not match "
+            f"sampled_indices length {len(sampled_indices)}"
+        )
+    for index in sampled_indices:
+        if not 0 <= index < len(kept_provenance):
+            raise ValueError(
+                f"sampled index {index} is out of range for kept_provenance "
+                f"of length {len(kept_provenance)}"
+            )
+
+    sample_size = len(sampled_indices)
+    compliant = sum(1 for flag in compliant_flags if flag)
+    compliance_rate = (compliant / sample_size) if sample_size else None
+    # 没抽样时不判定为不达标 —— 无证据不等于有反证
+    gate_passed = True if compliance_rate is None else compliance_rate >= compliance_gate
+
+    auto_pairs = [
+        (idx, flag)
+        for idx, flag in zip(sampled_indices, compliant_flags)
+        if kept_provenance[idx] == PROVENANCE_AUTO
+    ]
+    auto_kept_sampled = len(auto_pairs)
+    auto_kept_compliant = sum(1 for _, flag in auto_pairs if flag)
+    auto_kept_noncompliance_rate = (
+        1.0 - auto_kept_compliant / auto_kept_sampled if auto_kept_sampled else None
+    )
+
+    if not gate_passed:
+        logger.warning(
+            "compliance rate %.0f%% is below gate %.0f%%; this golden set has NOT "
+            "met the SC-002 quality bar",
+            (compliance_rate or 0) * 100,
+            compliance_gate * 100,
+        )
+
+    return {
+        "sampled_case_indices": list(sampled_indices),
+        "sample_size": sample_size,
+        "compliant": compliant,
+        "compliance_rate": compliance_rate,
+        "gate_passed": gate_passed,
+        "auto_kept_sampled": auto_kept_sampled,
+        "auto_kept_compliant": auto_kept_compliant,
+        "auto_kept_noncompliance_rate": auto_kept_noncompliance_rate,
+    }
 
 
 # ---------------------------------------------------------------------------

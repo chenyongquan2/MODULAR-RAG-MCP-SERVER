@@ -329,7 +329,8 @@ def test_auto_mode_output_carries_review_metadata() -> None:
         screener=_StubScreener(
             [ScreeningDecision.KEEP, ScreeningDecision.BORDERLINE, ScreeningDecision.DROP]
         ),
-        input_stream=io.StringIO("y\n"),
+        # 先 y 处置 borderline,再 y 回答抽样自检
+        input_stream=io.StringIO("y\ny\n"),
     )
     meta = outcome.final["_review_metadata"]
 
@@ -341,10 +342,45 @@ def test_auto_mode_output_carries_review_metadata() -> None:
     assert meta["screening_llm_identifier"] == SCREENING_ID
     # 当时阈值多少
     assert meta["thresholds_snapshot"]["keep_threshold"] == 0.80
-    # 抽样合规率(US3 未接入时为 null)
-    assert meta["compliance"] is None
-    # 不变式仍成立
+    # 抽样合规率(US3 接入后有值)
+    assert meta["compliance"] is not None
+    assert meta["compliance"]["compliance_rate"] == 1.0
+    # 不变式:抽样复核数不计入 human_reviewed,故两路之和仍等于输入总数
     assert meta["auto_decided"] + meta["human_reviewed"] == 3
+
+
+def test_skip_compliance_sample_leaves_null_and_warns() -> None:
+    """--skip-compliance-sample:compliance 为 null,且必须留下告警。
+
+    跳过质量门控是有代价的决定,不能悄无声息 —— 否则后来人看到
+    compliance=null 会以为是「没抽到」而不是「主动跳过」。
+    """
+    outcome = refine.auto_refine(
+        _candidate(2),
+        _settings(),
+        screener=_StubScreener([ScreeningDecision.KEEP, ScreeningDecision.KEEP]),
+        input_stream=io.StringIO(""),
+        skip_compliance_sample=True,
+    )
+    meta = outcome.final["_review_metadata"]
+    assert meta["compliance"] is None
+    assert any("skipped" in w for w in meta["warnings"])
+
+
+def test_partial_run_skips_compliance_with_reason() -> None:
+    """中断产生的部分结果不做抽样 —— 对半成品算合规率没有意义。"""
+    outcome = refine.auto_refine(
+        _candidate(3),
+        _settings(),
+        screener=_StubScreener(
+            [ScreeningDecision.BORDERLINE, ScreeningDecision.KEEP, ScreeningDecision.KEEP]
+        ),
+        input_stream=io.StringIO("q\n"),
+    )
+    meta = outcome.final["_review_metadata"]
+    assert meta["partial"] is True
+    assert meta["compliance"] is None
+    assert any("partial result" in w for w in meta["warnings"])
 
 
 def test_auto_mode_dropped_count_includes_both_paths() -> None:
@@ -356,5 +392,19 @@ def test_auto_mode_dropped_count_includes_both_paths() -> None:
             [ScreeningDecision.DROP, ScreeningDecision.BORDERLINE, ScreeningDecision.KEEP]
         ),
         input_stream=io.StringIO("d\n"),
+        skip_compliance_sample=True,
     )
     assert outcome.final["_review_metadata"]["dropped"] == 2
+
+
+def test_compliance_split_reaches_metadata() -> None:
+    """SC-006 的 auto-kept 拆分必须一路传到金标里,否则指标仍不可计算。"""
+    outcome = refine.auto_refine(
+        _candidate(2),
+        _settings(),
+        screener=_StubScreener([ScreeningDecision.KEEP, ScreeningDecision.KEEP]),
+        input_stream=io.StringIO("y\n"),
+    )
+    compliance = outcome.final["_review_metadata"]["compliance"]
+    assert compliance["auto_kept_sampled"] == 1
+    assert compliance["auto_kept_noncompliance_rate"] == 0.0

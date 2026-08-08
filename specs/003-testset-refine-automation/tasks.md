@@ -124,14 +124,14 @@ T018 的耗时实测通过即视为 MVP 达标 —— 本 feature 的核心价�
 
 ### Tests for User Story 3(宪法 § VII NON-NEGOTIABLE)
 
-- [ ] T023 [P] [US3] 新建 [tests/unit/test_compliance_sample.py](../../tests/unit/test_compliance_sample.py):① 抽样数 `max(1, ceil(n × sample_ratio))` —— 20 条 → 2、10 条 → 1、**3 条 → 1(不跳过自检)**、**0 条 → 不抽样且 `compliance_rate` 为 `None`**(analyze 发现的空输入缺口);② 合规率计算;③ `compliance_rate < compliance_gate` 时 `gate_passed=False` 且产生 warning,**告警不改变退出码**;④ **SC-006 拆分**:抽中用例含 auto-kept 与 human-kept 混合时,`auto_kept_sampled` / `auto_kept_compliant` / `auto_kept_noncompliance_rate` 只统计 auto-kept 子集,子集为空时该率为 `null`(refs FR-006/FR-007/SC-006, [data-model.md § 3](data-model.md))
+- [x] T023 [P] [US3] 新建 [tests/unit/test_compliance_sample.py](../../tests/unit/test_compliance_sample.py):① 抽样数 `max(1, ceil(n × sample_ratio))` —— 20 条 → 2、10 条 → 1、**3 条 → 1(不跳过自检)**、**0 条 → 不抽样且 `compliance_rate` 为 `None`**(analyze 发现的空输入缺口);② 合规率计算;③ `compliance_rate < compliance_gate` 时 `gate_passed=False` 且产生 warning,**告警不改变退出码**;④ **SC-006 拆分**:抽中用例含 auto-kept 与 human-kept 混合时,`auto_kept_sampled` / `auto_kept_compliant` / `auto_kept_noncompliance_rate` 只统计 auto-kept 子集,子集为空时该率为 `null`(refs FR-006/FR-007/SC-006, [data-model.md § 3](data-model.md))
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] 在 [src/observability/evaluation/testset_screener.py](../../src/observability/evaluation/testset_screener.py) 实现 `pick_compliance_sample()` 与 `summarize_compliance()`:随机抽样(不固定 seed)、返回 `sampled_case_indices` / `sample_size` / `compliant` / `compliance_rate` / `gate_passed`,**并按 T014 提供的决策来源映射拆出 `auto_kept_sampled` / `auto_kept_compliant` / `auto_kept_noncompliance_rate`**(SC-006 的唯一计算来源;refs [research § Decision 7](research.md), [data-model.md § 3](data-model.md))
-- [ ] T025 [US3] 在 [scripts/refine_testset.py](../../scripts/refine_testset.py) 的 auto 流程收尾接入自检:逐条展示抽中用例并请人确认合规性,新增 `--skip-compliance-sample` 参数(跳过时 `compliance` 为 `null` 并记 warning);合规率不达标时**明确告警但仍写出文件、退出码保持 0**(refs FR-007, [contracts/cli_contract.md § 2](contracts/cli_contract.md);依赖 T024)
-- [ ] T026 [US3] 把自检结果(含 3 个 auto-kept 拆分字段)填入 `ReviewMetadata.compliance`,并把告警追加到 `warnings`;确认 SC-006 可仅凭金标文件计算(依赖 T020, T024)
-- [ ] T027 [US3] 明确**重复运行**行为(analyze 发现的 edge case 缺口):对同一 candidate 二次运行 `--auto-mode` 时,输出路径已存在金标的处置方式须与现状一致或更保守(不因随机抽样的偶然性静默覆盖成更差版本);在 [tests/unit/test_refine_testset_auto.py](../../tests/unit/test_refine_testset_auto.py) 补对应断言(refs spec Edge Cases「重复运行」)
+- [x] T024 [US3] 在 [src/observability/evaluation/testset_screener.py](../../src/observability/evaluation/testset_screener.py) 实现 `pick_compliance_sample()` 与 `summarize_compliance()`:随机抽样(不固定 seed)、返回 `sampled_case_indices` / `sample_size` / `compliant` / `compliance_rate` / `gate_passed`,**并按 T014 提供的决策来源映射拆出 `auto_kept_sampled` / `auto_kept_compliant` / `auto_kept_noncompliance_rate`**(SC-006 的唯一计算来源;refs [research § Decision 7](research.md), [data-model.md § 3](data-model.md))
+- [x] T025 [US3] 在 [scripts/refine_testset.py](../../scripts/refine_testset.py) 的 auto 流程收尾接入自检:逐条展示抽中用例并请人确认合规性,新增 `--skip-compliance-sample` 参数(跳过时 `compliance` 为 `null` 并记 warning);合规率不达标时**明确告警但仍写出文件、退出码保持 0**(refs FR-007, [contracts/cli_contract.md § 2](contracts/cli_contract.md);依赖 T024)
+- [x] T026 [US3] 把自检结果(含 3 个 auto-kept 拆分字段)填入 `ReviewMetadata.compliance`,并把告警追加到 `warnings`;确认 SC-006 可仅凭金标文件计算(依赖 T020, T024)
+- [x] T027 [US3] 明确**重复运行**行为(analyze 发现的 edge case 缺口):对同一 candidate 二次运行 `--auto-mode` 时,输出路径已存在金标的处置方式须与现状一致或更保守(不因随机抽样的偶然性静默覆盖成更差版本);在 [tests/unit/test_refine_testset_auto.py](../../tests/unit/test_refine_testset_auto.py) 补对应断言(refs spec Edge Cases「重复运行」)
 
 ### US3 验收
 

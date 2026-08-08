@@ -80,6 +80,15 @@ def parse_args() -> argparse.Namespace:
             "confirmed same-source config."
         ),
     )
+    parser.add_argument(
+        "--skip-compliance-sample",
+        action="store_true",
+        help=(
+            "Skip the closing 10%% spot-check of kept cases. The golden set is still "
+            "written, but its audit record will carry compliance=null and a warning: "
+            "the SC-002 quality gate was never evaluated."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -281,8 +290,11 @@ EXIT_AUTO_PRECONDITION = 2
 EXIT_SCREENING_UNAVAILABLE = 3
 EXIT_INTERRUPTED = 130
 
-PROVENANCE_AUTO = "auto"
-PROVENANCE_HUMAN = "human"
+# 决策来源常量的单一来源在 src 侧,这里重导出供脚本与其测试使用
+from src.observability.evaluation.testset_screener import (  # noqa: E402
+    PROVENANCE_AUTO,
+    PROVENANCE_HUMAN,
+)
 
 
 class AutoRefineOutcome:
@@ -382,11 +394,87 @@ def check_auto_preconditions(
     return None
 
 
+def _format_case_for_compliance(case: dict[str, Any], position: int, total: int) -> str:
+    """抽样自检时展示一条待复核用例(对齐 SC-002 的三项结构标准)。"""
+    chunk_ids = case.get("expected_chunk_ids") or []
+    return (
+        f"\n[spot-check {position}/{total}]\n"
+        f"  question      : {case.get('query', '')}\n"
+        f"  ground_truth  : {_short(case.get('ground_truth', ''), 200)}\n"
+        f"  chunk ids     : {chunk_ids}\n"
+        f"  Structurally compliant? (question reads well, ground truth is verifiable, "
+        f"chunk ids present)"
+    )
+
+
+def run_compliance_sample(
+    kept_cases: list[dict[str, Any]],
+    kept_provenance: list[str],
+    settings: Any,
+    stream: Any,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """按 SC-002 抽样 10% 请人工确认结构合规性 (FR-006, FR-007)。
+
+    Args:
+        kept_cases: 最终保留的用例。
+        kept_provenance: 与之同序的决策来源。
+        settings: 全局 Settings。
+        stream: 输入流。
+
+    Returns:
+        ``(compliance dict 或 None, 新增告警列表)``。保留用例为 0 时返回
+        ``(None, [...])``。
+    """
+    from src.observability.evaluation.testset_screener import (
+        pick_compliance_sample,
+        summarize_compliance,
+    )
+
+    screening_cfg = settings.evaluation.screening_llm
+    indices = pick_compliance_sample(len(kept_cases), screening_cfg.sample_ratio)
+    if not indices:
+        return None, ["no kept cases to spot-check; compliance gate not evaluated"]
+
+    print(
+        f"\nSpot-checking {len(indices)} of {len(kept_cases)} kept case(s) "
+        f"({screening_cfg.sample_ratio:.0%} sample, per SC-002) ..."
+    )
+    flags: list[bool] = []
+    for position, index in enumerate(indices, start=1):
+        print(_format_case_for_compliance(kept_cases[index], position, len(indices)))
+        print("  [y]compliant / [n]not compliant: ", end="", flush=True)
+        answer = (stream.readline() or "").strip().lower()
+        flags.append(not answer.startswith("n"))
+
+    compliance = summarize_compliance(
+        sampled_indices=indices,
+        compliant_flags=flags,
+        kept_provenance=kept_provenance,
+        compliance_gate=screening_cfg.compliance_gate,
+    )
+
+    warnings: list[str] = []
+    if not compliance["gate_passed"]:
+        warning = (
+            f"compliance rate {compliance['compliance_rate']:.0%} is below the "
+            f"{screening_cfg.compliance_gate:.0%} gate (SC-002). Do NOT use this golden "
+            f"set for acceptance until the underlying quality issue is addressed."
+        )
+        warnings.append(warning)
+        print(f"  ! {warning}", file=sys.stderr)
+    else:
+        rate = compliance["compliance_rate"]
+        print(f"  compliance {rate:.0%} — gate passed")
+
+    return compliance, warnings
+
+
 def auto_refine(
     candidate: dict[str, Any],
     settings: Any,
     screener: Any = None,
     input_stream: Any = None,
+    skip_compliance_sample: bool = False,
 ) -> AutoRefineOutcome:
     """预筛 → 自动决策 + borderline 交人工 (FR-003, FR-008, FR-010, FR-011)。
 
@@ -480,6 +568,34 @@ def auto_refine(
         partial = True
         interrupted = True
 
+    # --- 抽样合规自检 (US3) ---
+    compliance: dict[str, Any] | None = None
+    if skip_compliance_sample:
+        warnings.append(
+            "compliance spot-check skipped via --skip-compliance-sample; "
+            "the SC-002 quality gate was not evaluated"
+        )
+    elif partial:
+        # 部分结果不是完整金标,对它抽样得出的合规率没有意义
+        warnings.append(
+            "run ended early, so the compliance spot-check was skipped; "
+            "this is a partial result, not an acceptance-ready golden set"
+        )
+    else:
+        try:
+            compliance, sample_warnings = run_compliance_sample(
+                kept, kept_provenance, settings, stream
+            )
+            warnings.extend(sample_warnings)
+            # 抽样复核数**不**计入 human_reviewed —— 后者的语义是「精修阶段
+            # 路由给人工的用例数」,与 auto_decided 相加须等于输入总数
+            # (data-model § 3 的不变式)。SC-002 的「人工处置占比」应算作
+            # (human_reviewed + compliance.sample_size) / 总数。
+        except KeyboardInterrupt:
+            print("\n  interrupted during spot-check; audit will note it", file=sys.stderr)
+            warnings.append("compliance spot-check interrupted before completion")
+            interrupted = True
+
     review_metadata = build_review_metadata(
         settings=settings,
         candidate=candidate,
@@ -489,6 +605,7 @@ def auto_refine(
         dropped=counts["drop"],
         warnings=warnings,
         partial=partial,
+        compliance=compliance,
     )
 
     return AutoRefineOutcome(
@@ -503,6 +620,46 @@ def auto_refine(
         partial=partial,
         interrupted=interrupted,
     )
+
+
+def warn_if_overwriting(output_path: Path) -> str | None:
+    """auto 模式下覆盖既有金标前,把旧文件的合规率提示出来。
+
+    spec Edge Cases「重复运行」担心的是:抽样有偶然性,二次运行可能把一份
+    合规率更高的金标静默换成更差的。这里不阻断写入(与既有行为一致),
+    但把可比信息摆到眼前,让覆盖成为知情决定。
+
+    Args:
+        output_path: 待写入路径。
+
+    Returns:
+        应记入审计的告警文本;无需告警时为 ``None``。
+    """
+    if not output_path.exists():
+        return None
+
+    prior_rate: Any = None
+    try:
+        prior = json.loads(output_path.read_text(encoding="utf-8"))
+        prior_rate = (prior.get("_review_metadata") or {}).get("compliance", {})
+        prior_rate = (prior_rate or {}).get("compliance_rate")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        prior_rate = None
+
+    if prior_rate is None:
+        warning = (
+            f"overwriting existing golden set at {output_path} "
+            "(it carries no recorded compliance rate to compare against)"
+        )
+    else:
+        warning = (
+            f"overwriting existing golden set at {output_path}, whose recorded "
+            f"compliance rate was {prior_rate:.0%}. Sampling is random, so a lower "
+            f"rate this run does not necessarily mean lower quality — compare before "
+            f"trusting either number."
+        )
+    print(f"  ! {warning}", file=sys.stderr)
+    return warning
 
 
 def _resolve_output_path(arg_output: str | None, lang: str) -> Path:
@@ -549,13 +706,24 @@ def main() -> int:
             print(f"Error: {problem}", file=sys.stderr)
             return EXIT_AUTO_PRECONDITION
 
+        overwrite_warning = warn_if_overwriting(output_path)
+
         try:
-            outcome = auto_refine(candidate, settings)
+            outcome = auto_refine(
+                candidate,
+                settings,
+                skip_compliance_sample=args.skip_compliance_sample,
+            )
         except ScreeningUnavailableError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return EXIT_SCREENING_UNAVAILABLE
 
         final = outcome.final
+        if overwrite_warning is not None:
+            # 让覆盖这件事也留在审计记录里,而不只是一条转瞬即逝的 stderr
+            final.setdefault("_review_metadata", {}).setdefault("warnings", []).append(
+                overwrite_warning
+            )
         if outcome.interrupted:
             exit_code = EXIT_INTERRUPTED
     else:

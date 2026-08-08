@@ -146,12 +146,29 @@ def _run_main(
     return refine.main(), out_path
 
 
-def _auto_refine_with(screener: Any):
-    """把 stub screener 注入 auto_refine(保留其余真实逻辑)。"""
+def _auto_refine_with(screener: Any, skip_sample: bool = True):
+    """把 stub screener 注入 auto_refine(保留其余真实逻辑)。
+
+    默认跳过抽样自检 —— 本文件测的是预筛路由与退出码,抽样自检有
+    tests/unit/test_compliance_sample.py 专门覆盖。少数需要验证自检交互的
+    用例显式传 ``skip_sample=False``。
+    """
     real = refine.auto_refine
 
-    def _wrapped(candidate, settings, screener_arg=None, input_stream=None):
-        return real(candidate, settings, screener=screener, input_stream=input_stream)
+    def _wrapped(
+        candidate,
+        settings,
+        screener_arg=None,
+        input_stream=None,
+        skip_compliance_sample=False,
+    ):
+        return real(
+            candidate,
+            settings,
+            screener=screener,
+            input_stream=input_stream,
+            skip_compliance_sample=skip_sample,
+        )
 
     return _wrapped
 
@@ -325,6 +342,7 @@ class TestAutoRouting:
                 ]
             ),
             input_stream=stream,
+            skip_compliance_sample=True,
         )
         assert outcome.auto_decided == 2
         assert outcome.human_reviewed == 1
@@ -345,6 +363,7 @@ class TestAutoRouting:
                 ]
             ),
             input_stream=io.StringIO("y\n"),
+            skip_compliance_sample=True,
         )
         assert len(outcome.kept_provenance) == len(outcome.final["test_cases"])
         assert outcome.kept_provenance == [
@@ -362,6 +381,7 @@ class TestAutoRouting:
                 [ScreeningDecision.BORDERLINE, ScreeningDecision.KEEP]
             ),
             input_stream=io.StringIO("d\n"),
+            skip_compliance_sample=True,
         )
         assert outcome.kept_provenance == [refine.PROVENANCE_AUTO]
         assert len(outcome.final["test_cases"]) == 1
@@ -373,6 +393,7 @@ class TestAutoRouting:
             _settings(),
             screener=_StubScreener([ScreeningDecision.KEEP]),  # 只给 1 条 verdict
             input_stream=io.StringIO("y\n"),
+            skip_compliance_sample=True,
         )
         assert outcome.human_reviewed == 1
 
@@ -391,10 +412,12 @@ class TestBorderlineRatioWarning:
                 [ScreeningDecision.BORDERLINE, ScreeningDecision.BORDERLINE]
             ),
             input_stream=io.StringIO("y\ny\n"),
+            skip_compliance_sample=True,
         )
         assert outcome.screening.borderline_ratio == 1.0
-        assert len(outcome.warnings) == 1
-        assert "borderline ratio" in outcome.warnings[0]
+        # 跳过自检本身也会记一条告警,故按内容筛而非按条数断言
+        borderline_warnings = [w for w in outcome.warnings if "borderline ratio" in w]
+        assert len(borderline_warnings) == 1
 
     def test_no_warning_when_within_limit(self) -> None:
         outcome = refine.auto_refine(
@@ -409,9 +432,10 @@ class TestBorderlineRatioWarning:
                 ]
             ),
             input_stream=io.StringIO("y\n"),
+            skip_compliance_sample=True,
         )
         assert outcome.screening.borderline_ratio == 0.25
-        assert outcome.warnings == []
+        assert [w for w in outcome.warnings if "borderline ratio" in w] == []
 
     def test_warning_does_not_change_exit_code(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -437,6 +461,94 @@ class TestBorderlineRatioWarning:
 # ---------------------------------------------------------------------------
 
 
+class TestRepeatRun:
+    """spec Edge Cases「重复运行」:覆盖既有金标须是知情决定,不能静默发生。"""
+
+    def test_overwrite_warns_with_prior_compliance_rate(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
+    ) -> None:
+        out_path = tmp_path / "golden.json"
+        out_path.write_text(
+            json.dumps(
+                {
+                    "_schema_version": 1,
+                    "_review_metadata": {"compliance": {"compliance_rate": 0.95}},
+                    "test_cases": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        code, _ = _run_main(
+            monkeypatch,
+            tmp_path,
+            _candidate(1),
+            argv_extra=["--auto-mode"],
+            settings=_settings(),
+            screener=_StubScreener([ScreeningDecision.KEEP]),
+        )
+        assert code == 0
+        stderr = capsys.readouterr().err
+        assert "overwriting existing golden set" in stderr
+        assert "95%" in stderr, "应把旧的合规率摆出来供比较"
+
+    def test_overwrite_warning_lands_in_audit_record(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """告警要进审计记录,而不只是转瞬即逝的 stderr。"""
+        out_path = tmp_path / "golden.json"
+        out_path.write_text(json.dumps({"_schema_version": 1}), encoding="utf-8")
+
+        code, out_path = _run_main(
+            monkeypatch,
+            tmp_path,
+            _candidate(1),
+            argv_extra=["--auto-mode"],
+            settings=_settings(),
+            screener=_StubScreener([ScreeningDecision.KEEP]),
+        )
+        assert code == 0
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        assert any(
+            "overwriting existing golden set" in w
+            for w in payload["_review_metadata"]["warnings"]
+        )
+
+    def test_first_run_has_no_overwrite_warning(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        code, out_path = _run_main(
+            monkeypatch,
+            tmp_path,
+            _candidate(1),
+            argv_extra=["--auto-mode"],
+            settings=_settings(),
+            screener=_StubScreener([ScreeningDecision.KEEP]),
+        )
+        assert code == 0
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        assert not any(
+            "overwriting" in w for w in payload["_review_metadata"]["warnings"]
+        )
+
+    def test_corrupt_prior_file_does_not_break_run(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """旧文件损坏时仍要能跑完 —— 读旧文件只是为了提示,不是前置条件。"""
+        out_path = tmp_path / "golden.json"
+        out_path.write_text("{ not json", encoding="utf-8")
+
+        code, _ = _run_main(
+            monkeypatch,
+            tmp_path,
+            _candidate(1),
+            argv_extra=["--auto-mode"],
+            settings=_settings(),
+            screener=_StubScreener([ScreeningDecision.KEEP]),
+        )
+        assert code == 0
+
+
 class TestInterruptPreservesProgress:
     def test_quit_marks_partial_and_keeps_prior_decisions(self) -> None:
         """q 退出:已完成的自动决策与人工决策都要保住。"""
@@ -452,6 +564,7 @@ class TestInterruptPreservesProgress:
                 ]
             ),
             input_stream=io.StringIO("y\nq\n"),
+            skip_compliance_sample=True,
         )
         assert outcome.partial is True
         assert outcome.final["version"] == "v0.9-partial"
@@ -487,6 +600,7 @@ class TestInterruptPreservesProgress:
                 ]
             ),
             input_stream=_InterruptingStream(),
+            skip_compliance_sample=True,
         )
         assert outcome.interrupted is True
         assert outcome.partial is True
