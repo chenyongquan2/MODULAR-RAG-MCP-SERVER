@@ -42,7 +42,8 @@ class LLMSettings:
     provider: str  # azure | openai | ollama | deepseek | glm
     model: str
     azure_endpoint: str = ""
-    api_key: str = ""
+    # repr=False:防止密钥被 dataclass 默认 repr 打进 traceback / 日志 / 断言输出
+    api_key: str = field(default="", repr=False)
     base_url: str = ""
 
 
@@ -52,7 +53,8 @@ class EmbeddingSettings:
 
     provider: str  # openai | azure | ollama | glm | bge
     model: str
-    api_key: str = ""
+    # repr=False:防止密钥被 dataclass 默认 repr 打进 traceback / 日志 / 断言输出
+    api_key: str = field(default="", repr=False)
     base_url: str = ""
 
 
@@ -199,7 +201,8 @@ class JudgeLLMSettings:
 
     provider: str = "glm"
     model: str = "glm-4"
-    api_key: str = ""
+    # repr=False:防止密钥被 dataclass 默认 repr 打进 traceback / 日志 / 断言输出
+    api_key: str = field(default="", repr=False)
     base_url: Optional[str] = None
     temperature: float = 0.0
     request_timeout_sec: int = 60
@@ -287,7 +290,8 @@ class EvaluationEmbeddingSettings:
 
     provider: str = ""
     model: str = ""
-    api_key: str = ""
+    # repr=False:防止密钥被 dataclass 默认 repr 打进 traceback / 日志 / 断言输出
+    api_key: str = field(default="", repr=False)
     base_url: Optional[str] = None
 
 
