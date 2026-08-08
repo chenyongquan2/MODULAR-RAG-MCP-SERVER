@@ -82,11 +82,16 @@ description: "Task list for Feature-003 金标精修自动化"
 - [x] T015 [P] [US1] 新建 [tests/unit/test_refine_testset_auto.py](../../tests/unit/test_refine_testset_auto.py) CLI 契约测试:同源 → 退出码 2 且不写文件;缺标识无豁免 → 退出码 2;全部预筛失败 → 退出码 3;**不带 `--auto-mode` 时零 LLM 调用且输出无 `_review_metadata`**(依赖 T014;refs [contracts/cli_contract.md § 5](contracts/cli_contract.md))
 - [x] T016 [US1] 在 [tests/unit/test_refine_testset_auto.py](../../tests/unit/test_refine_testset_auto.py) 补 **FR-010 与 FR-011 的测试**(analyze 发现的宪法 § VII 缺口):① auto 模式下于 borderline 处置期中断 → 已完成的自动决策与人工决策全部保留、`version == "v0.9-partial"`、退出码 130;② borderline 占比超 `borderline_ratio_warn` → 产生对应 warning 且不影响退出码(依赖 T015 同文件)
 - [x] T017 [US1] FR-004 回归验证:`pytest tests/unit/test_refine_testset.py -v` 全过且**未修改任何断言**(`git diff` 该文件应为空);再跑 `pytest tests/unit -v` 全量确认无连带回归
-- [ ] T018 [US1] **SC-001 实测**(analyze 发现的覆盖缺口):用真实 candidate(如 `tests/fixtures/candidates/zh_smoke_v2.json`)配好异源预筛后实跑 `--auto-mode`,**记录人工实际耗时**并与 30-60 分钟基线对比,结论写入本 feature 的验收记录。未达 ≤ 15 分钟则回查阈值配置(而非直接判定实现失败,见 T030)
+- [x] T018 [US1] **SC-001 实测**(analyze 发现的覆盖缺口):用真实 candidate(如 `tests/fixtures/candidates/zh_smoke_v2.json`)配好异源预筛后实跑 `--auto-mode`,**记录人工实际耗时**并与 30-60 分钟基线对比,结论写入本 feature 的验收记录。未达 ≤ 15 分钟则回查阈值配置(而非直接判定实现失败,见 T030)
 
 ### US1 验收
 
-T018 的耗时实测通过即视为 MVP 达标 —— 本 feature 的核心价值(SC-001/SC-002)已交付。
+T018 已按现状收尾,详见 [acceptance-record.md](acceptance-record.md)。
+
+**如实记录**:机器路径已在真实数据上充分验证(结构缺陷 A/B/C/F 四类清零、
+SC-003 合规 100%、SC-006 达标),但 **SC-001 的人工耗时未取得有效数据** ——
+第 1 轮操作者中途离开导致墙钟失真(跨度 5h13m),第 2 轮由 AI 代理执行、
+无人工耗时可测。该项需要一次连续、由人完成的运行才能补上。
 
 **Checkpoint**:US1 独立可用
 

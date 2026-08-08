@@ -1,0 +1,554 @@
+{
+  "_schema_version": 1,
+  "language": "zh",
+  "version": "v1.0",
+  "created_at": "2026-08-08T13:00:44.003696+00:00",
+  "source_corpus_collection": "",
+  "_refine_summary": {
+    "keep": 41,
+    "edit": 1,
+    "drop": 5,
+    "skip": 0
+  },
+  "test_cases": [
+    {
+      "query": "HistorySelectByLogins 和 PositionSelectByLogins 分别从数据库请求什么?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "HSBL (HistorySelectByLogins) retrieves the closed orders for the specified login list, while PSBL (PositionSelectByLogins) retrieves the current trading positions (open positions) for that login list.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which IMTServerAPI method disables EOD/EOM notifications, distinct from subscription & account‑sync?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "TradeUnsubscribeEOD",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "How does KYCNext's pos compare to KYCGet's name?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "KYCNext retrieves a KYC provider configuration by its numeric position (pos), starting from 0, whereas KYCGet retrieves a configuration by its string name. In other words, KYCNext uses an index, while KYCGet uses a name.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does MT_RET_OK mean for VPSGet/VPSSet?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK is the response code indicating successful execution of the VPSGet or VPSSet function; any other return value signifies an error.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Would Mgr API auto‑maintain conn and switch to higher‑prio AP with RIGHT_ADMIN?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Yes, the Manager API automatically maintains the connection after it is established, and it can switch to a higher‑priority access point based on server priority. To use the IMTAdminAPI interface you must have the RIGHT_ADMIN permission (the \"Use MetaTrader 5 Administrator connection\" right).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Compare the out‑ref server‑name arg in `IMTAdminAPI::NetworkServer` with the IP address returned by `IMTAdminAPI::NetworkAddress`.",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The out‑ref server‑name argument in IMTAdminAPI::NetworkServer returns the server's textual name, while IMTAdminAPI::NetworkAddress returns the server's IP address. They provide different identifiers for the server.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Could you clarify the confirm attr in a trade req and its interaction with the deal param?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The 'confirm' attribute in a trade request is a pointer to a transaction request confirmation object (imtconfirm.htm); it represents the confirmation that results when the confirmation transaction is executed. The 'deal' parameter is a pointer to a transaction object of type ENTRY_OUT_BY that performs the trade to close the source position. In other words, 'deal' executes the transaction, and 'confirm' references the resulting confirmation for that transaction – they are directly related because 'confirm' documents the outcome of the transaction performed via the 'deal' parameter.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which sub is needed before IMTAdminAPI::Connect to get IMTConHolidaySink::OnHolidaySync, and which return code (MT_RET_ERR_DUPLICATE) signals a duplicate sub?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "You need to subscribe to the IMTConHolidaySink interface before calling IMTAdminAPI::Connect, and the return code MT_RET_ERR_DUPLICATE indicates a duplicate subscription.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Auth login name: DocUpdate vs. DocAdd?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Both DocumentUpdate and DocumentAdd use an author parameter that is the login name of the account performing the operation (updating or adding the document). This login name is stored in the customer change history.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "MTAdminCreate: what's the role of api_version and how does it align with CMTFactory::CreateAdmin’s version?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "api_version 在 MTAdminCreate 中为输出参数，用于返回服务器当前支持的 Manager API 版本；它与 CMTFactory::CreateAdmin 中的 version 参数对应——version 是输入参数，用于指定客户端期望的 MT5APIManager.h 头文件版本。两者都指向同一 API 版本信息，但 api_version 用于服务器向客户端返回当前版本，而 version 则由客户端传入以表明它使用的头文件版本。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "multi_context",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "question: 只能在主服务器上运行的应用程序才能添加或更新配置吗？",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "是的，文档明确说明只能从在主服务器上运行的应用程序添加或更新配置。对于其他应用程序，将返回错误代码 MT_RET_ERR_NOTMAIN。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What constraints or validation rules are defined for the IMTOrder fields (IMTOrder::VolumeInitial, IMTOrder::VolumeCurrent, IMTOrder::PriceOrder, IMTOrder::State, and IMTOrder::TimeSetupMsc)?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "VolumeInitial must be less than VolumeCurrent; VolumeCurrent must not be greater than VolumeInitial; PriceOrder has no specified constraints; State must correspond to an unsettled order (i.e., cannot be ORDER_STATE_CANCELED, ORDER_STATE_PARTIAL, ORDER_STATE_FILLED, ORDER_STATE_REJECTED, or ORDER_STATE_EXPIRED); TimeSetupMsc has no constraints provided.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What parameters does the password verification function IMTServerAPI::UserPasswordCheck require?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::UserPasswordCheck requires three parameters: type (const UINT, the password type specified using IM TUser::EnUsersPasswords enumeration), login (const UINT64, the user login name), and password (LPCWSTR, the user password to be verified).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "账户组交易的作用是什么？",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "账户组交易的主要作用是接收和处理与账户组相关的交易。根据上下文信息，DealGetByGroup用于接收账户组相关的交易，DealGetByGroupSymbol则根据组和交易品种获取交易。这两个API接口都服务于账户组交易的处理和检索功能。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does **PluginModuleTotal()** return?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "PluginModuleTotal() returns the number of plugin module configurations available in the trading platform.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "question: \"What is the purpose of the KYCUnsubscribe endpoint concerning unsubscribe events and hooks for KYC provider configurations?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The KYCUnsubscribe endpoint is used to cancel the subscription to events and hooks related to KYC provider configurations.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "在 MTAdminCreate 中，admin 作为输出参数用于返回已创建的 IMTAdminAPI 接口指针，调用者通过该指针可以访问并使用该接口。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the Server API's AutomationShift method do?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The Server API's AutomationShift method changes the position of the automation configuration within the list.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What are the four character types that a password must contain according to the Four character types requirement?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "lowercase letters, uppercase letters, numbers, and special characters",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the **Delete** operation do in the SubscriptionHistory API?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "Deletes the user's subscription operation from the server database.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which method must be called to release an object created via TradeRequestCreateArray?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTRequest::Release",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "question: \"在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "request 参数指向的是交易请求对象，即 IMTRequest 类型的对象。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the “document object” represent as an input parameter in the IMTServerAPI::DocumentUpdate function?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It is the document object (IMTDocument) representing the document to be updated as an input parameter.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是什么？",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "该方法将具有指定索引的源的配置数据复制到数据源对象。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the “Release” method do in a managed wrapper?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The 'Release' method in a managed wrapper is used to explicitly release resources, similar to the 'Dispose' method. Both methods serve to clean up resources and prevent resource leaks.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "**Question:** What is the purpose of `IMTConMessengerCountry::Release` for objects created by `IMTServerAPI::MessengerCountryCreate`?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The `IMTConMessengerCountry::Release` method is used to release and destroy the object that was created by `IMTServerAPI::MessengerCountryCreate`, thereby freeing the resources associated with that object.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Based on the given context and keyphrase \"Python API\", here is a question that can be fully answered:\n\n**Question:** What method does the Python API use to retrieve the current server name?\n\n**Answer:** The Python API uses `AdminAPI.NetworkServer()` to retrieve the current server name.",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The Python API uses `AdminAPI.NetworkServer()` to retrieve the current server name.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What role does the IMTAdminAPI interface play in a MetaTrader 5 environment?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The IMTAdminAPI interface provides programmatic access to MetaTrader 5 Administrator commands. In a MetaTrader 5 environment it allows applications to manage the trading platform’s settings, handle user accounts, email, price data, and trade‑operation databases, essentially enabling full administrative control over the platform.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "**Question:** What is the purpose of the IMTEndOfDaySink::OnEOMGroupCommissions function?\n\n**Answer:** The IMTEndOfDaySink::OnEOMGroupCommissions function handles the processing program for collecting handling fees for specified groups, starting when the trading month ends. It takes three parameters: datetime (the event time measured in seconds since January 1, 1970), prev_datetime (the time of the previous similar event), and group (the group object related to the event).",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The IMTEndOfDaySink::OnEOMGroupCommissions function handles the processing program for collecting handling fees for specified groups, starting when the trading month ends. It takes three parameters: datetime (the event time measured in seconds since January 1, 1970), prev_datetime (the time of the previous similar event), and group (the group object related to the event).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the IMTServerAPI::LoggerOut function do?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "IMTServerAPI::LoggerOut adds a message to the server log.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "交易品种组在假期里允许客户进行哪些操作？",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "在假期里，客户可以连接、查看图表和交易历史，但不能交易。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "When does the server call the IMTServerPlugin::Start method?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "服务器在插件启动期间调用该方法。",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does the **ManagerDelete** function do in the IMTServerAPI?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The ManagerDelete function in IMTServerAPI deletes the manager configuration by index.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "simple",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which of Add, Upd, Get removes sub recs?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "None of them – Add, Update, and Get do not remove subscription records; only Delete (SubscriptionHistoryDelete) does.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "If act. status = ACTIVATION_NONE, which prepaid cond. would permit activation req queuing?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "If the activation status equals ACTIVATION_NONE and the user has sufficient prepaid to execute the order, the activation request can be queued.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Doc & auth params required for IMTServerAPI::DocumentUpdate? Success rc?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "The required parameters are document (the document object) and author (the login name representing the account that updates the document). The success return code is MT_RET_OK.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "SymbolTotal returns UINT - what's it for in symbol config?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "SymbolTotal returns a UINT that indicates the total number of symbol configurations available on the trading platform.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "On succ., MTManagerCreate yields MT_RET_OK & populates manager w/ what?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "It populates manager with a pointer to the newly created IMTManagerAPI interface.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "Which RTN signals success for IMTAdminAPI::FeederUpdate?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "When would PluginModuleCreate return null, and which method releases its result?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "PluginModuleCreate returns null when a failure occurs, and its result is released by calling the IMTConPluginModule::Release method.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What does MT_RET_OK from IMTConCommonSink subscription indicate about duplication and required Connect?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "MT_RET_OK means the subscription succeeded without duplication; a duplicate subscription would return MT_RET_ERR_DUPLICATE. To receive the OnCommonSync event, you must subscribe before calling the Connect method (i.e., subscribe first, then call Connect).",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    },
+    {
+      "query": "What ptr does SpreadLegCreate return and which fn frees it?",
+      "expected_chunk_ids": [],
+      "expected_sources": [],
+      "ground_truth": "SpreadLegCreate returns a pointer to an IMTConSpreadLeg interface; the created object must be freed by calling its IMTConSpreadLeg::Release method.",
+      "tags": {
+        "content_type": "text",
+        "difficulty": "reasoning",
+        "language": "zh",
+        "doc_version": "v1"
+      }
+    }
+  ],
+  "_review_metadata": {
+    "auto_decided": 42,
+    "human_reviewed": 5,
+    "dropped": 5,
+    "screening_llm_identifier": "glm:z-ai/glm-5.2-free",
+    "synthesis_llm_identifier": "glm:minimax/minimax-m2.7",
+    "thresholds_snapshot": {
+      "keep_threshold": 0.9,
+      "drop_threshold": 0.8,
+      "borderline_ratio_warn": 0.4,
+      "sample_ratio": 0.1,
+      "compliance_gate": 0.9
+    },
+    "borderline_ratio": 0.10638297872340426,
+    "compliance": {
+      "sampled_case_indices": [
+        10,
+        22,
+        27,
+        37,
+        39
+      ],
+      "sample_size": 5,
+      "compliant": 3,
+      "compliance_rate": 0.6,
+      "gate_passed": false,
+      "auto_kept_sampled": 4,
+      "auto_kept_compliant": 3,
+      "auto_kept_noncompliance_rate": 0.25
+    },
+    "partial": false,
+    "warnings": [
+      "compliance rate 60% is below the 90% gate (SC-002). Do NOT use this golden set for acceptance until the underlying quality issue is addressed."
+    ]
+  }
+}
