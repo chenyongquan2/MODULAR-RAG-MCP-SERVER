@@ -238,9 +238,23 @@ def _build_final(
     kept_cases: list[dict[str, Any]],
     counts: dict[str, int],
     partial: bool,
+    review_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """构造 final golden_test_set JSON。"""
-    return {
+    """构造 final golden_test_set JSON。
+
+    Args:
+        candidate: 输入 candidate。
+        kept_cases: 保留的用例(已剥离 _synth_* 字段)。
+        counts: keep/edit/drop/skip 计数。
+        partial: 是否为部分结果。
+        review_metadata: Feature-003 的审计记录。``None``(默认交互模式)时
+            **不写出该字段**,保证既有输出结构逐字节不变(FR-004)。
+
+    Note:
+        ``_schema_version`` 固定为 1、``_refine_summary`` 保持四键 —— 两者均被
+        既有测试直接断言,新增字段不得触发变更(research § Decision 3)。
+    """
+    final: dict[str, Any] = {
         "_schema_version": 1,
         "language": candidate.get("language", "mixed"),
         "version": "v1.0" if not partial else "v0.9-partial",
@@ -251,6 +265,9 @@ def _build_final(
         "_refine_summary": dict(counts),
         "test_cases": kept_cases,
     }
+    if review_metadata is not None:
+        final["_review_metadata"] = review_metadata
+    return final
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +406,7 @@ def auto_refine(
     from src.observability.evaluation.testset_screener import (
         ScreeningDecision,
         TestsetScreener,
+        build_review_metadata,
     )
 
     stream = input_stream if input_stream is not None else sys.stdin
@@ -462,8 +480,21 @@ def auto_refine(
         partial = True
         interrupted = True
 
+    review_metadata = build_review_metadata(
+        settings=settings,
+        candidate=candidate,
+        screening=result,
+        auto_decided=auto_decided,
+        human_reviewed=human_reviewed,
+        dropped=counts["drop"],
+        warnings=warnings,
+        partial=partial,
+    )
+
     return AutoRefineOutcome(
-        final=_build_final(candidate, kept, counts, partial=partial),
+        final=_build_final(
+            candidate, kept, counts, partial=partial, review_metadata=review_metadata
+        ),
         screening=result,
         kept_provenance=kept_provenance,
         auto_decided=auto_decided,

@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from src.observability.evaluation._ragas_wrappers import (
     build_project_llm_from_sub_settings,
+    get_judge_identifier,
     get_screening_identifier,
 )
 from src.observability.logger import get_logger
@@ -210,6 +211,69 @@ def check_source_divergence(settings: "Settings", candidate: dict[str, Any]) -> 
         synthesis_id,
     )
     return SourceRelation.DIVERGENT
+
+
+# ---------------------------------------------------------------------------
+# 审计记录 (FR-005, US2)
+# ---------------------------------------------------------------------------
+
+
+def build_review_metadata(
+    settings: "Settings",
+    candidate: dict[str, Any],
+    screening: ScreeningResult,
+    auto_decided: int,
+    human_reviewed: int,
+    dropped: int,
+    warnings: Optional[list[str]] = None,
+    partial: bool = False,
+    compliance: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """构造随金标落盘的审计记录 (FR-005, data-model § 3)。
+
+    目标是 SC-005:**仅凭金标文件自身**即可回答「多少条由机器决定、用的哪个
+    预筛模型、当时阈值多少、抽样合规率多少」,不必翻日志或回忆当时的操作。
+
+    Args:
+        settings: 全局 Settings。
+        candidate: 输入的 candidate dict(用于取合成端标识)。
+        screening: 批量预筛结果。
+        auto_decided: 机器自动决策数(自动保留 + 自动丢弃)。
+        human_reviewed: 经人工处置数。
+        dropped: 丢弃总数(机器 + 人工)。
+        warnings: 本次触发的告警。
+        partial: 是否为中断产生的部分结果。
+        compliance: 抽样自检结果;US3 未接入或已跳过时为 ``None``。
+
+    Returns:
+        可直接 ``json.dumps`` 的审计 dict。
+
+    Note:
+        本记录是**新增字段** ``_review_metadata``,与既有 ``_refine_summary``
+        并存。后者的四个计数键与 ``_schema_version: 1`` 被既有测试锁定,
+        不可改名也不可升版(FR-004,见 research § Decision 3)。
+    """
+    synthesis_metadata = candidate.get("_synthesis_metadata") or {}
+    synthesis_identifier = str(synthesis_metadata.get("judge_llm_identifier") or "").strip()
+    if not synthesis_identifier:
+        # candidate 未记录合成端时回落到当前配置的 judge —— 仅作参考,
+        # 真正的异源判定在 CLI 入口已经做过(见 check_source_divergence)
+        synthesis_identifier = get_judge_identifier(settings)
+
+    return {
+        "auto_decided": auto_decided,
+        "human_reviewed": human_reviewed,
+        "dropped": dropped,
+        "screening_llm_identifier": _normalize_identifier(
+            get_screening_identifier(settings)
+        ),
+        "synthesis_llm_identifier": synthesis_identifier,
+        "thresholds_snapshot": settings.evaluation.screening_llm.thresholds_snapshot(),
+        "borderline_ratio": screening.borderline_ratio,
+        "compliance": compliance,
+        "partial": partial,
+        "warnings": list(warnings or []),
+    }
 
 
 # ---------------------------------------------------------------------------

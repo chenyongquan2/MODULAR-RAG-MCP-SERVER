@@ -100,13 +100,13 @@ T018 的耗时实测通过即视为 MVP 达标 —— 本 feature 的核心价�
 
 ### Tests for User Story 2(宪法 § VII NON-NEGOTIABLE)
 
-- [ ] T019 [P] [US2] 新建 [tests/unit/test_review_metadata.py](../../tests/unit/test_review_metadata.py):断言 `ReviewMetadata` 各字段齐全([data-model.md § 3](data-model.md) 的 10 个字段)、不变式 `auto_decided + human_reviewed == 输入用例总数`(非 partial 时)、`partial=True` 时 `version` 为 `v0.9-partial`;并**断言 `_refine_summary` 的 4 个键与 `_schema_version == 1` 未被改动**(FR-004 硬约束;refs [research § Decision 3](research.md))
+- [x] T019 [P] [US2] 新建 [tests/unit/test_review_metadata.py](../../tests/unit/test_review_metadata.py):断言 `ReviewMetadata` 各字段齐全([data-model.md § 3](data-model.md) 的 10 个字段)、不变式 `auto_decided + human_reviewed == 输入用例总数`(非 partial 时)、`partial=True` 时 `version` 为 `v0.9-partial`;并**断言 `_refine_summary` 的 4 个键与 `_schema_version == 1` 未被改动**(FR-004 硬约束;refs [research § Decision 3](research.md))
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] 在 [src/observability/evaluation/testset_screener.py](../../src/observability/evaluation/testset_screener.py) 实现 `build_review_metadata()`,由 verdict 列表 + 人工决策计数 + settings 构造审计 dict,含 `screening_llm_identifier` / `synthesis_llm_identifier` / `thresholds_snapshot` / `borderline_ratio` / `warnings` / `partial`(依赖 T012;refs FR-005)
-- [ ] T021 [US2] 修改 [scripts/refine_testset.py](../../scripts/refine_testset.py) 的 `_build_final()`,支持注入可选 `_review_metadata` 字段。**必须保持 `_refine_summary` 键名语义与 `_schema_version: 1` 不变**,且默认交互模式下不写出该字段(refs [research § Decision 3](research.md);依赖 T020)
-- [ ] T022 [US2] FR-004 回归复验:`pytest tests/unit/test_refine_testset.py -v` 仍全过(T021 直接改了被断言的 `_build_final`,这一步不可跳过)
+- [x] T020 [US2] 在 [src/observability/evaluation/testset_screener.py](../../src/observability/evaluation/testset_screener.py) 实现 `build_review_metadata()`,由 verdict 列表 + 人工决策计数 + settings 构造审计 dict,含 `screening_llm_identifier` / `synthesis_llm_identifier` / `thresholds_snapshot` / `borderline_ratio` / `warnings` / `partial`(依赖 T012;refs FR-005)
+- [x] T021 [US2] 修改 [scripts/refine_testset.py](../../scripts/refine_testset.py) 的 `_build_final()`,支持注入可选 `_review_metadata` 字段。**必须保持 `_refine_summary` 键名语义与 `_schema_version: 1` 不变**,且默认交互模式下不写出该字段(refs [research § Decision 3](research.md);依赖 T020)
+- [x] T022 [US2] FR-004 回归复验:`pytest tests/unit/test_refine_testset.py -v` 仍全过(T021 直接改了被断言的 `_build_final`,这一步不可跳过)
 
 ### US2 验收
 
