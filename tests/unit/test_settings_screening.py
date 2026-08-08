@@ -181,12 +181,19 @@ class TestValidationNegativeCases:
 
 class TestEndToEndLoad:
     def test_real_config_exposes_screening_section(self) -> None:
-        """真实 config/settings.yaml 装配出 ScreeningLLMSettings。"""
+        """真实 config/settings.yaml 装配出 ScreeningLLMSettings。
+
+        Note:
+            这里**不断言 ``is_enabled()`` 的具体取值** —— 那取决于使用者当前
+            配了哪个预筛模型,是环境状态而非行为契约。早期版本断言「仓库内
+            默认留空」,结果一配上真实模型就失败。此处只验结构与阈值默认值;
+            「未配置时不影响既有用法」由下面的
+            ``test_config_without_screening_section_still_loads`` 覆盖。
+        """
         s = load_settings()
         sc = s.evaluation.screening_llm
         assert isinstance(sc, ScreeningLLMSettings)
-        # 仓库内默认留空 = 未启用,不会给既有用法带来任何 LLM 调用
-        assert sc.is_enabled() is False
+        assert isinstance(sc.is_enabled(), bool)
         assert sc.thresholds_snapshot()["compliance_gate"] == 0.90
 
     def test_config_without_screening_section_still_loads(self, tmp_path: Path) -> None:

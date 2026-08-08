@@ -116,14 +116,11 @@ evaluation:
   # 默认留空 = 未启用。留空时不影响任何既有用法(默认交互模式不读本节),
   # 但带 --auto-mode 运行会以退出码 2 快速失败并提示配置(宪法 § III)
   #
-  # 可用配置示例(与 judge_llm 的 minimax/minimax-m2.7 异源):
-  #   provider: glm
-  #   model: z-ai/glm-4.7        # 顶层 llm 用的就是它,已知可用
-  #   api_key: ${GLM_API_KEY}
-  #   base_url: ${GLM_BASE_URL}
+  # 当前配置:z-ai/glm-5.2-free(公司免费额度)。
+  # 标识 "glm:z-ai/glm-5.2-free" ≠ judge 的 "glm:minimax/minimax-m2.7" → 异源 ✅
   screening_llm:
-    provider: ""
-    model: ""
+    provider: glm
+    model: z-ai/glm-5.2-free
     api_key: ${GLM_API_KEY}
     base_url: ${GLM_BASE_URL}
     temperature: 0.0            # 判定应尽量确定,与 Judge 同取 0.0

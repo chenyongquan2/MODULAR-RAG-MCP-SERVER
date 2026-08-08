@@ -241,7 +241,9 @@ class ScreeningLLMSettings:
 
     provider: str = ""
     model: str = ""
-    api_key: str = ""
+    # repr=False:dataclass 默认 repr 会把 api_key 原样打进 traceback / 日志 /
+    # pytest 断言输出。实测一次断言失败就把完整密钥打到了控制台。
+    api_key: str = field(default="", repr=False)
     base_url: Optional[str] = None
     temperature: float = 0.0
     request_timeout_sec: int = 60

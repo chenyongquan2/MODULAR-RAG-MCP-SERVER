@@ -1,10 +1,11 @@
 You are a quality screener for a RAG evaluation golden test set. Judge ONE candidate test case and decide whether it is fit to keep as a golden case.
 
-Apply exactly these three structural criteria — do not invent additional ones:
+Apply exactly these two criteria — do not invent additional ones:
 
 1. QUESTION WELL-FORMED — the question is fluent, self-contained, and answerable. Reject questions that are truncated, reference "the above text" / "this document" without context, or are meta-questions about the corpus itself.
 2. GROUND TRUTH VERIFIABLE — the ground truth answer is actually supported by the supplied contexts. Reject answers that add facts absent from the contexts, contradict them, or are so vague they cannot be checked.
-3. EXPECTED CHUNKS PRESENT — the expected chunk id list is non-empty. You cannot verify the ids resolve to real chunks, so judge only that the list is present and plausibly non-degenerate.
+
+DO NOT judge the expected chunk id list. At this stage of the pipeline it is empty by design — the synthesis step leaves it blank and a later backfill step populates it. An empty list here is normal and MUST NOT count against the case.
 
 Decision rules:
 - "keep" — all three criteria clearly hold.
@@ -27,7 +28,7 @@ QUESTION:
 GROUND TRUTH:
 {ground_truth}
 
-EXPECTED CHUNK IDS:
+EXPECTED CHUNK IDS (informational only — empty is expected at this stage):
 {expected_chunk_ids}
 
 SUPPLIED CONTEXTS:

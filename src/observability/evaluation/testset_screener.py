@@ -42,10 +42,14 @@ DEFAULT_PROMPT_PATH = Path("config/prompts/testset_screening.txt")
 
 # 提示词文件缺失时的兜底(与 chunk_refiner 等既有模块同一约定)
 DEFAULT_PROMPT = """You are a quality screener for a RAG evaluation golden test set.
-Judge ONE candidate test case against three criteria: the question is well-formed,
-the ground truth is supported by the supplied contexts, and the expected chunk id
-list is non-empty. Answer "keep" if all hold, "drop" if any clearly fails, and
-"borderline" if you are unsure. Respond with STRICT JSON only:
+Judge ONE candidate test case against two criteria: the question is well-formed,
+and the ground truth is supported by the supplied contexts. Answer "keep" if both
+hold, "drop" if either clearly fails, and "borderline" if you are unsure.
+
+Do NOT judge the expected chunk id list — it is empty by design at this stage
+(synthesis leaves it blank; a later backfill step fills it in).
+
+Respond with STRICT JSON only:
 {{"decision": "keep|drop|borderline", "confidence": 0.0, "reason": "one sentence"}}
 
 QUESTION:
@@ -54,7 +58,7 @@ QUESTION:
 GROUND TRUTH:
 {ground_truth}
 
-EXPECTED CHUNK IDS:
+EXPECTED CHUNK IDS (informational only — empty is expected):
 {expected_chunk_ids}
 
 SUPPLIED CONTEXTS:

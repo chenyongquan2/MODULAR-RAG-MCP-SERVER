@@ -395,15 +395,18 @@ def check_auto_preconditions(
 
 
 def _format_case_for_compliance(case: dict[str, Any], position: int, total: int) -> str:
-    """抽样自检时展示一条待复核用例(对齐 SC-002 的三项结构标准)。"""
-    chunk_ids = case.get("expected_chunk_ids") or []
+    """抽样自检时展示一条待复核用例。
+
+    SC-002 的第三项(expected_chunk_ids 指向真实 chunk)**不在这里判**:精修
+    阶段该字段按设计为空,由后续 ``backfill_chunk_ids.py`` 回填并自带匹配率
+    门控。此处只问精修阶段真正可判的两项。
+    """
     return (
         f"\n[spot-check {position}/{total}]\n"
         f"  question      : {case.get('query', '')}\n"
         f"  ground_truth  : {_short(case.get('ground_truth', ''), 200)}\n"
-        f"  chunk ids     : {chunk_ids}\n"
-        f"  Structurally compliant? (question reads well, ground truth is verifiable, "
-        f"chunk ids present)"
+        f"  Structurally compliant? (question reads well AND ground truth is "
+        f"verifiable against the corpus)"
     )
 
 
