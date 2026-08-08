@@ -461,6 +461,55 @@ class TestBorderlineRatioWarning:
 # ---------------------------------------------------------------------------
 
 
+class TestComplianceGateIsAdvisory:
+    """FR-007:合规率不达标只告警,不阻止文件写出、不改退出码。
+
+    T031 自查补的缺口 —— 此前只在单元层验了 gate_passed=False,
+    没有端到端确认「告警是提示性的」这条契约。
+    """
+
+    def test_failed_gate_still_exits_0_and_writes_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: Any
+    ) -> None:
+        in_path = tmp_path / "candidate.json"
+        in_path.write_text(json.dumps(_candidate(1), ensure_ascii=False), encoding="utf-8")
+        out_path = tmp_path / "golden.json"
+
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "refine_testset.py",
+                "--input",
+                str(in_path),
+                "--output",
+                str(out_path),
+                "--auto-mode",
+            ],
+        )
+        # 唯一一条保留用例被抽中复核,人工判定为不合规 → 合规率 0%
+        monkeypatch.setattr("sys.stdin", io.StringIO("n\n"))
+        monkeypatch.setattr("src.core.settings.load_settings", lambda: _settings())
+        monkeypatch.setattr(
+            refine,
+            "auto_refine",
+            _auto_refine_with(_StubScreener([ScreeningDecision.KEEP]), skip_sample=False),
+        )
+
+        code = refine.main()
+
+        assert code == 0, "合规率不达标是告警,不是失败"
+        assert out_path.exists(), "文件仍须写出,由使用者自行判断是否采用"
+
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        compliance = payload["_review_metadata"]["compliance"]
+        assert compliance["gate_passed"] is False
+        assert compliance["compliance_rate"] == 0.0
+        assert any(
+            "below the" in w for w in payload["_review_metadata"]["warnings"]
+        ), "审计记录里必须留下未达门控的告警"
+        assert "compliance rate" in capsys.readouterr().err
+
+
 class TestRepeatRun:
     """spec Edge Cases「重复运行」:覆盖既有金标须是知情决定,不能静默发生。"""
 

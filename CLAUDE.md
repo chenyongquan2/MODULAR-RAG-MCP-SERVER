@@ -270,7 +270,40 @@ Supports pluggable evaluators (Ragas, custom metrics). Evaluations run against g
 - `scripts/evaluate.py --pretty --collection <name>` — 跑评估,自动 archive + delta vs baseline
 - `scripts/synthesize_testset.py --collection <c> --lang {zh,en}` — RAGAS TestsetGenerator 合成候选(US2)
 - `scripts/refine_testset.py --input <candidate>` — interactive y/e/d/s/q 精修
+- `scripts/refine_testset.py --input <candidate> --auto-mode` — **异源 LLM 预筛 + borderline 路由**(Feature-003),只对存疑用例点人 + 收尾抽样自检
 - `scripts/backfill_chunk_ids.py --input <golden> --collection <c>` — 语义匹配回填 expected_chunk_ids
+
+### 金标精修自动化(Feature-003)
+
+`--auto-mode` 把逐条 100% 人工确认改为「机器预筛 → 只看存疑 → 抽样自检」,单语种人工耗时目标 30-60 min → ≤ 15 min。**不加该参数时行为与之前完全一致**,不读配置也不调用任何 LLM。
+
+**前置配置** —— `config/settings.yaml` 的 `evaluation.screening_llm`,**必须与 `judge_llm` 异源**(合成端用的就是 judge_llm):
+
+```yaml
+evaluation:
+  judge_llm:
+    model: minimax/minimax-m2.7      # 合成端
+  screening_llm:
+    provider: glm
+    model: z-ai/glm-4.7              # 预筛端,与上面不同即可
+    api_key: ${GLM_API_KEY}
+```
+
+> 同源判据是**完整标识串** `<provider>:<model>` 相等,不是 provider 相等。实测 judge 标识为 `glm:minimax/minimax-m2.7` —— provider 名义是 glm 但模型经 OpenAI 兼容端点路由到 minimax;只比 provider 会把真正异源的 `glm:glm-4.6` 误判为同源。
+
+**退出码**(仅 `--auto-mode` 下可能出现,不影响默认路径):
+
+| 码 | 含义 |
+|---|---|
+| 2 | 前置条件不满足:`screening_llm` 未配置 / 与合成端同源 / 无法确认异源(可加 `--allow-same-source` 豁免后者,但**不豁免已确认的同源**) |
+| 3 | 预筛模型整体不可用(凭据、网络)。与「模型通但输出不合格」严格区分——后者会全部降级 borderline 交人工 |
+| 130 | 中断。**文件仍会写出**并标 `v0.9-partial`,已完成决策不丢 |
+
+**审计记录**:auto 模式产出的金标带 `_review_metadata` 字段,含各路径计数、两端模型标识、阈值快照、borderline 占比、抽样合规率(含 SC-006 的 auto-kept 子集拆分)与告警列表。默认交互模式**不写出**该字段。
+
+**阈值需要校准**:`keep_threshold` / `drop_threshold` 默认 `0.80` 是初始猜测。不同模型的置信度标度不可互换,换预筛模型后必须重新校准 —— 与上文「换 Judge 后阈值失效」是同一回事。校准办法:跑一轮看 `_review_metadata.borderline_ratio`,远高于 20% 说明阈值太严,接近 0% 说明太松。
+
+详见 [specs/003-testset-refine-automation/quickstart.md](specs/003-testset-refine-automation/quickstart.md)。
 
 **Dashboard**:`python scripts/start_dashboard.py` → 评估面板 → "🎯 Feature-001 基线 + 回归" tab(标基线 / 看 delta / 8 项指标趋势)。
 
