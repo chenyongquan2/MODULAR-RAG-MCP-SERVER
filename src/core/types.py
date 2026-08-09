@@ -481,6 +481,19 @@ class Baseline:
         marked_at: 标记时间(ISO-8601)
         marked_by: 标记者标识(MVP 阶段默认 "manual")
         acceptance_status: 该报告的 pass/fail 标识(冗余存储,便于面板查询时不必再读 report)
+        retrieval_mode: 该次评估**实际生效**的检索模式(feature-004 T032)。
+            ``"dense_only"`` | ``"hybrid"`` | ``""``(未标注)。
+
+            这个字段之所以必要:feature-004 之前所有归档基线都自称"混合检索",
+            但关键词索引与向量库的 chunk 标识不相交,sparse 路径取不到正文返回空
+            —— 实际跑的是纯向量检索。标签错误会误导后续所有对比。
+        corpus_validity: 该次评估的语料是否与金标匹配(feature-004 T032)。
+            ``"valid"`` | ``"mismatched"`` | ``""``(未标注)。
+
+            2026-04-28 的两份完整评估被实测判定为 ``mismatched``:逐条检查其
+            ``retrieved_chunk_ids`` 发现检索回的是 company_policy.md 与临时文件,
+            说明当时 MT5 语料尚未 ingest。那批数字不是"纯向量参照",而是跑在
+            错误语料上的无效记录 —— 无法作为任何对比基准。
     """
 
     report_id: str
@@ -488,6 +501,8 @@ class Baseline:
     marked_at: str = ""
     marked_by: str = "manual"
     acceptance_status: AcceptanceStatus = AcceptanceStatus.FAIL
+    retrieval_mode: str = ""
+    corpus_validity: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         """序列化为字典。"""
@@ -497,6 +512,8 @@ class Baseline:
             "marked_at": self.marked_at,
             "marked_by": self.marked_by,
             "acceptance_status": self.acceptance_status.value,
+            "retrieval_mode": self.retrieval_mode,
+            "corpus_validity": self.corpus_validity,
         }
 
     @classmethod
@@ -508,6 +525,9 @@ class Baseline:
             marked_at=data.get("marked_at", ""),
             marked_by=data.get("marked_by", "manual"),
             acceptance_status=AcceptanceStatus(data.get("acceptance_status", "fail")),
+            # 向后兼容:feature-004 之前的记录没有这两个字段,缺失即"未标注"
+            retrieval_mode=data.get("retrieval_mode", ""),
+            corpus_validity=data.get("corpus_validity", ""),
         )
 
 

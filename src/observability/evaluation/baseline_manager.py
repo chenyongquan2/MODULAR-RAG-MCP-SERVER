@@ -78,6 +78,8 @@ class BaselineManager:
         collection: str,
         acceptance_status: AcceptanceStatus = AcceptanceStatus.FAIL,
         marked_by: str = "manual",
+        retrieval_mode: str = "",
+        corpus_validity: str = "",
     ) -> Baseline:
         """把指定报告标记为该 collection 的当前基线。
 
@@ -91,6 +93,10 @@ class BaselineManager:
             acceptance_status: 此报告的 pass/fail(从报告 JSON 读出后传入,或调用
                 方提供;BaselineStore 冗余存储,便于面板查询不必再读 report)。
             marked_by: 标记者标识(MVP 阶段默认 "manual")。
+            retrieval_mode: 该次评估实际生效的检索模式(feature-004 T032)。
+                ``"dense_only"`` | ``"hybrid"``;留空表示未标注。
+            corpus_validity: 语料是否与金标匹配(feature-004 T032)。
+                ``"valid"`` | ``"mismatched"``;留空表示未标注。
 
         Returns:
             新创建的 Baseline 对象。
@@ -130,6 +136,8 @@ class BaselineManager:
             "acceptance_status": acceptance_status.value
             if isinstance(acceptance_status, AcceptanceStatus)
             else str(acceptance_status),
+            "retrieval_mode": retrieval_mode,
+            "corpus_validity": corpus_validity,
         }
         current[collection] = new_baseline_dict
 
@@ -146,7 +154,52 @@ class BaselineManager:
             marked_at=now_iso,
             marked_by=marked_by,
             acceptance_status=AcceptanceStatus(new_baseline_dict["acceptance_status"]),
+            retrieval_mode=retrieval_mode,
+            corpus_validity=corpus_validity,
         )
+
+    def annotate_baseline(
+        self,
+        collection: str,
+        retrieval_mode: str | None = None,
+        corpus_validity: str | None = None,
+    ) -> Baseline:
+        """给某 collection 的**当前基线**补标注,不改动任何指标数字。
+
+        用途(feature-004 T034):给 feature-004 之前的历史基线补上"它到底跑的
+        是什么检索模式、语料对不对"。这些记录的数字**不是错的** —— 它们真实
+        反映了当时的系统行为;错的只是当时以为自己在跑混合检索。
+
+        Args:
+            collection: 目标 collection。
+            retrieval_mode: 新的检索模式标注;``None`` 表示不改该字段。
+            corpus_validity: 新的语料有效性标注;``None`` 表示不改该字段。
+
+        Returns:
+            更新后的 Baseline。
+
+        Raises:
+            ValueError: 该 collection 没有当前基线。
+        """
+        store = self._read_store()
+        current = store.setdefault("current", {})
+
+        record = current.get(collection)
+        if record is None:
+            raise ValueError(f"no current baseline for collection '{collection}'")
+
+        if retrieval_mode is not None:
+            record["retrieval_mode"] = retrieval_mode
+        if corpus_validity is not None:
+            record["corpus_validity"] = corpus_validity
+
+        self._write_store_atomic(store)
+        logger.info(
+            "Annotated baseline: collection=%s retrieval_mode=%s corpus_validity=%s",
+            collection, record.get("retrieval_mode"), record.get("corpus_validity"),
+        )
+
+        return Baseline.from_dict(record)
 
     def get_current_baseline(self, collection: str) -> Optional[Baseline]:
         """获取该 collection 的当前基线;无则返回 None。"""
@@ -155,13 +208,10 @@ class BaselineManager:
         entry = current.get(collection)
         if entry is None:
             return None
-        return Baseline(
-            report_id=entry["report_id"],
-            collection=collection,
-            marked_at=entry.get("marked_at", ""),
-            marked_by=entry.get("marked_by", "manual"),
-            acceptance_status=AcceptanceStatus(entry.get("acceptance_status", "fail")),
-        )
+        # 走 Baseline.from_dict 而非手工构造:此前这里逐字段列举,新增字段时
+        # 极易漏掉一处(feature-004 加 retrieval_mode/corpus_validity 时就漏了),
+        # 而漏掉的表现是字段静默变空 —— 又是一次静默失效
+        return Baseline.from_dict({**entry, "collection": collection})
 
     def get_history(self, collection: str) -> list[dict[str, Any]]:
         """获取该 collection 的历史基线列表(按 demotion 时间顺序)。

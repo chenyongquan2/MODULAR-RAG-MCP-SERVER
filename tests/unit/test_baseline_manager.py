@@ -319,3 +319,126 @@ class TestAtomicWrite:
         parent = Path(s.evaluation.baseline_store_path).parent
         tmp_residue = list(parent.glob(".baselines.*.tmp"))
         assert tmp_residue == []
+
+
+# ===========================================================================
+# Feature-004 T032/T033: 基线检索模式与语料有效性标注
+# ===========================================================================
+
+
+class TestBaselineAnnotation:
+    """``retrieval_mode`` / ``corpus_validity`` 两个标注字段。
+
+    存在理由:feature-004 之前所有归档基线都自称"混合检索",但关键词索引与
+    向量库的 chunk 标识不相交,sparse 路径取不到正文返回空 —— 实际跑的是纯
+    向量检索。标签错误会误导后续所有对比。
+    """
+
+    def _settings(self, tmp_path):
+        from src.core.settings import load_settings
+
+        settings = load_settings("config/settings.yaml")
+        settings.evaluation.baseline_store_path = str(tmp_path / "baselines.json")
+        settings.evaluation.report_archive_dir = str(tmp_path / "archive")
+        (tmp_path / "archive").mkdir(parents=True, exist_ok=True)
+        return settings
+
+    def _archive_report(self, settings, report_id="rep-1"):
+        import json
+        from pathlib import Path
+
+        path = Path(settings.evaluation.report_archive_dir) / f"{report_id}.json"
+        path.write_text(json.dumps({"run_id": report_id}), encoding="utf-8")
+        return report_id
+
+    def test_mark_stores_annotation(self, tmp_path):
+        from src.observability.evaluation.baseline_manager import BaselineManager
+
+        settings = self._settings(tmp_path)
+        report_id = self._archive_report(settings)
+        manager = BaselineManager(settings)
+
+        baseline = manager.mark_as_baseline(
+            report_id=report_id,
+            collection="default",
+            retrieval_mode="hybrid",
+            corpus_validity="valid",
+        )
+
+        assert baseline.retrieval_mode == "hybrid"
+        assert baseline.corpus_validity == "valid"
+        assert manager.get_current_baseline("default").retrieval_mode == "hybrid"
+
+    def test_annotation_defaults_to_unlabelled(self, tmp_path):
+        from src.observability.evaluation.baseline_manager import BaselineManager
+
+        settings = self._settings(tmp_path)
+        report_id = self._archive_report(settings)
+        manager = BaselineManager(settings)
+
+        baseline = manager.mark_as_baseline(report_id=report_id, collection="default")
+
+        assert baseline.retrieval_mode == ""
+        assert baseline.corpus_validity == ""
+
+    def test_annotate_existing_baseline_preserves_metrics_fields(self, tmp_path):
+        """补标注不得改动任何既有字段 —— 旧数字不是错的,错的只是标签。"""
+        from src.observability.evaluation.baseline_manager import BaselineManager
+
+        settings = self._settings(tmp_path)
+        report_id = self._archive_report(settings)
+        manager = BaselineManager(settings)
+        original = manager.mark_as_baseline(report_id=report_id, collection="default")
+
+        updated = manager.annotate_baseline(
+            "default", retrieval_mode="dense_only", corpus_validity="mismatched"
+        )
+
+        assert updated.retrieval_mode == "dense_only"
+        assert updated.corpus_validity == "mismatched"
+        # 其余字段原样保留
+        assert updated.report_id == original.report_id
+        assert updated.marked_at == original.marked_at
+        assert updated.acceptance_status == original.acceptance_status
+
+    def test_annotate_partial_update(self, tmp_path):
+        """传 None 的字段不动。"""
+        from src.observability.evaluation.baseline_manager import BaselineManager
+
+        settings = self._settings(tmp_path)
+        report_id = self._archive_report(settings)
+        manager = BaselineManager(settings)
+        manager.mark_as_baseline(
+            report_id=report_id, collection="default",
+            retrieval_mode="hybrid", corpus_validity="valid",
+        )
+
+        updated = manager.annotate_baseline("default", corpus_validity="mismatched")
+
+        assert updated.retrieval_mode == "hybrid"
+        assert updated.corpus_validity == "mismatched"
+
+    def test_annotate_missing_baseline_raises(self, tmp_path):
+        from src.observability.evaluation.baseline_manager import BaselineManager
+
+        manager = BaselineManager(self._settings(tmp_path))
+        with pytest.raises(ValueError, match="no current baseline"):
+            manager.annotate_baseline("nope", retrieval_mode="hybrid")
+
+    def test_backward_compatible_read_of_unannotated_record(self):
+        """feature-004 之前的记录没有这两个字段,缺失即"未标注"。"""
+        from src.core.types import Baseline
+
+        legacy = {
+            "report_id": "old-1",
+            "collection": "default",
+            "marked_at": "2026-04-26T13:44:35+00:00",
+            "marked_by": "dashboard-script-equivalent",
+            "acceptance_status": "fail",
+        }
+
+        baseline = Baseline.from_dict(legacy)
+
+        assert baseline.retrieval_mode == ""
+        assert baseline.corpus_validity == ""
+        assert baseline.report_id == "old-1"

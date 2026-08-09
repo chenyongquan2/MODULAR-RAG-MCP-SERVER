@@ -788,5 +788,6 @@
         "doc_version": "v1"
       }
     }
-  ]
+  ],
+  "_collection_note": "本金标必须在 collection='default' 上评估,不要改成 mt5_docs_chinese / mt5_docs_english。原因(feature-004 实测):中英文语料是同一份 MT5 文档的两个语言版本,金标由 backfill_chunk_ids.py 在合并的 default 集合上按语义 top-5 回填,匹配结果自然跨了语言 —— en 集 210 个 expected_chunk_ids 里有 20 个指向中文语料(42 条 case 里 18 条跨语料),zh 集 30 个里有 2 个指向英文语料。实测只有 default 能 100% 解析(en 210/210、zh 30/30),语言集合分别只能解析 190/210 与 28/30,评估会直接触发 chunk_id_validation 失败。"
 }
