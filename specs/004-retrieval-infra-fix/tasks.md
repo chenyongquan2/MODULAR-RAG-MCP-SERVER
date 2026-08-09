@@ -1,0 +1,197 @@
+# Tasks: 检索基础设施修正
+
+**Input**: Design documents from `specs/004-retrieval-infra-fix/`
+**Prerequisites**: [plan.md](./plan.md) · [spec.md](./spec.md) · [research.md](./research.md) · [data-model.md](./data-model.md) · [contracts/](./contracts/)
+
+**Tests**: 本 feature **必须**配套单元测试 —— 宪法原则七（测试支撑变更）是 NON-NEGOTIABLE，不允许例外登记。
+
+**Organization**: 按 user story 分组，每个 story 可独立实现、独立验收、独立交付。
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: 可并行（不同文件、无未完成依赖）
+- **[Story]**: 所属 user story（US1 / US2 / US3）
+- 每条含确切文件路径
+
+> ⚠️ **所有命令与测试必须用 `.venv/Scripts/python.exe`**。全局 Python 的 protobuf 是 5.29.3，`import chromadb` 会失败。
+
+---
+
+## Phase 1: Setup
+
+**Purpose**: 建立配置与目录骨架
+
+- [ ] T001 在 `src/core/settings.py` 的 `VectorStoreSettings` 增加 `bm25_index_format_version: int = 2` 字段，并在 `load_settings()` 的校验路径中确保其为正整数（宪法原则二、三）
+- [ ] T002 [P] 在 `config/settings.yaml` 的 `vector_store` 段增加 `bm25_index_format_version: 2`，附中文注释说明「不匹配时硬失败、不静默降级」的理由
+- [ ] T003 [P] 创建 `src/core/text/__init__.py` 与空的 `src/core/text/tokenizer.py` 骨架（模块级 docstring 说明：本模块是查询端与索引端**唯一**的切分实现，禁止在别处复制）
+
+---
+
+## Phase 2: Foundational (Blocking Prerequisites)
+
+**Purpose**: 所有 user story 都依赖的底层能力
+
+**⚠️ CRITICAL**: 本阶段完成前，任何 user story 不能开工
+
+- [ ] T004 在 `src/libs/vector_store/base_vector_store.py` 增加抽象方法 `iter_records(include_vectors: bool = False, batch_size: int = 1000) -> Iterator[Dict[str, Any]]`，含完整 Google 风格 docstring 与类型注解（见 [data-model.md § 6](./data-model.md)）
+- [ ] T005 在 `src/libs/vector_store/chroma_store.py` 实现 `iter_records`，按 `batch_size` 分批拉取避免一次性物化全部向量；`include_vectors=False` 时不请求 embeddings
+- [ ] T006 在 `tests/unit/test_vector_store_contract.py` 增加 `iter_records` 的契约测试：分批边界、`include_vectors` 两种取值的返回字段、空集合行为
+- [ ] T007 在 `tests/unit/test_vector_store_contract.py` 增加断言：`scripts/` 下不得出现 `import chromadb`（宪法原则一的可执行守卫，防止后续 task 图省事直接调 chromadb）
+
+**Checkpoint**: 向量库抽象具备全量枚举能力，迁移与重建脚本可以在不碰 chromadb 的前提下开工
+
+---
+
+## Phase 3: User Story 1 - 混合检索真正生效 (Priority: P1) 🎯 MVP
+
+**Goal**: 修复 D1（标识体系不一致）与 D2（集合隔离口径不一致），让两路检索作用于同一批 chunk、标识一致、结果融合真正发生。
+
+**Independent Test**: 对英文语料发起查询，关键词路径返回非空结果且其标识能在向量库中取回；两路结果的标识交集 > 0（当前恒为 0）。**本阶段完成即可独立交付价值** —— 英文语料（31,387 条）的混合检索从「名义存在」变为「真实生效」，中文暂不受益。
+
+### 集合迁移
+
+- [ ] T008 [US1] 新建 `scripts/migrate_collections.py`：经 `VectorStoreFactory` 构造源/目标两个 store 实例（靠不同的 `collection_name`），用 `iter_records(include_vectors=True)` 读、`upsert` 写；支持 `--dry-run`；**复制语义，不删源数据**（FR-006）
+- [ ] T009 [US1] 在 `scripts/migrate_collections.py` 中实现无归属数据识别：把 `metadata.collection` 缺失或不属于已知集合的记录（实测 10 条 temp 残留）单独列出，**不自动删除**，输出清单待人工确认（FR-007）
+- [ ] T010 [P] [US1] 新建 `tests/unit/test_migrate_collections.py`：验证迁移幂等（重复执行不产生重复记录）、源集合保持完整、向量随行未重新生成、无归属记录被正确隔离
+- [ ] T011 [US1] 执行迁移：`.venv/Scripts/python.exe scripts/migrate_collections.py --dry-run` 核对计划（预期 `mt5_docs_chinese` 21,193 / `mt5_docs_english` 31,387 / 无归属 10），确认后实跑
+
+### `--collection` 语义修正
+
+- [ ] T012 [US1] 修改 `scripts/evaluate.py:180`：`--collection` 从构造 `filters={"collection": ...}` 改为在构造检索器**之前**覆盖 `settings.vector_store.collection_name`（[research.md](./research.md) Decision 6）
+- [ ] T013 [P] [US1] 修改 `scripts/query.py:76-78`：同 T012
+- [ ] T014 [P] [US1] 在 `tests/unit/` 增加测试：指定 `--collection` 后两路检索的范围都随之切换，且返回结果 100% 属于该集合（SC-004）
+
+### 索引重建（沿用现有 ASCII 切分）
+
+- [ ] T015 [US1] 按 [contracts/bm25_index.schema.md](./contracts/bm25_index.schema.md) 改造 `src/ingestion/storage/bm25_indexer.py` 的 `save()` / `load()`：标识字典化（`chunk_ids` 表 + 倒排项存 `[下标, tf]`）、去掉倒排项内冗余的 `doc_length`、`tf` 存整数、写入走临时文件 + `os.replace` 原子替换（FR-003 / FR-014）
+- [ ] T016 [US1] 在 `bm25_indexer.load()` 增加 `_format_version` 严格校验：缺失或不等于 2 时抛 `ValueError` 并提示运行重建脚本。**禁止静默降级或自动重建**（宪法原则三；理由见契约文件）
+- [ ] T017 [P] [US1] 更新 `tests/unit/test_bm25_indexer_roundtrip.py`：适配新格式的往返断言，并新增版本不匹配必须抛 `ValueError` 的用例
+- [ ] T018 [US1] 新建 `scripts/rebuild_bm25_index.py`：经 `iter_records(include_vectors=False)` 读取 → 构造 `Chunk` → 复用 `SparseEncoder.encode()` → 按 `metadata.collection` 分组 → `BM25Indexer.build()` + `save()`。支持 `--collection` 与 `--inspect-only`（[research.md](./research.md) Decision 1）
+- [ ] T019 [US1] 在 `scripts/rebuild_bm25_index.py` 输出统计报告（FR-013）：每集合的词条数、覆盖 chunk 数、含中文词条占比、跳过条目数、**标识回查向量库的命中率**（后者是 FR-001 的可执行判据）
+- [ ] T020 [P] [US1] 新建 `tests/unit/test_rebuild_bm25_index.py`：验证重建后索引中的标识与向量库完全一致、正文为空的记录被跳过并计入报告、中断不破坏既有索引
+- [ ] T021 [US1] 执行重建（两个集合），核对报告中标识命中率为 **100%**（当前 0/200）
+
+**Checkpoint**: 英文语料混合检索真实生效。此时中文仍失效（切分未改），这是预期的。
+
+---
+
+## Phase 4: User Story 2 - 中文内容能被关键词检索命中 (Priority: P2)
+
+**Goal**: 修复 D3 —— CJK 字符能进入索引并被中文查询命中，且查询端与索引端切分口径严格一致。
+
+**Independent Test**: 中文语料索引中含汉字词条占比 > 50%（当前 0%）；用某段正文中真实出现的中文短语作查询，能命中该正文所在 chunk。
+
+### 共享切分实现
+
+- [ ] T022 [US2] 在 `src/core/text/tokenizer.py` 实现切分函数：按字符类别切分 CJK 段与非 CJK 段；CJK 段长度 ≥ 2 取相邻二字滑窗，长度 = 1 时该单字直接成词；非 CJK 段沿用 `\b[a-z0-9]+\b` + 小写化 + 停用词过滤（[data-model.md § 1](./data-model.md)）
+- [ ] T023 [US2] 在 `src/core/text/tokenizer.py` 落实约束差异：长度约束与停用词过滤**只作用于非 CJK 词条**，CJK 词条豁免（否则 T022 产出的单字词条会被立即过滤，规则自相矛盾）
+- [ ] T024 [P] [US2] 新建 `tests/unit/test_tokenizer.py`：中文纯文本、中英混排、单字段落、标点分隔、空串等切分用例
+- [ ] T025 [US2] 在 `tests/unit/test_tokenizer.py` 增加**两端口径一致性往返测试**：取一段正文，分别走索引端与查询端路径，断言产出的词条序列逐元素相等。这是本 feature 的核心不变量 —— 违反它的失败是静默的（不报错，只是永远召回为空）
+
+### 两端接入
+
+- [ ] T026 [US2] 修改 `src/ingestion/embedding/sparse_encoder.py:128`：删除本地 ASCII-only 正则，改调 `src/core/text/tokenizer.py`
+- [ ] T027 [US2] 修改 `src/core/query_engine/query_processor.py:145`：删除本地 ASCII-only 正则，改调同一份 tokenizer
+- [ ] T028 [P] [US2] 更新 `tests/unit/test_sparse_encoder.py` 与 `tests/unit/test_query_processor.py`：适配新切分行为；确认既有 ASCII 术语匹配能力未被削弱（FR-010 / US2 验收场景 4）
+- [ ] T029 [US2] 再次执行重建（两个集合），核对中文集合的含汉字词条占比 **> 50%**（SC-003）、索引体积在 **约 17 MB 量级**（若接近 156 MB 说明 T015 的标识字典化未生效）、启动耗时不超过修复前的 2 倍（SC-011）
+
+**Checkpoint**: 中英文语料的混合检索均真实生效。
+
+---
+
+## Phase 5: User Story 3 - 评估结论可信且可追溯 (Priority: P3)
+
+**Goal**: 让历史与当前的评估数字都能被正确解读，并产出修复前后的对比证据。
+
+**Independent Test**: 任一历史基线都能看出其真实检索模式与语料有效性；能生成「纯向量 vs 混合」的逐指标对比。
+
+> ⚠️ **T030 有严格的时序约束**：它必须在 Phase 3 的 T011～T014 完成之后、T021（首次重建）**之前**执行。修复前的系统状态一旦被重建覆盖就永久不可复现。
+
+- [ ] T030 [US3] **（时序卡点）** 在迁移与 `--collection` 修正完成后、首次重建之前，跑基准评估留存「纯向量参照」：`.venv/Scripts/python.exe scripts/evaluate.py --collection mt5_docs_english --pretty --archive`，中文集合同样跑一次，记录两个 `run_id`
+- [ ] T031 [P] [US3] 修正两套金标的 `source_corpus_collection` 字段：`tests/fixtures/golden_test_set_zh.json` 与 `golden_test_set_en.json` 现均写 `default`，与实际引用内容不符（FR-012）
+- [ ] T032 [US3] 在 `src/observability/evaluation/baseline_manager.py` 的基线记录增加 `retrieval_mode`（`dense_only` / `hybrid`）与 `corpus_validity`（`valid` / `mismatched`）两个可选字段；写入沿用既有 `_write_store_atomic()`；**不修改任何既有指标数字**（FR-011）
+- [ ] T033 [P] [US3] 更新 `tests/unit/test_baseline_manager.py`：新字段的读写、旧记录缺失该字段时视为「未标注」的向后兼容行为
+- [ ] T034 [US3] 把 `logs/baselines.json` 中 2026-04-28 的既有记录标注为 `corpus_validity: mismatched` —— 实测表明当时 MT5 语料尚未 ingest，该次评估检索回的是 `company_policy.md` 与临时文件，**不是**「纯向量参照」（[research.md](./research.md) Decision 7）
+- [ ] T035 [US3] Phase 4 完成后重跑评估（中英文各一次），与 T030 的结果逐指标对比，产出 **SC-008** 的「纯向量 vs 混合」对比表
+- [ ] T036 [US3] 用 T035 的报告做难度分组统计（`case_results` 的 `query` 字段与金标按 query 关联取 `tags.difficulty`），产出 **SC-009**：英文集 22 条 simple vs 20 条 multi_context+reasoning 的召回差距。**解读时须记入折扣**：金标的 `expected_chunk_ids` 是脚本按固定 top-5 回填的，非人工标注的真实答案边界
+- [ ] T037 [US3] 把修复后的结果标为新基线（`retrieval_mode: hybrid`、`corpus_validity: valid`）
+
+**Checkpoint**: 评估数字可解读、可对比、可追溯。
+
+---
+
+## Phase 6: Polish & Cross-Cutting
+
+- [ ] T038 [P] 全量跑 `.venv/Scripts/python.exe -m pytest tests/unit -v`，确认 80 个测试文件全通过（宪法原则七）
+- [ ] T039 [P] 更新 `docs/learning/agentic-retrieval-boundary.md` 的 § 6.3：把四个缺陷标记为已修复，补上修复后的实测数字
+- [ ] T040 [P] 更新 `CLAUDE.md` 中与索引格式、`--collection` 语义相关的描述
+- [ ] T041 处置 10 条无归属的 temp 残留 chunk：列出清单交用户确认后再删除（FR-007，**不得自动删除**）
+- [ ] T042 复核 SC-001～SC-011 逐条达成情况，未达成项写明原因，结论记入本 feature 的验收记录
+
+---
+
+## Dependencies
+
+```
+Phase 1 (T001-T003)  Setup
+        ↓
+Phase 2 (T004-T007)  Foundational —— 阻塞点，必须先完成
+        ↓
+Phase 3 (T008-T021)  US1 混合检索真正生效  🎯 MVP
+        │  ⚠ T030 必须插在 T014 之后、T021 之前
+        ↓
+Phase 4 (T022-T029)  US2 中文可被关键词命中
+        ↓
+Phase 5 (T031-T037)  US3 评估可信（T030 除外，见上）
+        ↓
+Phase 6 (T038-T042)  Polish
+```
+
+**Story 间依赖**：US2 依赖 US1 的索引格式改造（T015-T017）与重建脚本（T018）；US3 的 T030 反向嵌入 US1 中间。三者不是完全独立 —— 这是缺陷修复类 feature 的固有性质（共享同一套索引与重建路径），已在各 Checkpoint 标明可独立验收的边界。
+
+---
+
+## Parallel Opportunities
+
+| 组 | 可并行任务 | 前提 |
+|---|---|---|
+| Setup | T002 ‖ T003 | T001 完成 |
+| US1 测试 | T010 ‖ T014 ‖ T017 ‖ T020 | 各自对应的实现任务完成 |
+| US1 CLI | T012 ‖ T013 | 无 |
+| US2 测试 | T024 ‖ T028 | T022-T023 完成 |
+| US3 | T031 ‖ T033 | 无 |
+| Polish | T038 ‖ T039 ‖ T040 | Phase 5 完成 |
+
+---
+
+## Implementation Strategy
+
+### MVP 范围
+
+**Phase 1 + 2 + 3（T001-T021）即为 MVP** —— 交付后英文语料（31,387 条、42 条金标）的混合检索真实生效，D1 与 D2 消解。中文暂不受益，但这是可独立交付、可独立验收的完整增量。
+
+### 增量交付
+
+1. Setup + Foundational → 向量库具备全量枚举能力
+2. \+ US1 → **混合检索从名义存在变为真实生效**（MVP，SC-001/SC-002/SC-004）
+3. \+ US2 → 中文语料纳入关键词检索（SC-003/SC-011）
+4. \+ US3 → 评估可信、对比数据到手（SC-006/SC-008/SC-009）
+5. Polish → 文档对齐 + 残留数据处置
+
+### 风险提示
+
+- **T030 是全局唯一的时序卡点**。它是最后一次能测到「修复前」状态的机会 —— T021 一旦执行，索引被替换，纯向量参照永久不可复现。若漏做，SC-008 无法达成且**无法补救**
+- **T025 是 FR-009 的唯一闸门**。查询端与索引端切分口径漂移的失败是静默的：不报错、不告警，只是永远召回为空。D3 正是这样潜伏至今
+- **T016 不允许打折**。版本不匹配必须硬失败 —— 若在这里留静默降级路径，等于在刚修好的地方重新埋雷
+- **T015 是 T029 体积达标的前提**。标识字典化没做对，中文 bigram 会把索引撑到 156 MB，SC-011 直接失败
+- **T011 与 T041 涉及数据操作**。迁移为复制式不删源数据；10 条残留的删除必须人工确认，不得自动执行
+
+---
+
+## Notes
+
+- `[P]` = 不同文件、无未完成依赖
+- 提交信息按宪法 § X 引用 task ID（`refs T-0XX`）
+- 每个任务或逻辑组完成后即提交；**触及 Feature-001 生产路径的改动单独提交、单独验证**（沿用 Feature-003 的 T004 纪律）
+- 任一 Checkpoint 均可停下独立验收
+- 所有命令与测试用 `.venv/Scripts/python.exe`
