@@ -38,7 +38,7 @@ pytest tests/unit/test_llm_factory.py::test_factory_creation -v  # Run single te
 
 ### Running the System
 ```bash
-python main.py                       # Start MCP server (stdio transport)
+python main.py                       # Start MCP server (transport 由 settings.yaml 的 mcp_server.transport 决定: stdio | sse)
 python scripts/ingest.py --path <file_or_dir> [--collection <name>] [--force]  # Offline document ingestion
 python scripts/query.py --query <text> [--top-k <n>] [--collection <name>]     # Standalone query testing
 python scripts/evaluate.py           # Run evaluation suite
@@ -214,7 +214,9 @@ llm:
 
 ## MCP Server Details
 
-The MCP server runs on stdio transport and exposes three tools:
+The MCP server supports **两种 transport**,由 `config/settings.yaml` 的 `mcp_server.transport` 切换(`stdio` | `sse`,见 `src/core/settings.py` 的 `VALID_TRANSPORTS`)。SSE 模式经 Starlette + uvicorn 提供 HTTP 服务(`src/mcp_server/server.py` 的 `run_sse()`),适用于常驻服务型调用方;stdio 适用于 Claude Desktop / Claude Code 这类按会话拉起子进程的客户端。
+
+It exposes three tools:
 
 | Tool | Description |
 |------|-------------|
@@ -332,19 +334,22 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 > 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->` 与 `<!-- SPECKIT END -->` 之间的内容。
 
 <!-- SPECKIT START -->
-**Active SDD Plan**: [specs/003-testset-refine-automation/plan.md](specs/003-testset-refine-automation/plan.md)
+**Active SDD Plan**: [specs/004-retrieval-infra-fix/plan.md](specs/004-retrieval-infra-fix/plan.md)
 
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-above (Feature-003: 金标精修自动化(异源预筛 + borderline 路由)). Sibling
+above (Feature-004: 检索基础设施修正(混合检索从未生效)). Sibling
 artifacts in the same directory:
-[spec.md](specs/003-testset-refine-automation/spec.md),
-[research.md](specs/003-testset-refine-automation/research.md),
-[data-model.md](specs/003-testset-refine-automation/data-model.md),
-[contracts/](specs/003-testset-refine-automation/contracts/),
-[quickstart.md](specs/003-testset-refine-automation/quickstart.md).
+[spec.md](specs/004-retrieval-infra-fix/spec.md),
+[research.md](specs/004-retrieval-infra-fix/research.md),
+[data-model.md](specs/004-retrieval-infra-fix/data-model.md),
+[contracts/](specs/004-retrieval-infra-fix/contracts/),
+[quickstart.md](specs/004-retrieval-infra-fix/quickstart.md).
 
 > 注:本 feature 不单开 git 分支,沿用 `dev-from-clean-start`。speckit 脚本
-> 需要 `003-*` 形式的分支名,故调用时用 `SPECIFY_FEATURE=003-testset-refine-automation`
+> 需要 `004-*` 形式的分支名,故调用时用 `SPECIFY_FEATURE=004-retrieval-infra-fix`
 > 旁路 `check_feature_branch` 校验(该变量是 spec-kit 官方支持的覆写点)。
+
+> ⚠️ **本 feature 的所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的
+> protobuf 是 5.29.3,`import chromadb` 会失败;`.venv` 里是 3.20.3。
 <!-- SPECKIT END -->
