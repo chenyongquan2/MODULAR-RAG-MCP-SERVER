@@ -6,7 +6,12 @@
 # LLM 配置
 llm:
   provider: glm             # glm | azure | openai | ollama | deepseek
-  model: z-ai/glm-4.7       # 上游 finpoints 代理的 model id 需要 z-ai/ 前缀;查 ${GLM_BASE_URL}/models 可列出所有可用值
+  # 2026-08-09：z-ai/glm-4.7 已从网关下架（503 model_not_found），切到直系
+  # 后继 z-ai/glm-5.2。judge_llm(minimax/minimax-m2.7) 与
+  # screening_llm(z-ai/glm-5.2-free) 未受影响，仍在网关上。
+  # 注意：本模型负责答案生成，会影响 RAGAS 的 faithfulness / answer_relevancy，
+  # 跨此变更的评估报告不宜直接比。
+  model: z-ai/glm-5.2       # 上游 finpoints 代理的 model id 需要 z-ai/ 前缀;查 ${GLM_BASE_URL}/models 可列出所有可用值
   api_key: ${GLM_API_KEY}
   base_url: ${GLM_BASE_URL}
 
@@ -36,7 +41,10 @@ vector_store:
   persist_path: ./data/db/chroma
   # dense 与 sparse 两路共用这一个真源：dense 用它决定打开哪个物理 collection，
   # sparse 用它决定加载哪个关键词索引文件。切换语料只改这一个值。
-  collection_name: default   # default | mt5_docs_chinese | mt5_docs_english
+  # 2026-08-09 起指向重嵌后的集合（1024 维，与 qwen/text-embedding-v4 匹配）。
+  # 旧的 default / mt5_docs_* 是 1536 维，模型已下架、无法再产出匹配的查询
+  # 向量，仅作归档保留。
+  collection_name: default_text-embedding-v4
   bm25_index_path: ./data/db/bm25
   # 关键词索引磁盘格式版本。加载时严格校验，不匹配立即抛 ValueError 而非静默降级。
   # 理由：Feature-004 修复的三个缺陷全部属于「静默失效」——不报错、不告警，只是
