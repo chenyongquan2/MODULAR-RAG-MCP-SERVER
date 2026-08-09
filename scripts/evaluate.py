@@ -64,7 +64,11 @@ def parse_args() -> argparse.Namespace:
         "--collection",
         type=str,
         default=None,
-        help="Optional collection filter (default: settings.vector_store.collection_name)",
+        help=(
+            "Switch the retrieval scope to this collection "
+            "(default: settings.vector_store.collection_name). "
+            "Overrides the config value for both dense and sparse routes."
+        ),
     )
     parser.add_argument(
         "--pretty",
@@ -154,6 +158,24 @@ def main() -> int:
         settings = load_settings()
         test_set_path = _resolve_test_set_path(args, settings)
 
+        # feature-004 T012:--collection 改为**真正切换检索范围**,而非
+        # 此前的「融合后按元数据过滤」。
+        #
+        # collection_name 是 dense 与 sparse 共同的真源:DenseRetriever 经
+        # VectorStoreFactory 用它决定打开哪个物理集合,SparseRetriever 用它
+        # 决定加载哪个关键词索引文件。因此必须在**构造检索器之前**覆盖。
+        #
+        # 旧做法 filters={"collection": ...} 有两个硬伤:过滤发生在 RRF 融合
+        # 之后(top_k 被削),且 sparse 侧压根不看这个参数 —— 那正是缺陷 D2
+        # 在使用侧的表现。
+        if args.collection:
+            logger.info(
+                "Overriding retrieval collection: %s -> %s",
+                settings.vector_store.collection_name,
+                args.collection,
+            )
+            settings.vector_store.collection_name = args.collection
+
         hybrid_search = HybridSearch(settings=settings)
         evaluator = EvaluatorFactory.create(settings=settings)
 
@@ -177,7 +199,9 @@ def main() -> int:
             response_builder=response_builder,
         )
 
-        filters = {"collection": args.collection} if args.collection else None
+        # 集合切换已由上面覆盖 collection_name 完成,不再塞进 filters。
+        # filters 回归其真正用途:按 doc_type / tags 等维度做元数据过滤。
+        filters = None
         report = runner.run(
             test_set_path=test_set_path,
             top_k=args.top_k,

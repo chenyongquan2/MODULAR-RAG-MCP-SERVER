@@ -55,7 +55,11 @@ def parse_args() -> argparse.Namespace:
         "--collection",
         type=str,
         default=None,
-        help="Filter by collection name (optional)",
+        help=(
+            "Switch the retrieval scope to this collection "
+            "(default: settings.vector_store.collection_name). "
+            "Overrides the config value for both dense and sparse routes."
+        ),
     )
     return parser.parse_args()
 
@@ -72,10 +76,20 @@ def main() -> int:
         settings = load_settings()
         logger.info("Settings loaded successfully")
 
-        filters = None
+        # feature-004 T013:--collection 改为**真正切换检索范围**。
+        # collection_name 是 dense 与 sparse 共同的真源,必须在构造
+        # HybridSearch 之前覆盖。旧做法 filters={"collection": ...} 是
+        # 融合后过滤,且 sparse 侧根本不看该参数(缺陷 D2)。
         if args.collection:
-            filters = {"collection": args.collection}
-            logger.info("Using collection filter: %s", args.collection)
+            logger.info(
+                "Overriding retrieval collection: %s -> %s",
+                settings.vector_store.collection_name,
+                args.collection,
+            )
+            settings.vector_store.collection_name = args.collection
+
+        # filters 回归其真正用途(doc_type / tags 等维度),不再承担集合切换
+        filters = None
 
         hybrid_search = HybridSearch(settings)
         logger.info("HybridSearch initialized")

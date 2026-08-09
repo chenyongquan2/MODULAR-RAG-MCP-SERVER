@@ -51,9 +51,9 @@
 ### 集合迁移
 
 - [ ] T008 [US1] 新建 `scripts/migrate_collections.py`：经 `VectorStoreFactory` 构造源/目标两个 store 实例（靠不同的 `collection_name`），用 `iter_records(include_vectors=True)` 读、`upsert` 写；支持 `--dry-run`；**复制语义，不删源数据**（FR-006）
-- [ ] T009 [US1] 在 `scripts/migrate_collections.py` 中实现无归属数据识别：把 `metadata.collection` 缺失或不属于已知集合的记录（实测 10 条 temp 残留）单独列出，**不自动删除**，输出清单待人工确认（FR-007）
+- [ ] T009 [US1] 在 `scripts/migrate_collections.py` 中实现可疑数据识别并单独列出，**不自动删除**（FR-007）。判据修正：实测表明 10 条 temp 残留**并非** `metadata.collection` 缺失（它们都标着 `default`），因此判据应为「源路径指向临时目录」。同时报告 `metadata.collection` 缺失/为空的记录（当前为 0，但作为防御性检查保留）
 - [ ] T010 [P] [US1] 新建 `tests/unit/test_migrate_collections.py`：验证迁移幂等（重复执行不产生重复记录）、源集合保持完整、向量随行未重新生成、无归属记录被正确隔离
-- [ ] T011 [US1] 执行迁移：`.venv/Scripts/python.exe scripts/migrate_collections.py --dry-run` 核对计划（预期 `mt5_docs_chinese` 21,193 / `mt5_docs_english` 31,387 / 无归属 10），确认后实跑
+- [ ] T011 [US1] 执行迁移：`.venv/Scripts/python.exe scripts/migrate_collections.py --dry-run` 核对计划，确认后实跑。**实测的源集合 `default` 内含标记分布**：`mt5_docs_english` 31,387 / `mt5_docs_chinese` 21,193 / `finpoints_handbook` 162（同名物理集合已存在同样 162 条，迁移应幂等无副作用）/ `default` 15（含 10 条 temp 残留，留在原地不迁走）
 
 ### `--collection` 语义修正
 
