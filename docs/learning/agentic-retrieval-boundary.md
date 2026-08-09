@@ -254,7 +254,20 @@ Azure agentic retrieval / 本项目的规划器     ← 检索级循环（提供
 
 ### 6.3 四个已知缺陷/缺口
 
-**零、chunk_id 体系不一致 —— 混合检索从未真正生效（最严重）**【实测】
+> **✅ 状态更新（2026-08-09）**：下述缺陷零、二、三已由 [Feature-004](../../specs/004-retrieval-infra-fix/spec.md) 修复。缺陷一（RRF 无权重）留待后续 Query Rewrite feature——它是那个 feature 的前置，本次不做。修复后实测：
+>
+> | 指标 | 修复前 | 修复后 |
+> |---|---|---|
+> | 索引标识回查 Chroma 命中率 | **0 / 200** | **200 / 200** |
+> | 中文语料索引含汉字词条占比 | **0 %**（7,165 词条零汉字） | **78.9 %**（30,246 / 38,347） |
+> | sparse 路径返回内容 | 恒为空 | 带正文，中文查询 top1 精准命中 |
+> | `mt5_docs_chinese` 索引体积 | 37.4 MB | **17.7 MB** |
+> | 该索引加载耗时 | 1.81 s | **1.29 s** |
+> | 向量侧 collection 隔离 | 全在 `default`，靠元数据区分 | 物理隔离，两侧口径一致 |
+>
+> 词条数涨了 5 倍而体积和加载时间反而下降，是因为索引格式改成了 chunk 标识字典化（倒排项存整数下标而非 91 字符的路径式标识）。详见 [contracts/bm25_index.schema.md](../../specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md)。
+
+**零、chunk_id 体系不一致 —— 混合检索从未真正生效（最严重）**【实测】【已修复】
 
 BM25 索引与 Chroma 数据来自**不同批次的 ingest、不同版本的代码**，chunk_id 完全不相交：
 
@@ -279,10 +292,10 @@ Chroma    : C:\workspace\...\ingest_source\MetaTrader5SDK_English.chm_1925_a0973
 
 > **这一次重建同时解决下面全部四件事**：ID 对齐、CJK 切分、collection 物理隔离、索引格式瘦身。
 
-**一、RRF 无权重**【代码】
+**一、RRF 无权重**【代码】【未修复 —— 留给 Query Rewrite feature】
 `fusion.py:102` 是 `rrf_score = 1.0 / (self._k + rank)`。没有权重项，**无法给原始 query 更高权重**。要实现「原始 query 参与融合且抑制语义漂移」，得先扩展这里。
 
-**二、CJK 在整条 sparse 链路上被丢弃（查询端 + 索引端都是）**【代码】
+**二、CJK 在整条 sparse 链路上被丢弃（查询端 + 索引端都是）**【代码】【已修复】
 
 查询端 `query_processor.py:145`：
 
@@ -312,7 +325,7 @@ tokens = re.findall(r'\b[a-z0-9]+\b', text)
 - **改完必须全量重建 BM25 索引**（re-ingest），旧索引里没有中文词条
 - 重跑 Feature-001 评估并重标基线
 
-**三、无 P95 统计**【实测】
+**三、无 P95 统计**【实测】【未修复 —— 不在 Feature-004 范围】
 `grep -iE "p95|percentile|latency"` 在 `src/` 下零命中。原始耗时数据在 `logs/traces.jsonl`，但没有任何聚合成分位数的代码。要给出延迟指标需先写统计脚本。
 
 **四、dense / sparse 的 collection 隔离口径不一致**【实测】

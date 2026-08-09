@@ -249,6 +249,10 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 - **Logger Usage**: Always import `from observability.logger import get_logger` and call `logger = get_logger(__name__)`
 - **PDF Loading**: Currently only PDF and Markdown formats supported via `src/libs/loader/` (uses MarkItDown for PDF → Markdown conversion)
 - **Vector Store**: ChromaDB is the only implemented backend currently
+- **Collection 语义**(Feature-004 起):`settings.vector_store.collection_name` 是 **dense 与 sparse 两路共同的唯一真源** —— dense 用它决定打开哪个物理 collection,sparse 用它决定加载哪个 BM25 索引文件。CLI 的 `--collection` **覆盖这个值**(真正切换检索范围),而不是塞进 `filters` 做融合后过滤。`filters` 只用于 `doc_type`/`tags` 等维度
+- **BM25 索引格式**:v2,契约见 [specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md](specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md)。chunk 标识字典化(倒排项存整数下标)。**版本不匹配时 `BM25Indexer.load()` 直接抛 `ValueError`,不静默降级** —— 跑 `python scripts/rebuild_bm25_index.py --all` 重建
+- **切分口径**:查询端与索引端**必须**共用 `src/core/text/tokenizer.py`,禁止各留一份。两端漂移的失败是静默的(不报错,只是召回恒为空),由 `tests/unit/test_tokenizer.py::TestBothEndsAgree` 守住
+- **金标评估集合**:`golden_test_set_{zh,en}.json` **必须**在 `collection=default` 上评估。中英文语料是同一份 MT5 文档的两个语言版本,金标回填时匹配跨了语言(en 集 42 条里 18 条跨语料),只有 `default` 能 100% 解析全部 `expected_chunk_ids`
 - **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately. 自 feature-002 起，查询命中含图 chunk 时，`query_knowledge_hub` 工具会通过 `MultimodalAssembler` 同时返回文本与图片（MCP `ImageContent`，base64），两种模式（`use_llm=true/false`）策略一致。返图数量上限由 `query.max_images_per_response` 配置（默认 10）
 
 ## Evaluation System
