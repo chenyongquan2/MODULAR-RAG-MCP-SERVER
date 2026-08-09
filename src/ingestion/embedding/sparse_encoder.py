@@ -47,10 +47,11 @@ BM25 算法需要两个输入：
 ================================================================================
 """
 
-import re
 from collections import Counter
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Any
 
+from src.core.text.tokenizer import DEFAULT_STOP_WORDS as SHARED_STOP_WORDS
+from src.core.text.tokenizer import tokenize
 from src.core.types import Chunk, ChunkRecord
 
 if TYPE_CHECKING:
@@ -78,18 +79,12 @@ class SparseEncoder:
         True
     """
 
-    DEFAULT_STOP_WORDS: Set[str] = {
-        "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
-        "of", "with", "by", "from", "as", "is", "was", "are", "were", "been",
-        "be", "have", "has", "had", "do", "does", "did", "will", "would",
-        "could", "should", "may", "might", "must", "shall", "can", "need",
-        "dare", "ought", "used", "it", "its", "this", "that", "these",
-        "those", "i", "you", "he", "she", "we", "they", "what", "which",
-        "who", "whom", "whose", "where", "when", "why", "how", "all", "each",
-        "every", "both", "few", "more", "most", "other", "some", "such",
-        "no", "nor", "not", "only", "own", "same", "so", "than", "too",
-        "very", "just", "also", "now", "here", "there", "then", "once",
-    }
+    #: 停用词表 —— 指向共享实现（feature-004 T026）。
+    #:
+    #: 此前这里是一份 89 词的本地表，而 ``query_processor.py`` 有另一份
+    #: 181 词的表。9 个词只在索引端被过滤，于是查询会去搜索引里根本没有的
+    #: 词条 —— 白搜，且不报错。现在两端共用并集。
+    DEFAULT_STOP_WORDS: Set[str] = set(SHARED_STOP_WORDS)
 
     def __init__(
         self,
@@ -115,25 +110,28 @@ class SparseEncoder:
     def _tokenize(self, text: str) -> List[str]:
         """分词：将文本转换为词项列表。
 
+        **委托给 ``src.core.text.tokenizer``**（feature-004 T026）。
+
+        此前这里有一份本地实现 ``re.findall(r'\\b[a-z0-9]+\\b', text)``，
+        与 ``query_processor.py`` 的另一份实现在三处不一致（CJK 字符、
+        停用词表、连字符处理），导致索引里的词条与查询切出的词条对不上 ——
+        而这种失败**不报错，只是召回恒为空**（缺陷 D3）。
+
+        现在两端共用同一个函数，口径漂移由
+        ``tests/unit/test_tokenizer.py::TestBothEndsAgree`` 守住。
+
         Args:
             text: 输入文本
 
         Returns:
-            词项列表（小写化，去除标点）
+            词项列表（保留顺序与重复 —— 词频统计要用）
         """
-        if not text or not text.strip():
-            return []
-
-        text = text.lower()
-        tokens = re.findall(r'\b[a-z0-9]+\b', text)
-
-        filtered_tokens = [
-            t for t in tokens
-            if self._min_term_length <= len(t) <= self._max_term_length
-            and t not in self._stop_words
-        ]
-
-        return filtered_tokens
+        return tokenize(
+            text,
+            stop_words=self._stop_words,
+            min_length=self._min_term_length,
+            max_length=self._max_term_length,
+        )
 
     def _compute_term_frequencies(self, text: str) -> Dict[str, int]:
         """计算词频 (TF)。

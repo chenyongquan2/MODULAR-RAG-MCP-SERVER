@@ -158,12 +158,26 @@ class TestQueryProcessor:
         assert result.keywords == ["alpha", "beta", "gamma", "delta"]
 
     def test_process_hyphenated_words(self) -> None:
-        """测试连字符词汇处理。"""
+        """测试连字符词汇处理:在连字符处切开(feature-004 T027 起)。
+
+        **本用例的断言被刻意反转过**,理由必须留档:
+
+        原断言是 ``assert "query-processing" in result.keywords``,即查询端
+        把连字符词保留为一个整词。但索引端(``sparse_encoder.py`` 的
+        ``re.findall(r'\\b[a-z0-9]+\\b', ...)``)一直是**在连字符处切开**的
+        —— 索引里只有 ``query`` 和 ``processing``,根本不存在
+        ``query-processing`` 这个词条。
+
+        于是「保留整词」这条旧断言锁死的其实是缺陷 D3 的一个分支:含连字符
+        的查询**永远匹配不上**任何文档,而且不报错、不告警,只是召回为空。
+
+        两端统一到共享切分实现后,查询端也在连字符处切开,与索引一致。
+        """
         processor = QueryProcessor()
         result = processor.process("query-processing pipeline")
 
-        assert "pipeline" in result.keywords
-        assert "query-processing" in result.keywords
+        assert result.keywords == ["query", "processing", "pipeline"]
+        assert "query-processing" not in result.keywords
 
     def test_process_numbers(self) -> None:
         """测试包含数字的查询。"""

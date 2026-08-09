@@ -4,46 +4,20 @@
 为后续的 SparseRetriever (BM25) 提供查询词。
 """
 
-import re
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 
+from ..text.tokenizer import DEFAULT_STOP_WORDS as SHARED_STOP_WORDS
+from ..text.tokenizer import tokenize
 from ..types import ProcessedQuery
 
 
-DEFAULT_STOPWORDS: frozenset[str] = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
-    "has", "he", "in", "is", "it", "its", "of", "on", "that", "the",
-    "to", "was", "were", "will", "with", "this", "but", "they", "have",
-    "had", "what", "when", "where", "who", "which", "why", "how",
-    "all", "each", "every", "both", "few", "more", "most", "other",
-    "some", "such", "no", "nor", "not", "only", "own", "same", "so",
-    "than", "too", "very", "can", "just", "should", "now",
-    "i", "me", "my", "myself", "we", "our", "ours", "ourselves",
-    "you", "your", "yours", "yourself", "yourselves",
-    "he", "him", "his", "himself", "she", "her", "hers", "herself",
-    "it", "its", "itself", "they", "them", "their", "theirs", "themselves",
-    "what", "which", "who", "whom", "this", "that", "these", "those",
-    "am", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "having", "do", "does", "did", "doing",
-    "would", "could", "ought", "i'm", "you're", "he's", "she's", "it's",
-    "they're", "i've", "you've", "we've", "they've", "i'd", "you'd",
-    "he'd", "she'd", "we'd", "they'd", "i'll", "you'll", "he'll",
-    "she'll", "we'll", "they'll", "isn't", "aren't", "wasn't", "weren't",
-    "hasn't", "haven't", "hadn't", "doesn't", "don't", "didn't", "won't",
-    "wouldn't", "shan't", "shouldn't", "can't", "cannot", "couldn't",
-    "mustn't", "let's", "that's", "who's", "what's", "here's", "there's",
-    "when's", "where's", "why's", "how's", "a", "an", "the", "and",
-    "but", "if", "or", "because", "as", "until", "while", "of", "at",
-    "by", "for", "with", "about", "against", "between", "into", "through",
-    "during", "before", "after", "above", "below", "to", "from", "up",
-    "down", "in", "out", "on", "off", "over", "under", "again",
-    "further", "then", "once", "here", "there", "when", "where", "why",
-    "how", "all", "any", "both", "each", "few", "more", "most", "other",
-    "some", "such", "no", "nor", "not", "only", "own", "same", "so",
-    "than", "too", "very", "s", "t", "can", "will", "just", "don",
-    "should", "now",
-})
+#: 停用词表 —— 指向共享实现（feature-004 T027）。
+#:
+#: 此前这里是一份 181 词的本地表，而 ``sparse_encoder.py`` 有另一份 89 词的
+#: 表。9 个词只在索引端过滤，查询会去搜索引里根本没有的词条；101 个词只在
+#: 查询端过滤，白占索引空间。现在两端共用并集。
+DEFAULT_STOPWORDS: frozenset[str] = SHARED_STOP_WORDS
 
 
 @dataclass
@@ -123,45 +97,41 @@ class QueryProcessor:
             filters=parsed_filters,
         )
 
+    def _tokenize_shared(self, query: str) -> List[str]:
+        """走共享切分实现（feature-004 T027）。
+
+        单独拆成一个方法，是为了让
+        ``tests/unit/test_tokenizer.py::TestBothEndsAgree`` 能把它与索引端的
+        ``SparseEncoder._tokenize`` 直接对比 —— 两者对同一段文本必须逐元素
+        相等。这是本 feature 的核心不变量（FR-009）。
+        """
+        return tokenize(
+            query,
+            stop_words=self.stopwords if self.config.use_stopwords else frozenset(),
+            min_length=self.config.min_keyword_length,
+        )
+
     def _extract_keywords(self, query: str) -> List[str]:
         """从查询中提取关键词。
 
-        使用规则进行分词和清洗：
-        1. 转小写
-        2. 移除非字母字符（保留空格和连字符）
-        3. 分词
-        4. 过滤停用词
-        5. 过滤短词
-        6. 限制最大数量
+        流程拆成两层：
+
+        1. **切分**（``_tokenize_shared``）—— 与索引端共用同一实现。
+           此前这里有一份本地正则 ``re.sub(r"[^a-z0-9\\s-]", " ", ...)``，
+           与 ``sparse_encoder.py`` 的实现在三处不一致：它丢弃全部汉字、
+           用一份 181 词的停用词表（索引端只有 89 词）、把 ``well-known``
+           当作一个整词（索引端切成 ``well`` + ``known``）。三处都会让查询
+           切出的词条**永远匹配不上**索引里的词条，而且不报错（缺陷 D3）。
+        2. **查询侧策略** —— 去重 + 截断到 ``max_keywords``。这两步属于
+           调用方策略而非切分：索引端要保留重复来算词频，查询端不需要。
 
         Args:
             query: 查询文本
 
         Returns:
-            关键词列表
+            关键词列表（去重，保留首次出现顺序，最多 ``max_keywords`` 个）
         """
-        normalized = query.lower()
-
-        normalized = re.sub(r"[^a-z0-9\s-]", " ", normalized)
-
-        tokens = normalized.split()
-
-        tokens = [
-            token.strip("-")
-            for token in tokens
-            if token.strip("-")
-        ]
-
-        if self.config.use_stopwords:
-            tokens = [
-                token for token in tokens
-                if token not in self.stopwords
-            ]
-
-        tokens = [
-            token for token in tokens
-            if len(token) >= self.config.min_keyword_length
-        ]
+        tokens = self._tokenize_shared(query)
 
         unique_tokens = []
         seen = set()
