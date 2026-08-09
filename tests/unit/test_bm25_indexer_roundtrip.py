@@ -217,3 +217,194 @@ class TestBM25QueryRoundtrip:
 
         results = new_indexer.query(["text"], top_k=5)
         assert len(results) > 0
+
+
+# ===========================================================================
+# Feature-004 T015/T016/T017: v2 磁盘格式
+# ===========================================================================
+
+
+class TestIndexFormatV2:
+    """v2 磁盘格式契约。
+
+    见 specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md。
+
+    v2 存在的理由:新 chunk_id 是路径式、平均 91 字符(旧的 38),叠加中文
+    bigram 带来的约 6 倍倒排项增长,沿用 v1 格式索引会从 38 MB 涨到 156 MB。
+    标识字典化后回落到约 17 MB。
+    """
+
+    def _built(self, temp_index_dir, sample_records):
+        indexer = BM25Indexer(index_dir=temp_index_dir)
+        indexer.build(sample_records, collection="c")
+        indexer.save(collection="c")
+        return indexer
+
+    def _raw(self, temp_index_dir):
+        return json.loads((Path(temp_index_dir) / "c.json").read_text(encoding="utf-8"))
+
+    def test_writes_format_version(self, temp_index_dir, sample_records):
+        self._built(temp_index_dir, sample_records)
+        assert self._raw(temp_index_dir)["_format_version"] == 2
+
+    def test_chunk_ids_table_present_and_unique(self, temp_index_dir, sample_records):
+        self._built(temp_index_dir, sample_records)
+        raw = self._raw(temp_index_dir)
+        assert isinstance(raw["chunk_ids"], list)
+        assert len(raw["chunk_ids"]) == len(set(raw["chunk_ids"]))
+
+    def test_postings_are_integer_index_pairs(self, temp_index_dir, sample_records):
+        """倒排项必须是 [下标, tf],不再内嵌完整标识字符串。"""
+        self._built(temp_index_dir, sample_records)
+        raw = self._raw(temp_index_dir)
+
+        n = len(raw["chunk_ids"])
+        for term, entry in raw["index"].items():
+            for posting in entry["postings"]:
+                assert isinstance(posting, list) and len(posting) == 2, term
+                chunk_index, tf = posting
+                assert isinstance(chunk_index, int)
+                assert 0 <= chunk_index < n
+                assert isinstance(tf, int)
+
+    def test_doc_length_not_duplicated_in_postings(self, temp_index_dir, sample_records):
+        """顶层 doc_lengths 已有完整映射,倒排项内不得再存一份。"""
+        self._built(temp_index_dir, sample_records)
+        raw = self._raw(temp_index_dir)
+
+        serialized = json.dumps(raw["index"])
+        assert "doc_length" not in serialized
+
+    def test_doc_lengths_aligned_with_chunk_ids(self, temp_index_dir, sample_records):
+        self._built(temp_index_dir, sample_records)
+        raw = self._raw(temp_index_dir)
+        assert len(raw["doc_lengths"]) == len(raw["chunk_ids"])
+        assert len(raw["chunk_ids"]) == raw["total_documents"]
+
+    def test_no_indentation(self, temp_index_dir, sample_records):
+        """缩进约占体积一半 —— 磁盘上遗留的 v1 文件带 indent=4。"""
+        self._built(temp_index_dir, sample_records)
+        text = (Path(temp_index_dir) / "c.json").read_text(encoding="utf-8")
+        assert "\n    " not in text
+
+    def test_roundtrip_preserves_query_results(self, temp_index_dir, sample_records):
+        """压缩编码不得改变检索行为。"""
+        original = self._built(temp_index_dir, sample_records)
+        before = original.query(["hello"], top_k=10)
+
+        reloaded = BM25Indexer(index_dir=temp_index_dir)
+        assert reloaded.load(collection="c") is True
+        after = reloaded.query(["hello"], top_k=10)
+
+        assert before == after
+
+    def test_roundtrip_restores_doc_length_in_memory(self, temp_index_dir, sample_records):
+        """doc_length 不落盘,但加载后内存结构里必须被还原。"""
+        self._built(temp_index_dir, sample_records)
+
+        reloaded = BM25Indexer(index_dir=temp_index_dir)
+        reloaded.load(collection="c")
+
+        for entry in reloaded._index.values():
+            for posting in entry["postings"]:
+                assert posting["doc_length"] == reloaded._doc_lengths[posting["chunk_id"]]
+
+
+class TestIndexFormatVersionGate:
+    """版本校验必须**硬失败**,不允许静默降级(宪法原则三)。
+
+    Feature-004 修的三个缺陷全是「静默失效」—— 不报错,只是结果悄悄变空。
+    若这里留静默降级路径,等于在刚修好的地方重新埋雷。
+    """
+
+    def _write_raw(self, temp_index_dir, payload):
+        path = Path(temp_index_dir) / "c.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def test_v1_file_raises_value_error(self, temp_index_dir):
+        """v1 文件(无 _format_version)必须抛错并提示重建。"""
+        self._write_raw(
+            temp_index_dir,
+            {
+                "index": {"hello": {"idf": 1.0, "postings": [
+                    {"chunk_id": "c1", "tf": 2.0, "doc_length": 5}
+                ]}},
+                "doc_lengths": {"c1": 5},
+                "total_documents": 1,
+                "avg_doc_length": 5.0,
+                "k1": 1.5,
+                "b": 0.75,
+            },
+        )
+
+        indexer = BM25Indexer(index_dir=temp_index_dir)
+        with pytest.raises(ValueError, match="rebuild_bm25_index"):
+            indexer.load(collection="c")
+
+    def test_future_version_raises_value_error(self, temp_index_dir):
+        self._write_raw(temp_index_dir, {"_format_version": 99, "chunk_ids": [], "doc_lengths": []})
+
+        indexer = BM25Indexer(index_dir=temp_index_dir)
+        with pytest.raises(ValueError, match="_format_version"):
+            indexer.load(collection="c")
+
+    def test_missing_file_still_returns_false(self, temp_index_dir):
+        """文件不存在不是错误 —— 沿用 v1 行为。"""
+        assert BM25Indexer(index_dir=temp_index_dir).load(collection="nope") is False
+
+    def test_corrupt_json_still_returns_false(self, temp_index_dir):
+        (Path(temp_index_dir) / "c.json").write_text("{not json", encoding="utf-8")
+        assert BM25Indexer(index_dir=temp_index_dir).load(collection="c") is False
+
+    def test_length_mismatch_detected(self, temp_index_dir):
+        self._write_raw(
+            temp_index_dir,
+            {"_format_version": 2, "chunk_ids": ["a", "b"], "doc_lengths": [1], "index": {}},
+        )
+        indexer = BM25Indexer(index_dir=temp_index_dir)
+        with pytest.raises(ValueError, match="length mismatch"):
+            indexer.load(collection="c")
+
+    def test_out_of_range_index_detected(self, temp_index_dir):
+        self._write_raw(
+            temp_index_dir,
+            {
+                "_format_version": 2,
+                "chunk_ids": ["a"],
+                "doc_lengths": [3],
+                "index": {"t": {"idf": 1.0, "postings": [[7, 1]]}},
+            },
+        )
+        indexer = BM25Indexer(index_dir=temp_index_dir)
+        with pytest.raises(ValueError, match="out of range"):
+            indexer.load(collection="c")
+
+
+class TestAtomicSave:
+    """写入必须原子替换(FR-003)。"""
+
+    def test_no_temp_files_left_after_success(self, temp_index_dir, sample_records):
+        indexer = BM25Indexer(index_dir=temp_index_dir)
+        indexer.build(sample_records, collection="c")
+        indexer.save(collection="c")
+
+        leftovers = [p.name for p in Path(temp_index_dir).glob(".*tmp")]
+        assert leftovers == []
+
+    def test_existing_index_survives_failed_save(self, temp_index_dir, sample_records, monkeypatch):
+        """序列化中途抛错时,既有可用索引不得被破坏。"""
+        indexer = BM25Indexer(index_dir=temp_index_dir)
+        indexer.build(sample_records, collection="c")
+        indexer.save(collection="c")
+
+        good = (Path(temp_index_dir) / "c.json").read_text(encoding="utf-8")
+
+        monkeypatch.setattr(
+            BM25Indexer, "_serialize", lambda self: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        with pytest.raises(RuntimeError):
+            indexer.save(collection="c")
+
+        assert (Path(temp_index_dir) / "c.json").read_text(encoding="utf-8") == good
+        assert [p.name for p in Path(temp_index_dir).glob(".*tmp")] == []

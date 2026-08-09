@@ -30,6 +30,18 @@ from src.observability.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Windows 默认 stdout 用 GBK 编码,报告 JSON 里的中文与特殊空白(如 RAGAS
+# 输出常带的 U+202F narrow no-break space)会让 print 直接抛
+# UnicodeEncodeError —— 而此时评估已经跑完并归档,报错纯属白白吓人。
+# 与 scripts/refine_testset.py、scripts/migrate_collections.py 做法一致。
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 
 def parse_args() -> argparse.Namespace:
     """解析命令行参数。"""

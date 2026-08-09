@@ -105,9 +105,13 @@
 
 **Independent Test**: 任一历史基线都能看出其真实检索模式与语料有效性；能生成「纯向量 vs 混合」的逐指标对比。
 
-> ⚠️ **T030 有严格的时序约束**：它必须在 Phase 3 的 T011～T014 完成之后、T021（首次重建）**之前**执行。修复前的系统状态一旦被重建覆盖就永久不可复现。
+> ✅ **T030 的时序枷锁已解除**（2026-08-09 实施期修正）。原判断是「修复前状态一旦被重建覆盖就永久不可复现」，这个前提**是错的** —— 那个状态就是 `data/db/bm25/*.json` 四个文件，复制一份即可永久保留。已备份至 `data/db/bm25_v1_prefix_backup/`（md5 逐一校验一致），随时可还原重跑基准。
+>
+> 因此 T030 可以在任何时候补跑，不再阻塞 T021。
 
-- [ ] T030 [US3] **（时序卡点）** 在迁移与 `--collection` 修正完成后、首次重建之前，跑基准评估留存「纯向量参照」：`.venv/Scripts/python.exe scripts/evaluate.py --collection mt5_docs_english --pretty --archive`，中文集合同样跑一次，记录两个 `run_id`
+- [ ] T030 [US3] 跑基准评估留存「纯向量参照」：`.venv/Scripts/python.exe scripts/evaluate.py --collection default --lang en --pretty`，中文集合同样跑一次，记录两个 `run_id`。跑之前先 `cp data/db/bm25_v1_prefix_backup/*.json data/db/bm25/` 还原 v1 索引
+  - **金标必须跑在 `default` 集合上，不是语言集合**：实测英文金标 42 条里有 18 条（43%）的 `expected_chunk_ids` 跨语料引用中文 chunk（190 英文 + 20 中文 refs），中文金标 6 条里也有 2 条如此。原因是中英文语料是**同一份 MT5 文档的两个语言版本**，金标在合并的 `default` 上回填时语义匹配自然跨了过去。跑在单语言集合上会触发 `chunk_id_validation` 直接失败
+  - **当前受外部阻塞**：embedding 服务返回 `503 model_not_found: No available channel for model text-embedding-3-small`，所有 query embedding 失败。待服务恢复后补跑
 - [ ] T031 [P] [US3] 修正两套金标的 `source_corpus_collection` 字段：`tests/fixtures/golden_test_set_zh.json` 与 `golden_test_set_en.json` 现均写 `default`，与实际引用内容不符（FR-012）
 - [ ] T032 [US3] 在 `src/observability/evaluation/baseline_manager.py` 的基线记录增加 `retrieval_mode`（`dense_only` / `hybrid`）与 `corpus_validity`（`valid` / `mismatched`）两个可选字段；写入沿用既有 `_write_store_atomic()`；**不修改任何既有指标数字**（FR-011）
 - [ ] T033 [P] [US3] 更新 `tests/unit/test_baseline_manager.py`：新字段的读写、旧记录缺失该字段时视为「未标注」的向后兼容行为
@@ -180,7 +184,7 @@ Phase 6 (T038-T042)  Polish
 
 ### 风险提示
 
-- **T030 是全局唯一的时序卡点**。它是最后一次能测到「修复前」状态的机会 —— T021 一旦执行，索引被替换，纯向量参照永久不可复现。若漏做，SC-008 无法达成且**无法补救**
+- ~~**T030 是全局唯一的时序卡点**~~ **已解除**。原判断认为「T021 一旦执行，纯向量参照永久不可复现」，但那个状态就是四个 JSON 文件 —— 已备份至 `data/db/bm25_v1_prefix_backup/`（md5 校验一致）。**教训：在给某个任务加时序枷锁之前，先问一句「这个状态到底能不能被复制」** —— 本例中一条 `cp` 就解决了，而枷锁会逼着人在外部服务不可用时硬跑
 - **T025 是 FR-009 的唯一闸门**。查询端与索引端切分口径漂移的失败是静默的：不报错、不告警，只是永远召回为空。D3 正是这样潜伏至今
 - **T016 不允许打折**。版本不匹配必须硬失败 —— 若在这里留静默降级路径，等于在刚修好的地方重新埋雷
 - **T015 是 T029 体积达标的前提**。标识字典化没做对，中文 bigram 会把索引撑到 156 MB，SC-011 直接失败

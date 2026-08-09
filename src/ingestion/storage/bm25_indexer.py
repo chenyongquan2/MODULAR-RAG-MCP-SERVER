@@ -9,6 +9,8 @@
 
 import json
 import math
+import os
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -18,6 +20,18 @@ from src.core.types import ChunkRecord
 
 InvertedIndex = Dict[str, Dict[str, Any]]
 PostingList = List[Dict[str, Any]]
+
+#: 索引磁盘格式版本(Feature-004)。
+#:
+#: v1 把完整 chunk 标识字符串内嵌在每个倒排项里。当标识从 38 字符的
+#: ``doc_<hash>_<idx>_<hash>`` 变成 91 字符的绝对路径式,再叠加中文 bigram
+#: 带来的约 6 倍倒排项增长,索引会从 38 MB 涨到约 156 MB。
+#:
+#: v2 把标识提到顶层 ``chunk_ids`` 表,倒排项只存整数下标 —— 每项从 136 B
+#: 降到 10 B,总体积回落到约 17 MB。
+#:
+#: 完整契约见 specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md
+INDEX_FORMAT_VERSION = 2
 
 
 class BM25Indexer:
@@ -45,6 +59,7 @@ class BM25Indexer:
         index_dir: str = "data/db/bm25",
         k1: float = 1.5,
         b: float = 0.75,
+        format_version: int = INDEX_FORMAT_VERSION,
     ) -> None:
         """初始化 BM25Indexer。
 
@@ -52,10 +67,13 @@ class BM25Indexer:
             index_dir: 索引文件存储目录
             k1: BM25 词频饱和参数 (默认 1.5)
             b: 文档长度归一化参数 (默认 0.75)
+            format_version: 期望的磁盘格式版本。``load()`` 遇到不匹配的文件会
+                抛 ``ValueError`` 而**不是**静默降级(见 ``load`` 的 docstring)。
         """
         self._index_dir = Path(index_dir)
         self._k1 = k1
         self._b = b
+        self._format_version = format_version
 
         self._index: InvertedIndex = {}
         self._doc_lengths: Dict[str, int] = {}
@@ -357,8 +375,100 @@ class BM25Indexer:
             for chunk_id, score in sorted_results[:top_k]
         ]
 
+    def _serialize(self) -> Dict[str, Any]:
+        """把内存中的倒排索引编码成 v2 磁盘格式。
+
+        内存结构保持 v1 的冗长形态(``postings`` 是 dict 列表),只在落盘时
+        压缩 —— 这样 ``query()`` / ``add_documents()`` / ``remove_documents()``
+        全部无需改动。
+
+        v2 的三处瘦身:
+
+        1. **chunk 标识字典化**:标识提到顶层 ``chunk_ids`` 表,倒排项存整数
+           下标。这是主要收益 —— 标识平均 91 字符,而下标只要几个字符
+        2. **去掉倒排项内的 doc_length**:顶层 ``doc_lengths`` 已有完整映射,
+           每个倒排项再存一份纯属重复
+        3. **tf 存整数**:v1 存的是 ``5.0`` 这样的浮点
+        """
+        # 顺序即身份:下标一旦写出就不能重排
+        chunk_ids: List[str] = list(self._doc_lengths.keys())
+        id_to_index = {chunk_id: i for i, chunk_id in enumerate(chunk_ids)}
+        doc_lengths = [int(self._doc_lengths[chunk_id]) for chunk_id in chunk_ids]
+
+        index: Dict[str, Any] = {}
+        for term, entry in self._index.items():
+            postings: List[List[int]] = []
+            for posting in entry.get("postings", []):
+                chunk_id = posting.get("chunk_id")
+                # 防御:postings 里出现 doc_lengths 中没有的标识说明索引已损坏,
+                # 静默丢弃会让问题继续潜伏 —— 直接暴露
+                if chunk_id not in id_to_index:
+                    raise ValueError(
+                        f"Index corruption: term {term!r} references unknown "
+                        f"chunk_id {chunk_id!r} that is absent from doc_lengths"
+                    )
+                postings.append([id_to_index[chunk_id], int(posting.get("tf", 0))])
+
+            index[term] = {"idf": entry.get("idf", 0.0), "postings": postings}
+
+        return {
+            "_format_version": self._format_version,
+            "chunk_ids": chunk_ids,
+            "doc_lengths": doc_lengths,
+            "index": index,
+            "total_documents": self._total_documents,
+            "avg_doc_length": self._avg_doc_length,
+            "k1": self._k1,
+            "b": self._b,
+        }
+
+    def _deserialize(self, data: Dict[str, Any]) -> None:
+        """把 v2 磁盘格式还原成内存中的冗长结构。"""
+        chunk_ids: List[str] = data.get("chunk_ids", [])
+        raw_lengths: List[int] = data.get("doc_lengths", [])
+
+        if len(chunk_ids) != len(raw_lengths):
+            raise ValueError(
+                f"Index corruption: chunk_ids ({len(chunk_ids)}) and doc_lengths "
+                f"({len(raw_lengths)}) length mismatch"
+            )
+
+        self._doc_lengths = {
+            chunk_id: int(length) for chunk_id, length in zip(chunk_ids, raw_lengths)
+        }
+
+        index: InvertedIndex = {}
+        for term, entry in data.get("index", {}).items():
+            postings: PostingList = []
+            for chunk_index, tf in entry.get("postings", []):
+                if not 0 <= chunk_index < len(chunk_ids):
+                    raise ValueError(
+                        f"Index corruption: term {term!r} references chunk index "
+                        f"{chunk_index} out of range [0, {len(chunk_ids)})"
+                    )
+                chunk_id = chunk_ids[chunk_index]
+                postings.append(
+                    {
+                        "chunk_id": chunk_id,
+                        "tf": float(tf),
+                        # doc_length 不再落盘,从顶层映射还原
+                        "doc_length": self._doc_lengths[chunk_id],
+                    }
+                )
+            index[term] = {"idf": entry.get("idf", 0.0), "postings": postings}
+
+        self._index = index
+        self._total_documents = data.get("total_documents", 0)
+        self._avg_doc_length = data.get("avg_doc_length", 0.0)
+        self._k1 = data.get("k1", 1.5)
+        self._b = data.get("b", 0.75)
+
     def save(self, collection: str = "default") -> Path:
-        """保存索引到文件。
+        """保存索引到文件(v2 格式,原子替换)。
+
+        **原子写**:先写同目录临时文件,完整后 ``os.replace`` 重命名。重建
+        5 万条量级的索引要跑一会儿,中途失败若直接破坏了现有可用索引,
+        系统会处于「新的没建好、旧的没了」的状态(FR-003)。
 
         Args:
             collection: 集合名称
@@ -369,18 +479,24 @@ class BM25Indexer:
         self._index_dir.mkdir(parents=True, exist_ok=True)
 
         index_file = self._index_dir / f"{collection}.json"
+        data = self._serialize()
 
-        data = {
-            "index": self._index,
-            "doc_lengths": self._doc_lengths,
-            "total_documents": self._total_documents,
-            "avg_doc_length": self._avg_doc_length,
-            "k1": self._k1,
-            "b": self._b,
-        }
-
-        with open(index_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
+        # 临时文件必须与目标同目录,os.replace 才能保证原子性(跨文件系统不行)
+        fd, tmp_path_str = tempfile.mkstemp(
+            prefix=f".{collection}.", suffix=".tmp", dir=str(self._index_dir)
+        )
+        tmp_path = Path(tmp_path_str)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp_path, index_file)
+        except Exception:
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except OSError:
+                pass
+            raise
 
         return index_file
 
@@ -391,7 +507,19 @@ class BM25Indexer:
             collection: 集合名称
 
         Returns:
-            是否加载成功
+            是否加载成功。文件不存在或 JSON 损坏时返回 ``False``(沿用 v1 行为)。
+
+        Raises:
+            ValueError: 磁盘格式版本与期望不符时。
+
+        Note:
+            **版本不匹配为什么必须抛异常而不是静默重建或降级**:
+
+            Feature-004 修复的三个缺陷全部属于「静默失效」—— 不报错、不告警,
+            只是结果悄悄变空(关键词索引与向量库标识不相交、中文被丢弃、
+            两路集合范围不一致)。若这里再留一条静默降级路径,等于在刚修好
+            的地方重新埋雷。宪法原则三(快速失败校验,禁止静默回退默认值)
+            也直接要求如此。
         """
         index_file = self._index_dir / f"{collection}.json"
 
@@ -401,17 +529,20 @@ class BM25Indexer:
         try:
             with open(index_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-
-            self._index = data.get("index", {})
-            self._doc_lengths = data.get("doc_lengths", {})
-            self._total_documents = data.get("total_documents", 0)
-            self._avg_doc_length = data.get("avg_doc_length", 0.0)
-            self._k1 = data.get("k1", 1.5)
-            self._b = data.get("b", 0.75)
-
-            return True
         except (json.JSONDecodeError, IOError):
             return False
+
+        file_version = data.get("_format_version")
+        if file_version != self._format_version:
+            raise ValueError(
+                f"Unsupported BM25 index format in {index_file}: "
+                f"found _format_version={file_version!r}, expected {self._format_version}. "
+                "Run `python scripts/rebuild_bm25_index.py` to rebuild the index. "
+                "(拒绝静默降级 —— 见 Feature-004 contracts/bm25_index.schema.md)"
+            )
+
+        self._deserialize(data)
+        return True
 
     def add_documents(
         self,
