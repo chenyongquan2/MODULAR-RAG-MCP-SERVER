@@ -8,7 +8,7 @@ efficient vector similarity search.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional
 
 from src.libs.vector_store.base_vector_store import BaseVectorStore
 
@@ -380,6 +380,82 @@ class ChromaStore(BaseVectorStore):
 
         except Exception as e:
             raise RuntimeError(f"ChromaDB get_by_ids failed: {e}") from e
+
+    def iter_records(
+        self,
+        include_vectors: bool = False,
+        batch_size: int = 1000,
+        **kwargs: Any,
+    ) -> Iterator[Dict[str, Any]]:
+        """Iterate over every record in the current collection.
+
+        用 ChromaDB 的 ``limit``/``offset`` 分页遍历,**不一次性物化整个集合** ——
+        本项目单集合已达 5 万条量级,一次性载入全部向量会占用数百 MB。
+
+        ``include_vectors=False`` 时不把 ``embeddings`` 放进 ``include``,
+        Chroma 因此不会返回向量数据,省下绝大部分传输与内存开销
+        (实测正文合计仅 20 MB,而向量远大于此)。
+
+        Args:
+            include_vectors: 是否带上 embedding 向量。
+            batch_size: 单次拉取的记录数。
+            **kwargs: 预留,当前未使用。
+
+        Yields:
+            dict,含 ``id`` / ``text`` / ``metadata``,以及
+            ``include_vectors=True`` 时的 ``vector``。
+
+        Raises:
+            ValueError: *batch_size* 不是正整数时。
+            RuntimeError: 底层遍历失败时。
+        """
+        if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
+            raise ValueError(f"batch_size must be a positive integer, got {batch_size!r}")
+
+        include: List[str] = ["documents", "metadatas"]
+        if include_vectors:
+            include.append("embeddings")
+
+        offset = 0
+        try:
+            while True:
+                results = self._collection.get(
+                    limit=batch_size,
+                    offset=offset,
+                    include=include,
+                )
+
+                ids = results.get("ids") or []
+                if not ids:
+                    return
+
+                documents = results.get("documents") or []
+                metadatas = results.get("metadatas") or []
+                # include_vectors=False 时 Chroma 不返回该键;为 None 时也按缺失处理
+                embeddings = results.get("embeddings") if include_vectors else None
+
+                for i, chunk_id in enumerate(ids):
+                    record: Dict[str, Any] = {
+                        "id": chunk_id,
+                        "text": documents[i] if i < len(documents) and documents[i] else "",
+                        "metadata": metadatas[i] if i < len(metadatas) and metadatas[i] else {},
+                    }
+                    if include_vectors:
+                        # embeddings 可能是 numpy 数组;统一转成 list 以便下游 upsert
+                        if embeddings is not None and i < len(embeddings):
+                            record["vector"] = list(embeddings[i])
+                        else:
+                            record["vector"] = []
+                    yield record
+
+                # 拿到的少于一批,说明已到末尾
+                if len(ids) < batch_size:
+                    return
+
+                offset += len(ids)
+
+        except Exception as e:
+            raise RuntimeError(f"ChromaDB iter_records failed: {e}") from e
 
     def delete_by_metadata(
         self,

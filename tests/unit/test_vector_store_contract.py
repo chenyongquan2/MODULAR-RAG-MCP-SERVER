@@ -42,6 +42,7 @@ class FakeVectorStore(BaseVectorStore):
         self._store: Dict[str, Dict[str, Any]] = {}
         self.upsert_call_count = 0
         self.query_call_count = 0
+        self.iter_records_call_count = 0
 
     def upsert(
         self,
@@ -123,6 +124,27 @@ class FakeVectorStore(BaseVectorStore):
                     "metadata": record.get("metadata", {}),
                 })
         return results
+
+    def iter_records(
+        self,
+        include_vectors: bool = False,
+        batch_size: int = 1000,
+        **kwargs: Any,
+    ):
+        """Iterate over all in-memory records (feature-004 T004)."""
+        if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
+            raise ValueError(f"batch_size must be a positive integer, got {batch_size!r}")
+
+        self.iter_records_call_count += 1
+        for record in list(self._store.values()):
+            out: Dict[str, Any] = {
+                "id": record["id"],
+                "text": record.get("text", ""),
+                "metadata": record.get("metadata", {}),
+            }
+            if include_vectors:
+                out["vector"] = record["vector"]
+            yield out
 
     def delete_by_metadata(
         self,
@@ -493,6 +515,9 @@ class TestBaseVectorStoreValidation:
             def query(self, vector, top_k=10, filters=None, trace=None, **kwargs):
                 return []
 
+            def iter_records(self, include_vectors=False, batch_size=1000, **kwargs):
+                return iter(())
+
         incomplete = IncompleteStore()
         with pytest.raises(
             NotImplementedError, match="must implement get_backend_name"
@@ -511,6 +536,9 @@ class TestBaseVectorStoreValidation:
 
             def query(self, vector, top_k=10, filters=None, trace=None, **kwargs):
                 return []
+
+            def iter_records(self, include_vectors=False, batch_size=1000, **kwargs):
+                return iter(())
 
         incomplete = IncompleteStore()
         with pytest.raises(
@@ -629,6 +657,9 @@ class TestVectorStoreFactory:
             def query(self, vector, top_k=10, filters=None, trace=None, **kwargs):
                 return []
 
+            def iter_records(self, include_vectors=False, batch_size=1000, **kwargs):
+                return iter(())
+
         VectorStoreFactory.register_provider("broken", BrokenStore)
 
         settings = MagicMock()
@@ -670,3 +701,136 @@ class TestVectorStoreFactory:
         assert len(results) == 1
         assert results[0]["id"] == "chunk_001"
         assert results[0]["text"] == "Hello world"
+
+
+# ===========================================================================
+# Feature-004 T006: iter_records 契约测试
+# ===========================================================================
+
+
+class TestIterRecordsContract:
+    """``iter_records`` 的接口契约(feature-004 T004/T005)。
+
+    该方法服务两个离线脚本:迁移(需要向量)与关键词索引重建(不需要向量)。
+    契约的关键是**不得一次性物化整个集合** —— 本项目单集合已达 5 万条量级。
+    """
+
+    @staticmethod
+    def _store_with(n: int) -> FakeVectorStore:
+        store = FakeVectorStore()
+        store.upsert([
+            {
+                "id": f"chunk_{i:03d}",
+                "vector": [float(i), 0.0, 0.0],
+                "text": f"text-{i}",
+                "metadata": {"collection": "alpha" if i % 2 == 0 else "beta"},
+            }
+            for i in range(n)
+        ])
+        return store
+
+    def test_yields_every_record(self):
+        store = self._store_with(5)
+        got = list(store.iter_records())
+        assert len(got) == 5
+        assert {r["id"] for r in got} == {f"chunk_{i:03d}" for i in range(5)}
+
+    def test_default_omits_vectors(self):
+        """默认不带向量 —— 重建关键词索引只需正文,带上向量纯属浪费内存。"""
+        store = self._store_with(3)
+        for record in store.iter_records():
+            assert "vector" not in record
+
+    def test_include_vectors_returns_vectors(self):
+        store = self._store_with(3)
+        for record in store.iter_records(include_vectors=True):
+            assert isinstance(record["vector"], list)
+            assert len(record["vector"]) == 3
+
+    def test_record_shape(self):
+        store = self._store_with(1)
+        record = next(iter(store.iter_records()))
+        assert set(record) == {"id", "text", "metadata"}
+        assert record["text"] == "text-0"
+        assert record["metadata"]["collection"] == "alpha"
+
+    def test_empty_collection_yields_nothing(self):
+        assert list(FakeVectorStore().iter_records()) == []
+
+    def test_returns_lazy_iterator_not_materialized_list(self):
+        """必须是惰性迭代器 —— 返回 list 就等于一次性物化整个集合。"""
+        store = self._store_with(4)
+        it = store.iter_records()
+        assert not isinstance(it, list)
+        assert iter(it) is it  # 迭代器协议
+
+    @pytest.mark.parametrize("bad", [0, -1, "10", 2.0, True, None])
+    def test_invalid_batch_size_rejected(self, bad):
+        """非正整数的 batch_size 必须立即拒绝(宪法原则三)。
+
+        ``True`` 也要挡掉 —— Python 里 ``isinstance(True, int)`` 为真。
+        """
+        store = self._store_with(1)
+        with pytest.raises(ValueError, match="batch_size"):
+            list(store.iter_records(batch_size=bad))
+
+    def test_batch_size_does_not_change_result_set(self):
+        """分批只是传输策略,不得影响枚举出的记录集合。"""
+        store = self._store_with(7)
+        for size in (1, 2, 3, 100):
+            ids = sorted(r["id"] for r in store.iter_records(batch_size=size))
+            assert ids == sorted(f"chunk_{i:03d}" for i in range(7))
+
+
+class TestScriptsDoNotImportProviderDirectly:
+    """宪法原则一的可执行守卫(feature-004 T007)。
+
+    宪法原则一明确把 ``scripts/`` 列为业务代码:「业务代码只 import base
+    类型,不 import 具体 provider 实现」。
+
+    Feature-004 的迁移与重建脚本需要读取向量库全量记录,最省事的写法是
+    直接 ``import chromadb`` —— 这正是本测试要挡住的。正确做法是经
+    ``VectorStoreFactory`` + ``BaseVectorStore.iter_records`` 访问。
+
+    **``scripts/dev/`` 豁免**:宪法《Spec 先行》的例外清单把「``scripts/dev/``
+    下的一次性探索脚本」单列,这类诊断脚本的用途恰恰是直接观察后端真实状态
+    (本 feature 三个缺陷的发现过程就高度依赖这种脚本)。它们不参与生产
+    调用链,不受原则一约束。
+    """
+
+    #: 豁免目录 —— 一次性诊断脚本,见类 docstring
+    _EXEMPT_DIRS = ("dev",)
+
+    def test_no_direct_chromadb_import_in_scripts(self):
+        import re
+        from pathlib import Path
+
+        pattern = re.compile(r"^\s*(?:import\s+chromadb|from\s+chromadb\b)", re.MULTILINE)
+
+        offenders = [
+            str(path)
+            for path in Path("scripts").rglob("*.py")
+            if not set(path.parts) & set(self._EXEMPT_DIRS)
+            and pattern.search(path.read_text(encoding="utf-8"))
+        ]
+
+        assert not offenders, (
+            "scripts/ 下不得直接 import chromadb(宪法原则一)。"
+            f"违规文件: {offenders}。"
+            "请改用 VectorStoreFactory.create(settings) + BaseVectorStore 接口。"
+        )
+
+    def test_no_direct_provider_import_in_core(self):
+        """同一条原则对 src/core/ 的守卫 —— 顺带覆盖,防止回归。"""
+        import re
+        from pathlib import Path
+
+        pattern = re.compile(r"^\s*(?:import\s+chromadb|from\s+chromadb\b)", re.MULTILINE)
+
+        offenders = [
+            str(path)
+            for path in Path("src/core").rglob("*.py")
+            if pattern.search(path.read_text(encoding="utf-8"))
+        ]
+
+        assert not offenders, f"src/core/ 下不得直接 import chromadb: {offenders}"

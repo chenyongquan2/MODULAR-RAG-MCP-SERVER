@@ -8,7 +8,7 @@ through configuration-driven instantiation.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 
 class BaseVectorStore(ABC):
@@ -194,6 +194,52 @@ class BaseVectorStore(ABC):
             'chunk_001'
             >>> results[0]["text"]
             'Hello world'
+        """
+        pass
+
+    @abstractmethod
+    def iter_records(
+        self,
+        include_vectors: bool = False,
+        batch_size: int = 1000,
+        **kwargs: Any,
+    ) -> Iterator[Dict[str, Any]]:
+        """Iterate over every record in the current collection.
+
+        枚举整个集合的全部记录。与 ``get_by_ids`` 的区别是无需预先知道 ID
+        列表,与 ``query`` 的区别是不做相似度检索而是全量遍历。
+
+        两个消费方(Feature-004):
+
+        - ``scripts/migrate_collections.py`` 用 ``include_vectors=True``
+          把记录连同向量复制到另一个集合
+        - ``scripts/rebuild_bm25_index.py`` 用 ``include_vectors=False``
+          读取正文重建关键词索引(省内存 —— 向量远大于正文)
+
+        实现必须按 *batch_size* 分批从底层拉取,**不得一次性物化整个集合**:
+        本项目单集合已达 5 万条量级,一次性载入全部向量会占用数百 MB。
+
+        Args:
+            include_vectors: 是否在返回记录中带上 embedding 向量。
+                为 ``False`` 时实现应避免向底层请求向量数据。
+            batch_size: 单次从底层拉取的记录数。
+            **kwargs: Backend-specific parameters.
+
+        Yields:
+            每条记录为 dict,包含:
+
+            - ``id``: str —— 记录标识
+            - ``text``: str —— 正文
+            - ``metadata``: Dict[str, Any] —— 元数据
+            - ``vector``: List[float] —— 仅当 *include_vectors* 为 True 时存在
+
+        Raises:
+            ValueError: 当 *batch_size* 不是正整数时。
+            RuntimeError: 底层遍历失败时。
+
+        Example:
+            >>> for record in store.iter_records(batch_size=500):
+            ...     print(record["id"], len(record["text"]))
         """
         pass
 
