@@ -70,7 +70,11 @@ class OpenAIEmbedding(BaseEmbedding):
             settings.embedding, "model", "text-embedding-3-small"
         )
         # 根据模型类型设置合适的 batch_size（如果未在 kwargs 中指定）
-        default_batch_size = self.MODEL_BATCH_SIZES.get(self.model, 100)
+        # 归一化后查表：网关的 'qwen/text-embedding-v4' 要能命中裸名条目，
+        # 否则会拿到默认 100，而 Qwen v4 的硬上限是 10 → 整批调用直接失败
+        default_batch_size = self.MODEL_BATCH_SIZES.get(
+            self._normalize_model_id(self.model), 100
+        )
         self.batch_size = kwargs.get("batch_size", default_batch_size)
 
         # Validate required configuration
@@ -191,22 +195,52 @@ class OpenAIEmbedding(BaseEmbedding):
         """
         return self.model
 
+    @classmethod
+    def _normalize_model_id(cls, model: str) -> str:
+        """去掉网关的 vendor 前缀，用于查规格表。
+
+        OpenAI 兼容网关常把模型暴露成 ``qwen/text-embedding-v4`` 这样带前缀的
+        id，而规格表里登记的是裸名 ``text-embedding-v4``。不做归一化会导致
+        **查表 miss 后静默回落到默认值** —— 维度会被当成 1536（实际 1024）、
+        批大小会被当成 100（Qwen v4 硬上限是 10）。
+
+        feature-004 的教训：这类"查不到就用默认值"是最难排查的一类 bug,
+        因为它不报错。
+        """
+        return model.split("/")[-1] if "/" in model else model
+
     def get_dimension(self) -> int:
         """Get the embedding vector dimension.
 
         Returns:
             The number of dimensions in the embedding vectors.
 
+        Raises:
+            ValueError: 模型不在 :attr:`MODEL_DIMENSIONS` 中时。
+
         Note:
-            Returns the dimension based on the model. If the model is not
-            recognized, returns 1536 as the default dimension.
+            **不再静默回落到 1536**（feature-004）。返回一个错误的维度会让
+            向量库以错误的维度建集合，而问题要到检索时才以"维度不匹配"的
+            形式暴露 —— 那时已经写进去几万条向量了。宪法原则三要求快速失败。
         """
-        return self.MODEL_DIMENSIONS.get(self.model, 1536)
+        normalized = self._normalize_model_id(self.model)
+        if normalized not in self.MODEL_DIMENSIONS:
+            raise ValueError(
+                f"Unknown embedding model '{self.model}': dimension is not registered. "
+                f"Add it to OpenAIEmbedding.MODEL_DIMENSIONS. "
+                f"Known models: {sorted(self.MODEL_DIMENSIONS)}"
+            )
+        return self.MODEL_DIMENSIONS[normalized]
 
     def get_max_batch_size(self) -> int:
         """Get the maximum batch size supported by this provider.
 
         Returns:
             The maximum number of texts that can be embedded in a single API call.
+
+        Note:
+            与 ``__init__`` 里的默认值走**同一条归一化查表路径**。此前两处各查
+            一次且都用裸 ``self.model``，网关的 ``qwen/`` 前缀会双双 miss ——
+            Qwen v4 的硬上限 10 被当成 100，整批调用直接失败（feature-004）。
         """
-        return self.MODEL_BATCH_SIZES.get(self.model, 100)
+        return self.MODEL_BATCH_SIZES.get(self._normalize_model_id(self.model), 100)

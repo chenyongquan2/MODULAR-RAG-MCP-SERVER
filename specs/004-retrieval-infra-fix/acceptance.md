@@ -106,37 +106,79 @@ dense 侧被阻塞，但难度梯度在**稀疏路径上不需要 embedding**，
 2. 被 spec 的 Assumptions 明确排除（「不做重新 ingest ⋯ embedding 走 API 有成本」）
 3. 会让所有历史评估数字失去可比性（换了向量空间）
 
-**这是一个需要用户决策的范围变更，不是实施者可以自行决定的事。** 因此保持阻塞状态。
+**这是一个需要用户决策的范围变更，不是实施者可以自行决定的事。**
+
+### 用户决策（2026-08-09）：切换到 `qwen/text-embedding-v4`，数据后跑
+
+配置已切换，切换过程中发现并修掉了两处**静默失效**：
+
+网关把模型暴露成带 vendor 前缀的 `qwen/text-embedding-v4`，而
+`OpenAIEmbedding` 的规格表登记的是裸名 `text-embedding-v4`。两处
+`dict.get(self.model, <默认值>)` 都会 miss：
+
+| 查表 | miss 后的默认值 | 实际值 | 后果 |
+|---|---|---|---|
+| `MODEL_DIMENSIONS` | 1536 | **1024** | 向量库以错误维度建集合，问题要到检索时才暴露，那时已写入几万条向量 |
+| `MODEL_BATCH_SIZES` | 100 | **10** | 超过 Qwen v4 硬上限，整批调用失败 |
+
+修复：统一走 `_normalize_model_id()` 归一化查表；**未知模型的维度查询改为抛
+`ValueError` 而非回落 1536**（宪法原则三）。批大小仍可回落 100 —— 它只影响
+吞吐，且超限时 API 会明确报错，不会像维度那样污染数据。
+
+**当前状态**：dense 检索以明确错误失败，这是刻意的：
+
+```
+RuntimeError: Dense retrieval failed: ChromaDB query failed:
+Collection expecting embedding with dimension of 1536, got 1024
+```
+
+**恢复 dense 的路径**（新增 `scripts/reembed_corpus.py`，默认 `--dry-run`）：
+
+```bash
+.venv/Scripts/python.exe scripts/reembed_corpus.py --source default
+```
+
+实测估算：52,757 条 → **5,276 次 API 调用 → 约 176 分钟**（串行）。写入新集合
+`default_text-embedding-v4`，原集合完整保留可回滚。跑完需把
+`collection_name` 指向新集合并重建关键词索引。
+
+**未执行**——用户明确表示「后面再跑数据」，且该操作有真实 API 成本。
 
 **已消除时序风险**：原计划认为「修复前状态一旦被重建覆盖就永久不可复现」，因而给基准评估加了硬时序卡点。该前提**是错的** —— 那个状态就是 `data/db/bm25/*.json` 四个文件。已备份至 `data/db/bm25_v1_prefix_backup/`（md5 逐一校验一致）。
 
-**服务恢复后的补跑步骤**：
+### 补跑 SC-006 / SC-008 的完整步骤
+
+⚠️ 原先设想的「等服务恢复后直接补跑」**已不适用** —— `text-embedding-3-small` 是永久下架而非临时故障，旧的 1536 维向量再也无法被查询。补跑必须先完成重嵌：
 
 ```bash
-cp data/db/bm25_v1_prefix_backup/*.json data/db/bm25/
+.venv/Scripts/python.exe scripts/reembed_corpus.py --source default --limit 50 --execute
 ```
 
 ```bash
-.venv/Scripts/python.exe scripts/evaluate.py --collection default --lang en --pretty
+.venv/Scripts/python.exe scripts/reembed_corpus.py --source default --execute
+```
+
+然后把 `settings.yaml` 的 `collection_name` 指向 `default_text-embedding-v4`，重建关键词索引：
+
+```bash
+.venv/Scripts/python.exe scripts/rebuild_bm25_index.py --collection default_text-embedding-v4
 ```
 
 ```bash
-.venv/Scripts/python.exe scripts/rebuild_bm25_index.py --all
+.venv/Scripts/python.exe scripts/evaluate.py --collection default_text-embedding-v4 --lang en --pretty
 ```
 
-```bash
-.venv/Scripts/python.exe scripts/evaluate.py --collection default --lang en --pretty
-```
-
-前后两次报告对比即得 SC-008；按 `tags.difficulty` 分组即得 SC-009。中文金标同样跑一遍得 SC-006。
+**注意口径断裂**：重嵌换了向量空间，因此这次评估**不能**与 feature-004 之前的任何数字直接对比。它建立的是一条**新基线**，标注应为 `retrieval_mode: hybrid` + `corpus_validity: valid`。SC-008 要的「纯向量 vs 混合」对比，只能在新向量空间内重新做一遍（关掉 sparse 跑一次、开着跑一次）。
 
 ---
 
 ## 四、待人工确认事项
 
-### T041：10 条临时文件残留
+### T041：10 条临时文件残留 —— 用户已决定**不删**（2026-08-09）
 
-以下 chunk 的源文件是已消失的临时文件，`metadata.collection` 标着 `default`。**未自动删除**，需人工确认：
+保留理由：它们只在物理 `default` 集合内，未被迁入任何语言集合，不影响任何已达标的验收项；10/52,757 的量级属微量噪音；保留也便于日后追查当时发生了什么。以下清单存档备查。
+
+以下 chunk 的源文件是已消失的临时文件，`metadata.collection` 标着 `default`：
 
 ```
 C:\Users\cyq\AppData\Local\Temp\tmpg0csbti9.md_{0..4}_*
@@ -149,7 +191,7 @@ C:\Users\cyq\AppData\Local\Temp\tmpo0tovyl8.md_{0..4}_*
 - `default` 共 15 条非 MT5/非 finpoints 记录，其中这 10 条为临时残留，另 5 条为正常文档
 - 删除方式：`ChromaStore.delete()` 传这 10 个 id；删除后需重建 `default` 的关键词索引
 
-**未执行删除的理由**：FR-007 明确要求人工确认后再删；且它们目前只是噪音，不影响任何已达标的验收项。
+**结论**：FR-007 要求人工确认后再删，用户已确认**保留**。任务闭环。
 
 ---
 
@@ -168,6 +210,7 @@ C:\Users\cyq\AppData\Local\Temp\tmpo0tovyl8.md_{0..4}_*
 - `src/core/text/tokenizer.py` —— 两端唯一切分实现
 - `scripts/migrate_collections.py` —— 复制式集合迁移
 - `scripts/rebuild_bm25_index.py` —— 从向量库反向重建关键词索引
+- `scripts/reembed_corpus.py` —— 用当前模型重嵌语料（写新集合，默认 dry-run）
 
 **修改**
 
@@ -177,5 +220,6 @@ C:\Users\cyq\AppData\Local\Temp\tmpo0tovyl8.md_{0..4}_*
 - `src/core/settings.py`、`config/settings.yaml` —— 索引格式版本 + `bm25_index_path` 正式字段
 - `src/core/types.py`、`src/observability/evaluation/baseline_manager.py` —— 基线标注
 - `scripts/{evaluate,query}.py` —— `--collection` 语义修正
+- `src/libs/embedding/openai_embedding.py` —— 模型规格归一化查表 + 未知模型硬失败
 
-**测试**：新增 5 个文件，累计 `pytest tests/unit` **1397 passed, 2 skipped**（feature 开始前为 1264）。
+**测试**：新增 6 个文件，累计 `pytest tests/unit` **1412 passed, 2 skipped**（feature 开始前为 1264）。

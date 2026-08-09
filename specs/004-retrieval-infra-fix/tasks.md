@@ -129,7 +129,7 @@
 - [x] T038 [P] 全量跑 `.venv/Scripts/python.exe -m pytest tests/unit -v`，确认 80 个测试文件全通过（宪法原则七）
 - [x] T039 [P] 更新 `docs/learning/agentic-retrieval-boundary.md` 的 § 6.3：把四个缺陷标记为已修复，补上修复后的实测数字
 - [x] T040 [P] 更新 `CLAUDE.md` 中与索引格式、`--collection` 语义相关的描述
-- [ ] T041 处置 10 条无归属的 temp 残留 chunk：列出清单交用户确认后再删除（FR-007，**不得自动删除**）
+- [x] T041 处置 10 条无归属的 temp 残留 chunk：清单已列出并交用户确认，**用户决定保留不删**（2026-08-09）。FR-007 的「人工确认」环节闭环。清单存档见 [acceptance.md § 四](./acceptance.md)
 - [x] T042 复核 SC-001～SC-011 逐条达成情况，未达成项写明原因，结论记入本 feature 的验收记录
 
 ---
