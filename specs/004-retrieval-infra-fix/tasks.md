@@ -109,16 +109,16 @@
 >
 > 因此 T030 可以在任何时候补跑，不再阻塞 T021。
 
-- [ ] T030 [US3] 跑基准评估留存「纯向量参照」：`.venv/Scripts/python.exe scripts/evaluate.py --collection default --lang en --pretty`，中文集合同样跑一次，记录两个 `run_id`。跑之前先 `cp data/db/bm25_v1_prefix_backup/*.json data/db/bm25/` 还原 v1 索引
+- [⏸] T030 [US3] **待全量重嵌后执行**（用户 2026-08-09 决定「后面再跑数据」）。原计划的「等服务恢复后补跑」已不适用 —— text-embedding-3-small 永久下架，旧 1536 维向量不可再查；必须先跑 `scripts/reembed_corpus.py --execute`（~3.5h）。链路已在 50 条切片上端到端验证。原任务：跑基准评估留存「纯向量参照」：`.venv/Scripts/python.exe scripts/evaluate.py --collection default --lang en --pretty`，中文集合同样跑一次，记录两个 `run_id`。跑之前先 `cp data/db/bm25_v1_prefix_backup/*.json data/db/bm25/` 还原 v1 索引
   - **金标必须跑在 `default` 集合上，不是语言集合**：实测英文金标 42 条里有 18 条（43%）的 `expected_chunk_ids` 跨语料引用中文 chunk（190 英文 + 20 中文 refs），中文金标 6 条里也有 2 条如此。原因是中英文语料是**同一份 MT5 文档的两个语言版本**，金标在合并的 `default` 上回填时语义匹配自然跨了过去。跑在单语言集合上会触发 `chunk_id_validation` 直接失败
   - **当前受外部阻塞**：embedding 服务返回 `503 model_not_found: No available channel for model text-embedding-3-small`，所有 query embedding 失败。待服务恢复后补跑
 - [x] T031 [P] [US3] 修正两套金标的 `source_corpus_collection` 字段：`tests/fixtures/golden_test_set_zh.json` 与 `golden_test_set_en.json` 现均写 `default`，与实际引用内容不符（FR-012）
 - [x] T032 [US3] 在 `src/observability/evaluation/baseline_manager.py` 的基线记录增加 `retrieval_mode`（`dense_only` / `hybrid`）与 `corpus_validity`（`valid` / `mismatched`）两个可选字段；写入沿用既有 `_write_store_atomic()`；**不修改任何既有指标数字**（FR-011）
 - [x] T033 [P] [US3] 更新 `tests/unit/test_baseline_manager.py`：新字段的读写、旧记录缺失该字段时视为「未标注」的向后兼容行为
 - [x] T034 [US3] 把 `logs/baselines.json` 中 2026-04-28 的既有记录标注为 `corpus_validity: mismatched` —— 实测表明当时 MT5 语料尚未 ingest，该次评估检索回的是 `company_policy.md` 与临时文件，**不是**「纯向量参照」（[research.md](./research.md) Decision 7）
-- [ ] T035 [US3] Phase 4 完成后重跑评估（中英文各一次），与 T030 的结果逐指标对比，产出 **SC-008** 的「纯向量 vs 混合」对比表
+- [⏸] T035 [US3] **待全量重嵌后执行**（同 T030）。注意口径断裂：重嵌换了向量空间，新数字不能与 feature-004 之前任何基线直接对比，SC-008 的对比须在新空间内重做（关 sparse 跑一次、开着跑一次）。原任务：Phase 4 完成后重跑评估（中英文各一次），与 T030 的结果逐指标对比，产出 **SC-008** 的「纯向量 vs 混合」对比表
 - [~] T036 [US3] **稀疏口径已完成**（见 [acceptance.md § 2.3](./acceptance.md)）：英文金标难度梯度实测 —— simple hit 68.2%/recall 28.2%、multi_context 66.7%/55.6%、reasoning 36.4%/20.0%。**结论与设计假设相反：难的是 reasoning 而非多跳**，multi_context 的 recall 反而是 simple 的两倍。混合口径待 dense 恢复后重测。原任务描述：用 T035 的报告做难度分组统计（`case_results` 的 `query` 字段与金标按 query 关联取 `tags.difficulty`），产出 **SC-009**：英文集 22 条 simple vs 20 条 multi_context+reasoning 的召回差距。**解读时须记入折扣**：金标的 `expected_chunk_ids` 是脚本按固定 top-5 回填的，非人工标注的真实答案边界
-- [ ] T037 [US3] 把修复后的结果标为新基线（`retrieval_mode: hybrid`、`corpus_validity: valid`）
+- [⏸] T037 [US3] **待 T035 完成后执行**。`annotate_baseline()` 与标注字段已就位并有测试覆盖，只差数据。原任务：把修复后的结果标为新基线（`retrieval_mode: hybrid`、`corpus_validity: valid`）
 
 **Checkpoint**: 评估数字可解读、可对比、可追溯。
 
