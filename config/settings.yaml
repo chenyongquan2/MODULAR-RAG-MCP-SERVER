@@ -26,7 +26,15 @@ vision_llm:
 vector_store:
   backend: chroma           # chroma
   persist_path: ./data/db/chroma
+  # dense 与 sparse 两路共用这一个真源：dense 用它决定打开哪个物理 collection，
+  # sparse 用它决定加载哪个关键词索引文件。切换语料只改这一个值。
   collection_name: default   # default | mt5_docs_chinese | mt5_docs_english
+  bm25_index_path: ./data/db/bm25
+  # 关键词索引磁盘格式版本。加载时严格校验，不匹配立即抛 ValueError 而非静默降级。
+  # 理由：Feature-004 修复的三个缺陷全部属于「静默失效」——不报错、不告警，只是
+  # 结果悄悄变空。若这里留一条静默降级路径，等于在刚修好的地方重新埋雷。
+  # 格式契约见 specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md
+  bm25_index_format_version: 2
 
 # 文档加载配置
 loader:

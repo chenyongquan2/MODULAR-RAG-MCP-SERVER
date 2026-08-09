@@ -68,11 +68,28 @@ class VisionLLMSettings:
 
 @dataclass
 class VectorStoreSettings:
-    """向量存储配置。"""
+    """向量存储配置。
+
+    Attributes:
+        backend: 向量库后端标识（当前仅 chroma）。
+        persist_path: 向量库持久化目录。
+        collection_name: 当前生效的集合名。**dense 与 sparse 两路共用这一个真源** ——
+            ``DenseRetriever`` 经 ``VectorStoreFactory`` 用它决定打开哪个物理集合,
+            ``SparseRetriever`` 用它决定加载哪个关键词索引文件。切换集合只改这一个值。
+        bm25_index_path: 关键词索引文件所在目录。此前由 ``sparse_retriever`` 用
+            ``getattr(..., "bm25_index_path", "data/db/bm25")`` 读取,而该字段并不存在
+            于本 dataclass —— 属于宪法原则三禁止的"静默回退默认值"。Feature-004 补为
+            正式字段。
+        bm25_index_format_version: 关键词索引磁盘格式版本。加载时严格校验,不匹配
+            立即抛错而非静默降级(见 specs/004-retrieval-infra-fix/contracts/
+            bm25_index.schema.md)。
+    """
 
     backend: str  # chroma
     persist_path: str = "./data/db/chroma"
     collection_name: str = "default"  # 集合名称，默认 "default"
+    bm25_index_path: str = "./data/db/bm25"
+    bm25_index_format_version: int = 2
 
 
 @dataclass
@@ -716,6 +733,16 @@ def validate_settings(settings: Settings) -> None:
         raise SettingsError(
             "Invalid mcp_server.port: "
             f"{settings.mcp_server.port}. Expected 1-65535"
+        )
+
+    # 关键词索引格式版本校验（spec feature-004 T001）
+    # 该值决定 BM25Indexer.load() 接受哪一版磁盘格式。配成非正整数会让
+    # 版本校验失去意义，因此在启动期就拒绝，而不是等到加载索引时才发现。
+    fmt_version = settings.vector_store.bm25_index_format_version
+    if not isinstance(fmt_version, int) or isinstance(fmt_version, bool) or fmt_version < 1:
+        raise SettingsError(
+            "Invalid vector_store.bm25_index_format_version: "
+            f"{fmt_version!r}. Expected a positive integer"
         )
 
     # 查询响应配置校验（spec feature-002 FR-004）

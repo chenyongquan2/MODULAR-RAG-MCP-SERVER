@@ -64,7 +64,10 @@ class SparseRetriever:
             raise ValueError("Settings cannot be None")
 
         self._settings = settings
-        self._collection = getattr(settings.vector_store, "collection_name", "knowledge_base")
+        # 两路检索共用 collection_name 这一个真源（见 VectorStoreSettings docstring）。
+        # 该字段在 dataclass 上有默认值且经 load_settings 校验，无需 getattr 兜底 ——
+        # 静默回退默认值正是宪法原则三禁止的（feature-004 T001）。
+        self._collection = settings.vector_store.collection_name
 
         # Use dependency injection or create BM25 indexer
         if bm25_indexer is not None:
@@ -72,7 +75,7 @@ class SparseRetriever:
         else:
             from src.ingestion.storage.bm25_indexer import BM25Indexer
 
-            index_dir = getattr(settings.vector_store, "bm25_index_path", "data/db/bm25")
+            index_dir = settings.vector_store.bm25_index_path
             self._bm25_indexer = BM25Indexer(index_dir=index_dir)
             self._bm25_indexer.load(collection=self._collection)
 
