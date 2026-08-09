@@ -65,6 +65,8 @@ class ReembedStats:
     batch_size: int
     scanned: int = 0
     skipped_empty: List[str] = field(default_factory=list)
+    #: 目标集合里已存在、本次跳过的条数（断点续跑）
+    skipped_done: int = 0
     embedded: int = 0
     written: int = 0
     elapsed_s: float = 0.0
@@ -74,7 +76,7 @@ class ReembedStats:
         """预计/实际的 API 调用次数（按批计）。"""
         if self.batch_size <= 0:
             return 0
-        pending = self.scanned - len(self.skipped_empty)
+        pending = self.scanned - len(self.skipped_empty) - self.skipped_done
         return (pending + self.batch_size - 1) // self.batch_size
 
 
@@ -85,22 +87,42 @@ def _store_for(settings: Settings, collection: str) -> BaseVectorStore:
     return VectorStoreFactory.create(scoped)
 
 
+def _existing_target_ids(settings: Settings, target: str) -> set:
+    """目标集合里已经写好的标识,用于断点续跑。
+
+    全量重嵌是小时级任务,中断后从头再来会白白重复几千次 API 调用。
+    按标识跳过已完成的部分,重跑即续跑。
+    """
+    try:
+        store = _store_for(settings, target)
+        return {r["id"] for r in store.iter_records(include_vectors=False, batch_size=1000)}
+    except Exception:
+        # 目标集合还不存在属正常情况(首次运行)
+        return set()
+
+
 def _iter_batches(
     store: BaseVectorStore,
     batch_size: int,
     stats: ReembedStats,
     limit: Optional[int] = None,
+    skip_ids: Optional[set] = None,
 ) -> Iterator[List[Dict[str, Any]]]:
     """按 batch_size 从源集合读出待重嵌的记录。
 
     只取正文与元数据 —— 旧向量要被丢弃，读它纯属浪费带宽与内存。
     """
     batch: List[Dict[str, Any]] = []
+    skip_ids = skip_ids or set()
 
     for record in store.iter_records(include_vectors=False, batch_size=1000):
         if limit is not None and stats.scanned >= limit:
             break
         stats.scanned += 1
+
+        if record["id"] in skip_ids:
+            stats.skipped_done += 1
+            continue
 
         text = record.get("text") or ""
         if not text.strip():
@@ -138,8 +160,15 @@ def reembed(
     source_store = _store_for(settings, source)
     target_store = _store_for(settings, target) if execute else None
 
+    # 断点续跑：目标集合里已写好的标识本次跳过
+    done_ids = _existing_target_ids(settings, target) if execute else set()
+    if done_ids:
+        logger.info("Resuming: %d records already present in %r", len(done_ids), target)
+
     started = time.perf_counter()
-    for batch in _iter_batches(source_store, batch_size, stats, limit=limit):
+    for batch in _iter_batches(
+        source_store, batch_size, stats, limit=limit, skip_ids=done_ids
+    ):
         if not execute:
             continue
 
@@ -172,6 +201,8 @@ def _print_stats(stats: ReembedStats, execute: bool) -> None:
     print(f"模型        : {stats.model}  ({stats.dimension} 维)")
     print(f"批大小      : {stats.batch_size}")
     print(f"扫描记录    : {stats.scanned:,}")
+    if stats.skipped_done:
+        print(f"跳过（已完成）: {stats.skipped_done:,}  ← 断点续跑")
     if stats.skipped_empty:
         print(f"跳过（空文）: {len(stats.skipped_empty):,}")
     print(f"API 调用    : {stats.api_calls:,} 次（按批计）")
