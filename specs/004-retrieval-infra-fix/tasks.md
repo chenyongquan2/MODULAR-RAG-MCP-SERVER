@@ -117,7 +117,7 @@
 - [x] T033 [P] [US3] 更新 `tests/unit/test_baseline_manager.py`：新字段的读写、旧记录缺失该字段时视为「未标注」的向后兼容行为
 - [x] T034 [US3] 把 `logs/baselines.json` 中 2026-04-28 的既有记录标注为 `corpus_validity: mismatched` —— 实测表明当时 MT5 语料尚未 ingest，该次评估检索回的是 `company_policy.md` 与临时文件，**不是**「纯向量参照」（[research.md](./research.md) Decision 7）
 - [ ] T035 [US3] Phase 4 完成后重跑评估（中英文各一次），与 T030 的结果逐指标对比，产出 **SC-008** 的「纯向量 vs 混合」对比表
-- [ ] T036 [US3] 用 T035 的报告做难度分组统计（`case_results` 的 `query` 字段与金标按 query 关联取 `tags.difficulty`），产出 **SC-009**：英文集 22 条 simple vs 20 条 multi_context+reasoning 的召回差距。**解读时须记入折扣**：金标的 `expected_chunk_ids` 是脚本按固定 top-5 回填的，非人工标注的真实答案边界
+- [~] T036 [US3] **稀疏口径已完成**（见 [acceptance.md § 2.3](./acceptance.md)）：英文金标难度梯度实测 —— simple hit 68.2%/recall 28.2%、multi_context 66.7%/55.6%、reasoning 36.4%/20.0%。**结论与设计假设相反：难的是 reasoning 而非多跳**，multi_context 的 recall 反而是 simple 的两倍。混合口径待 dense 恢复后重测。原任务描述：用 T035 的报告做难度分组统计（`case_results` 的 `query` 字段与金标按 query 关联取 `tags.difficulty`），产出 **SC-009**：英文集 22 条 simple vs 20 条 multi_context+reasoning 的召回差距。**解读时须记入折扣**：金标的 `expected_chunk_ids` 是脚本按固定 top-5 回填的，非人工标注的真实答案边界
 - [ ] T037 [US3] 把修复后的结果标为新基线（`retrieval_mode: hybrid`、`corpus_validity: valid`）
 
 **Checkpoint**: 评估数字可解读、可对比、可追溯。
