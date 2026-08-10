@@ -70,13 +70,13 @@
 
 **Independent Test**: 查看校准记录能看到候选范围、判据、各候选得分；第三方按记录重跑得到相同结论。
 
-- [ ] T017 [US2] 新建 `scripts/calibrate_fusion_weights.py` 的 `--build-cache` 路径：对指定金标每条查询执行**一次**两路检索，把两路的**有序**标识列表 + `expected_chunk_ids` + `difficulty` 写入缓存 JSON。缓存须记录 `collection`，重放前校验一致，不匹配即报错（[data-model.md § 5](./data-model.md)）
-- [ ] T018 [US2] 实现 `--sweep` 路径：从缓存离线重放融合，固定 `dense=1.0` 扫 `sparse ∈ {0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0}`，对每个候选算 `hit_rate` / `recall` / `MRR` / `nDCG`。**零 API 调用**，可反复重跑（[research.md](./research.md) Decision 5）
-- [ ] T019 [US2] 实现选择判据（[research.md](./research.md) Decision 6）：硬约束 `recall ≥ 45.7%`（纯语义水平）→ 满足者中取 `MRR` 最大 → 若无人满足则取 `recall` 最大并标注未达成。判据须在输出中显式打印，不做隐式选择
-- [ ] T020 [P] [US2] 新建 `tests/unit/test_calibrate_fusion_weights.py`：缓存重放的确定性（同缓存同权重必得同结果）、判据逻辑的三个分支、缓存 `collection` 不匹配时报错、`sparse=0` 候选等价于纯语义
-- [ ] T021 [US2] 执行英文校准：`--build-cache --lang en` 后 `--sweep --lang en`，记录完整扫描曲线与选定值
-- [ ] T022 [US2] 执行中文验证：`--build-cache --lang zh` 后 `--sweep --lang zh`。**中文仅 6 条、单条 case 即 16.7% 摆动，不作为调优目标**，只确认选定权重在中文上不倒退（spec Assumptions）
-- [ ] T023 [US2] 把推荐权重写入 `config/settings.yaml` 的默认值，并在注释中标注：该值由英文金标校准得出、绑定当前 MT5 语料、换语料需重新校准
+- [x] T017 [US2] 新建 `scripts/calibrate_fusion_weights.py` 的 `--build-cache` 路径：对指定金标每条查询执行**一次**两路检索，把两路的**有序**标识列表 + `expected_chunk_ids` + `difficulty` 写入缓存 JSON。缓存须记录 `collection`，重放前校验一致，不匹配即报错（[data-model.md § 5](./data-model.md)）
+- [x] T018 [US2] 实现 `--sweep` 路径：从缓存离线重放融合，固定 `dense=1.0` 扫 `sparse ∈ {0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0}`，对每个候选算 `hit_rate` / `recall` / `MRR` / `nDCG`。**零 API 调用**，可反复重跑（[research.md](./research.md) Decision 5）
+- [x] T019 [US2] 实现选择判据（[research.md](./research.md) Decision 6）：硬约束 `recall ≥ 45.7%`（纯语义水平）→ 满足者中取 `MRR` 最大 → 若无人满足则取 `recall` 最大并标注未达成。判据须在输出中显式打印，不做隐式选择
+- [x] T020 [P] [US2] 新建 `tests/unit/test_calibrate_fusion_weights.py`：缓存重放的确定性（同缓存同权重必得同结果）、判据逻辑的三个分支、缓存 `collection` 不匹配时报错、`sparse=0` 候选等价于纯语义
+- [x] T021 [US2] 执行英文校准：`--build-cache --lang en` 后 `--sweep --lang en`，记录完整扫描曲线与选定值
+- [x] T022 [US2] 执行中文验证：`--build-cache --lang zh` 后 `--sweep --lang zh`。**中文仅 6 条、单条 case 即 16.7% 摆动，不作为调优目标**，只确认选定权重在中文上不倒退（spec Assumptions）
+- [x] T023 [US2] 把推荐权重写入 `config/settings.yaml` 的默认值，并在注释中标注：该值由英文金标校准得出、绑定当前 MT5 语料、换语料需重新校准
 
 **Checkpoint**: 有推荐默认值，且其依据可复现。
 
@@ -88,11 +88,11 @@
 
 **Independent Test**: 存在覆盖中英文、四项指标、三种配置的对比表，且带权混合的 recall 与 hit_rate 不低于纯语义。
 
-- [ ] T024 [US3] 实现 `scripts/calibrate_fusion_weights.py --compare`：从**同一份缓存**重放三种配置（`sparse=0` / `sparse=1.0` / 推荐值），输出四项指标的对比表。同源缓存意味着三者差异纯粹来自权重，不含检索层面的随机波动
-- [ ] T025 [US3] 产出英文与中文两份三方对比，写入 `specs/005-weighted-fusion/acceptance.md`（SC-009）
-- [ ] T026 [US3] 核验核心目标：带权混合的 `recall` ≥ 45.7%、`hit_rate` ≥ 69.0%（SC-001 / SC-002），`MRR` 不低于等权的 0.502（SC-003）
-- [ ] T027 [US3] 核验 SC-011（至少一个语种上带权混合在召回与排序两项同时严格优于任一单路）。**若未达成**，在 acceptance.md 中直说并给出曲线依据 —— spec Assumptions 已预先承认「最优权重可能就是关键词路径权重极低」这一结果，届时 SC-001/002 成立而 SC-011 不成立是可接受的诚实结论，不得粉饰
-- [ ] T028 [US3] 把校准记录（候选范围、判据、完整扫描曲线）写入 `acceptance.md`（SC-010），确保第三方按记录可复现
+- [x] T024 [US3] 实现 `scripts/calibrate_fusion_weights.py --compare`：从**同一份缓存**重放三种配置（`sparse=0` / `sparse=1.0` / 推荐值），输出四项指标的对比表。同源缓存意味着三者差异纯粹来自权重，不含检索层面的随机波动
+- [x] T025 [US3] 产出英文与中文两份三方对比，写入 `specs/005-weighted-fusion/acceptance.md`（SC-009）
+- [x] T026 [US3] 核验核心目标：带权混合的 `recall` ≥ 45.7%、`hit_rate` ≥ 69.0%（SC-001 / SC-002），`MRR` 不低于等权的 0.502（SC-003）
+- [x] T027 [US3] 核验 SC-011（至少一个语种上带权混合在召回与排序两项同时严格优于任一单路）。**若未达成**，在 acceptance.md 中直说并给出曲线依据 —— spec Assumptions 已预先承认「最优权重可能就是关键词路径权重极低」这一结果，届时 SC-001/002 成立而 SC-011 不成立是可接受的诚实结论，不得粉饰
+- [x] T028 [US3] 把校准记录（候选范围、判据、完整扫描曲线）写入 `acceptance.md`（SC-010），确保第三方按记录可复现
 
 **Checkpoint**: 证据完备，可判定 feature 是否达成目的。
 
@@ -100,10 +100,10 @@
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T029 [P] 全量跑 `.venv/Scripts/python.exe -m pytest tests/unit -v`，确认无回归（基线：Feature-004 收尾时 1412 passed / 2 skipped）
-- [ ] T030 [P] 更新 `CLAUDE.md`：`retrieval` 段新增配置项说明；补一条「权重是语料相关的，换语料需重新校准」的提示（与既有的「换 Judge 需重新校准阈值」并列）
-- [ ] T031 [P] 更新 `docs/learning/agentic-retrieval-boundary.md`：把 § 6.3 中「RRF 无权重」标记为已修复，补修复后的实测数字
-- [ ] T032 复核 SC-001～SC-013 逐条达成情况，未达成项写明原因，结论记入 `acceptance.md`
+- [x] T029 [P] 全量跑 `.venv/Scripts/python.exe -m pytest tests/unit -v`，确认无回归（基线：Feature-004 收尾时 1412 passed / 2 skipped）
+- [x] T030 [P] 更新 `CLAUDE.md`：`retrieval` 段新增配置项说明；补一条「权重是语料相关的，换语料需重新校准」的提示（与既有的「换 Judge 需重新校准阈值」并列）
+- [x] T031 [P] 更新 `docs/learning/agentic-retrieval-boundary.md`：把 § 6.3 中「RRF 无权重」标记为已修复，补修复后的实测数字
+- [x] T032 复核 SC-001～SC-013 逐条达成情况，未达成项写明原因，结论记入 `acceptance.md`
 
 ---
 

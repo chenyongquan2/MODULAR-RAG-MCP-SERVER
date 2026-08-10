@@ -82,10 +82,25 @@ retrieval:
   # 各检索路径在融合中的相对分量。**只有相对比例有意义** ——
   # {dense: 1.0, sparse: 0.5} 与 {dense: 2.0, sparse: 1.0} 排序完全相同。
   # 缺失的路径缺省 1.0；单条设 0 合法，等价于关闭该路；全部为 0 会被启动期拒绝。
-  # 权重是**语料相关的**，换语料需重新校准（同「换 Judge 需重新校准阈值」）。
+  #
+  # 当前值由 feature-005 在英文金标(42 条)上校准得出，中文金标(6 条)验证不倒退。
+  # 相比纯语义检索：两个语种的 MRR 与 nDCG 均提升、recall 均持平，代价是英文
+  # 42 条里 1 条丢了唯一命中。完整扫描曲线见
+  # specs/005-weighted-fusion/acceptance.md
+  #
+  # ⚠️ 权重是**语料相关的**，换语料必须重新校准
+  #    （同「换 Judge 需重新校准阈值」）：
+  #      python scripts/calibrate_fusion_weights.py --build-cache --lang en
+  #      python scripts/calibrate_fusion_weights.py --sweep --lang en
+  #
+  # ⚠️ 另需知道：金标的 expected_chunk_ids 是 backfill_chunk_ids.py 用**纯
+  #    dense 检索**回填的（scripts/backfill_chunk_ids.py 直接调 vector_store
+  #    .query()）。因此 recall / hit_rate 这两项结构性地偏向 dense ——
+  #    任何 sparse 贡献挤掉一条 dense 命中就只能拉低它们。解读校准结果时，
+  #    MRR / nDCG 比 recall / hit_rate 更可信。
   fusion_weights:
     dense: 1.0
-    sparse: 1.0
+    sparse: 0.1
   top_k_dense: 20           # dense 召回数量
   top_k_sparse: 20          # sparse 召回数量
   top_k_final: 10           # 最终返回数量

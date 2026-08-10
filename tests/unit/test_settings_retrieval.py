@@ -162,9 +162,28 @@ class TestRealConfigWiring:
     """settings.yaml 端到端装配。"""
 
     def test_real_config_wires_new_fields(self) -> None:
+        """settings.yaml 里是**校准后的推荐值**，与 dataclass 默认值不同。
+
+        这个区分是刻意的：
+
+        - ``RetrievalSettings`` 的默认值是等权 ``1.0 / 1.0`` —— 配置缺该字段时
+          行为与 feature-005 之前逐条一致（FR-003 的向后兼容）
+        - ``settings.yaml`` 交付的是 feature-005 在英文金标上校准出的
+          ``sparse=0.1``（见 specs/005-weighted-fusion/acceptance.md § 三）
+
+        换语料后需重新校准，届时本断言的期望值要一并更新。
+        """
         r = load_settings(_REAL_CONFIG).retrieval
         assert r.rrf_k == 60
-        assert r.fusion_weights == {"dense": 1.0, "sparse": 1.0}
+        assert r.fusion_weights == {"dense": 1.0, "sparse": 0.1}
+
+    def test_dataclass_default_stays_equal_weight(self) -> None:
+        """dataclass 默认值必须保持等权 —— 它守的是向后兼容而非推荐值。
+
+        若把校准值写进 dataclass 默认，既有部署（配置里没这个字段）升级后
+        行为会**静默改变**。
+        """
+        assert RetrievalSettings().fusion_weights == {"dense": 1.0, "sparse": 1.0}
 
     def test_real_config_passes_validation(self) -> None:
         validate_settings(load_settings(_REAL_CONFIG))

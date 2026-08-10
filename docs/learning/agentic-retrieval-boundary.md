@@ -262,7 +262,7 @@ Azure agentic retrieval / 本项目的规划器     ← 检索级循环（提供
 
 ### 6.3 四个已知缺陷/缺口
 
-> **✅ 状态更新（2026-08-09）**：下述缺陷零、二、三已由 [Feature-004](../../specs/004-retrieval-infra-fix/spec.md) 修复。缺陷一（RRF 无权重）留待后续 Query Rewrite feature——它是那个 feature 的前置，本次不做。修复后实测：
+> **✅ 状态更新（2026-08-10）**：下述四个缺陷**已全部修复** —— 缺陷零、二、三由 [Feature-004](../../specs/004-retrieval-infra-fix/spec.md)，缺陷一（RRF 无权重）由 [Feature-005](../../specs/005-weighted-fusion/spec.md)。原先判断「缺陷一留待 Query Rewrite feature」的说法已作废：它单独成了一个 feature，而且校准过程还反过来发现了金标 recall 偏向 dense 这个更根本的问题（见缺陷一条目）。修复后实测：
 >
 > | 指标 | 修复前 | 修复后 |
 > |---|---|---|
@@ -300,8 +300,23 @@ Chroma    : C:\workspace\...\ingest_source\MetaTrader5SDK_English.chm_1925_a0973
 
 > **这一次重建同时解决下面全部四件事**：ID 对齐、CJK 切分、collection 物理隔离、索引格式瘦身。
 
-**一、RRF 无权重**【代码】【未修复 —— 留给 Query Rewrite feature】
-`fusion.py:102` 是 `rrf_score = 1.0 / (self._k + rank)`。没有权重项，**无法给原始 query 更高权重**。要实现「原始 query 参与融合且抑制语义漂移」，得先扩展这里。
+**一、RRF 无权重**【代码】【✅ 已由 [Feature-005](../../specs/005-weighted-fusion/spec.md) 修复】
+原先 `fusion.py` 是 `rrf_score = 1.0 / (self._k + rank)`，没有权重项。现在是 `weight[r] / (k + rank)`，权重与平滑参数 `k` 均由 `settings.yaml` 的 `retrieval.fusion_weights` / `retrieval.rrf_k` 控制。
+
+**修复后实测（英文金标 42 条，`dense` 固定 1.0）**：
+
+| dense : sparse | hit_rate | recall | MRR | nDCG |
+|---|---|---|---|---|
+| 1 : 0（纯语义） | 69.0% | 45.7% | 0.4365 | 0.3889 |
+| **1 : 0.1**（采用值） | 66.7% | **45.7%** | 0.4693 | 0.4106 |
+| 1 : 0.75 | 66.7% | 44.3% | **0.5395** | **0.4237** |
+| 1 : 1（改造前的等权） | 64.3% | 42.4% | 0.5115 | 0.3995 |
+
+**消除了 recall 倒退**（等权 42.4% → 45.7%，与纯语义持平），两个语种的 MRR / nDCG 都优于纯语义。
+
+**但校准中发现一件比权重更重要的事**：金标的 `expected_chunk_ids` 是 `backfill_chunk_ids.py:85` 直接调 `vector_store.query()` 回填的 —— **纯 dense 检索，无 BM25、无融合**。所以 `recall` / `hit_rate` 这把尺子是用 dense 自己的布裁的，任何 sparse 贡献挤掉一条 dense 命中就只能拉低它们。比较混合与单路时 `MRR` / `nDCG` 更可信。
+
+这个发现指向一个结论：**提升混合检索的下一步不在融合权重，而在关键词路径的质量本身（查询改写）或金标的构造方式（人工标注答案边界）。** 完整曲线与取舍见 [Feature-005 验收记录](../../specs/005-weighted-fusion/acceptance.md)。
 
 **二、CJK 在整条 sparse 链路上被丢弃（查询端 + 索引端都是）**【代码】【已修复】
 
@@ -534,7 +549,7 @@ async def search(query, top_k=3, category=None) -> list[dict]:
 | **CRAG** | Corrective RAG：检索结果打分，质量差则降级到其他来源 |
 | **Adaptive RAG** | 按问题复杂度路由到不同检索深度 |
 | **受约束检索规划器** | 本文自造说法（非业界术语）：工具封闭、判据固定、预算小、**无状态**的检索侧循环 |
-| **RRF** | Reciprocal Rank Fusion，`1/(k+rank)` 求和。本项目实现见 `fusion.py:102`，**当前无权重** |
+| **RRF** | Reciprocal Rank Fusion。Feature-005 起为 `weight[r]/(k+rank)` 求和，权重与 `k` 均可配置（`retrieval.fusion_weights` / `retrieval.rrf_k`） |
 | **KnowledgeSearchPort** | 预约项目定义的检索端口，`search(query, top_k, category) -> list[dict]`，单次无状态 |
 | **sampling** | MCP 原语：server 反向请求 client 的 LLM 做推理。设计意图是让 server 不必自带 LLM，但客户端支持率低 |
 
