@@ -249,11 +249,13 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 - **Logger Usage**: Always import `from observability.logger import get_logger` and call `logger = get_logger(__name__)`
 - **PDF Loading**: Currently only PDF and Markdown formats supported via `src/libs/loader/` (uses MarkItDown for PDF → Markdown conversion)
 - **Vector Store**: ChromaDB is the only implemented backend currently
-- ⚠️ **dense 检索当前不可用(2026-08-09 起)**:`text-embedding-3-small` 已从网关永久下架,配置已切到 `qwen/text-embedding-v4`(**1024 维**),而 `data/db/chroma` 现存 52,919 条向量是 **1536 维**。查询会明确报 `Collection expecting embedding with dimension of 1536, got 1024`(刻意不静默降级)。**sparse / BM25 一切正常。** 恢复 dense 需先跑 `python scripts/reembed_corpus.py --source default --execute`(约 176 分钟、5276 次 API 调用),再把 `collection_name` 指向新集合并重建关键词索引。详见 [specs/004-retrieval-infra-fix/acceptance.md](specs/004-retrieval-infra-fix/acceptance.md) § 三
+- **生效集合是 `default_text-embedding-v4`(1024 维)**。2026-08-09 `text-embedding-3-small` 从网关永久下架,已用 `scripts/reembed_corpus.py` 全量重嵌到 `qwen/text-embedding-v4`(52,757 条 / 5,276 次调用 / 136.5 分钟 / 零失败),dense 与 sparse 均正常。旧的 1536 维集合(`default` / `mt5_docs_*`)保留作归档与回滚,但**模型已下架,无法再产出匹配的查询向量**,不要把 `collection_name` 指回去
+- **模型下架是这个网关的常态**,不是一次性事故:同一天 `text-embedding-3-small` 与 `z-ai/glm-4.7` 先后 `503 model_not_found`。遇到该错误先跑 `curl ${GLM_BASE_URL}/models` 看当前可用清单,再改 `settings.yaml` —— 项目是 provider 无关设计,换模型只改配置
 - **Collection 语义**(Feature-004 起):`settings.vector_store.collection_name` 是 **dense 与 sparse 两路共同的唯一真源** —— dense 用它决定打开哪个物理 collection,sparse 用它决定加载哪个 BM25 索引文件。CLI 的 `--collection` **覆盖这个值**(真正切换检索范围),而不是塞进 `filters` 做融合后过滤。`filters` 只用于 `doc_type`/`tags` 等维度
 - **BM25 索引格式**:v2,契约见 [specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md](specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md)。chunk 标识字典化(倒排项存整数下标)。**版本不匹配时 `BM25Indexer.load()` 直接抛 `ValueError`,不静默降级** —— 跑 `python scripts/rebuild_bm25_index.py --all` 重建
 - **切分口径**:查询端与索引端**必须**共用 `src/core/text/tokenizer.py`,禁止各留一份。两端漂移的失败是静默的(不报错,只是召回恒为空),由 `tests/unit/test_tokenizer.py::TestBothEndsAgree` 守住
-- **金标评估集合**:`golden_test_set_{zh,en}.json` **必须**在 `collection=default` 上评估。中英文语料是同一份 MT5 文档的两个语言版本,金标回填时匹配跨了语言(en 集 42 条里 18 条跨语料),只有 `default` 能 100% 解析全部 `expected_chunk_ids`
+- **金标评估集合**:`golden_test_set_{zh,en}.json` **必须**在含全部语料的集合上评估(当前是 `default_text-embedding-v4`),**不要指向 `mt5_docs_chinese` / `mt5_docs_english`**。中英文语料是同一份 MT5 文档的两个语言版本,金标回填时匹配跨了语言(en 集 42 条里 18 条跨语料、210 个 chunk_id 里 20 个指向中文),分语言集合只能解析 190/210,评估会直接触发 `chunk_id_validation` 失败
+- **`custom__recall` 与 `ragas__context_recall` 量的不是一回事**:前者是「检索到的 chunk id 与回填脚本挑的那 5 个的重合比例」,后者是「检索到的上下文实际支撑答案的比例」。实测同一批结果分别是 0.30 与 0.83 —— 金标的 `expected_chunk_ids` 是 `backfill_chunk_ids.py` 机器按 top-5 回填的,非人工标注的答案边界,解读 `custom__recall` / `custom__ndcg` 时必须计入这个折扣
 - **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately. 自 feature-002 起，查询命中含图 chunk 时，`query_knowledge_hub` 工具会通过 `MultimodalAssembler` 同时返回文本与图片（MCP `ImageContent`，base64），两种模式（`use_llm=true/false`）策略一致。返图数量上限由 `query.max_images_per_response` 配置（默认 10）
 
 ## Evaluation System

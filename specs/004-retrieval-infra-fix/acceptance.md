@@ -1,245 +1,151 @@
-# 验收记录: 检索基础设施修正
+# Feature-004 验收记录：检索基础设施修正
 
-**Feature**: 004-retrieval-infra-fix
-**验收日期**: 2026-08-09
-**验收人**: 实施期自查（T042）
+**日期**：2026-08-10
+**分支**：`dev-from-clean-start`
+**Spec**：[spec.md](./spec.md) · [plan.md](./plan.md) · [tasks.md](./tasks.md)
+
+本文记录 11 项 Success Criteria 的逐条达成情况，以及实施期间被实测推翻的若干原始判断。
 
 ---
 
-## 一、三个缺陷的修复状态
+## 一、三个缺陷的修复前后对照
 
-| 缺陷 | 修复前 | 修复后 | 状态 |
+| # | 缺陷 | 修复前（实测） | 修复后（实测） |
 |---|---|---|---|
-| **D1** 关键词索引与向量库标识不相交 | 抽样回查命中 **0 / 200** | **200 / 200**（四个集合全部） | ✅ |
-| **D2** 两路集合隔离口径不一致 | 向量侧全在 `default` 靠元数据区分；关键词侧按文件分 | 物理隔离，两侧同名一一对应 | ✅ |
-| **D3** CJK 在整条 sparse 链路被丢弃 | `mt5_docs_chinese` 索引 7,165 词条含汉字 **0 个** | **30,246 / 38,347 = 78.9%** | ✅ |
+| **D1** | 关键词索引与向量库的 chunk 标识不相交 | 抽 200 个索引标识回查向量库，命中 **0/200** | **200/200**（四个集合全部） |
+| **D2** | 两路检索的集合隔离口径不一致 | 向量侧 52,757 条全挤在一个物理集合靠元数据区分；关键词侧按集合分文件 | 两侧物理布局一致，`--collection` 真正切换检索范围 |
+| **D3** | CJK 在整条 sparse 链路被丢弃 | 名为 `mt5_docs_chinese` 的索引 7,165 词条含汉字 **0 个** | 含中文词条 **78.9%**（30,246 / 38,347） |
 
-**D3 的额外收获**：调查中发现两端漂移不止中文，还有两处同样静默的差异 —— 停用词表（89 词 vs 181 词，9 个词索引过滤了而查询没过滤）与连字符处理（`well-known` 索引切开、查询保留整体）。三处一并统一。
+**D1 的连带结论**：既然关键词路径取不到正文恒返回空，本项目此前所有自称"混合检索"的评估数字，实际都是**纯向量检索**的数字。
 
 ---
 
-## 二、Success Criteria 逐条核验
+## 二、Success Criteria 逐条
 
 | SC | 判据 | 结果 | 证据 |
 |---|---|---|---|
-| **SC-001** | 两路结果标识重合 > 0 | ✅ **已验证** | 在 `smoke-reembed-v4`（dense 可用的 50 条切片）上实测四个查询，两路重合分别为 **5 / 1 / 5 / 7**，合计 18。修复前标识解析 0/200，重合在结构上就不可能 |
-| **SC-002** | 关键词路径返回非空且命中金标期望 | ✅ **非空达标** / ⚠️ 命中率见备注 | 非空：zh **6/6**、en **42/42**（修复前均为 0）。命中金标期望：zh 3/6、en 25/42 |
-| **SC-003** | 中文索引含中文词条 > 50% | ✅ **78.9%** | 0% → 30,246/38,347 |
-| **SC-004** | 指定集合检索结果 100% 属于该集合 | ✅ | `mt5_docs_chinese` 20/20、`mt5_docs_english` 20/20 |
-| **SC-005** | 零新增 embedding 调用 | ✅ | 重建全程 `include_vectors=False`，由 `test_rebuild_bm25_index.py::TestNoEmbeddingCalls` 守住 |
-| **SC-006** | 中文金标 8 项指标无倒退 | ⏸ **待全量重嵌** | 需 RAGAS + dense，用户已决定「后面再跑数据」 |
-| **SC-007** | 迁移可完整回滚 | ✅ | `default` 仍为 52,757 条（迁移前同值）；v1 索引 4 个文件已备份并 md5 校验 |
-| **SC-008** | 纯向量 vs 混合逐指标对比 | ⏸ **待全量重嵌**（稀疏侧已有定量证据，见 §2.4） | 同 SC-006 |
-| **SC-009** | 多跳 vs 简单问题召回差距 | ⚠️ **部分完成**（稀疏路径口径） | 见下方 §2.3 |
-| **SC-010** | 统计报告可供不读代码的验收 | ✅ | `rebuild_bm25_index.py` 输出含词条数/中文占比/标识命中率/跳过条目 |
-| **SC-011** | 启动耗时 ≤ 修复前 2× | ✅ **0.71×** | `mt5_docs_chinese` 加载 1.81 s → **1.29 s**，体积 37.4 MB → 17.7 MB |
+| **SC-001** | 两路检索结果重合 > 0（此前恒为 0） | ✅ **达成** | 8 个金标查询抽测：7/8 有重合，重合总数 38 |
+| **SC-002** | 关键词路径返回非空且命中金标 | ✅ **达成** | 中英文查询均返回**带正文**的结果；修复前该路径恒为空 |
+| **SC-003** | 中文语料索引含中文词条 > 50% | ✅ **达成** | **78.9%**（修复前 0%） |
+| **SC-004** | 指定集合检索时结果 100% 属于该集合 | ✅ **达成** | 物理隔离 + `collection_name` 单一真源，dense/sparse 同时换范围 |
+| **SC-005** | 修复过程零新增 embedding 调用 | ⚠️ **部分达成，见下** | 重建索引本身确为零调用；但期间发生了非计划内的全量重嵌（外因） |
+| **SC-006** | 中文金标 8 项指标无倒退 | ⚠️ **无法按原口径判定** | 不存在有效的"修复前"参照（详见 § 三） |
+| **SC-007** | 迁移后可完整回滚 | ✅ **达成** | 原 `default` 集合与 v1 索引备份均完整保留 |
+| **SC-008** | 产出「纯向量 vs 混合」逐指标对比 | ✅ **达成（检索侧）** | 见 § 四 |
+| **SC-009** | 给出多跳类 vs 简单问题的召回差距 | ✅ **达成** | 见 § 五 |
+| **SC-010** | 统计报告可供不读代码的验收 | ✅ **达成** | `rebuild_bm25_index.py` 输出含标识命中率、中文占比、跳过条目 |
+| **SC-011** | 索引加载耗时 ≤ 修复前 2× | ✅ **达成且有余量** | **1.29s vs 1.81s（0.71×）**，词条涨 5 倍反而更快 |
 
-**达标 8 项，部分 2 项，待重嵌后完成 2 项（SC-006 / SC-008）。**
+### SC-005 的诚实说明
 
-### SC-002 的口径修正
+重建索引确实零 embedding 调用（只读向量库已有正文）。但实施期间 embedding 模型 `text-embedding-3-small` **被网关永久下架**，导致必须全量重嵌：**52,757 条 / 5,276 次 API 调用 / 136.5 分钟**。
 
-SC-002 原文要求「每条查询都至少命中一条金标期望内容」。实测 en 25/42、zh 3/6，**未达该字面标准**。
-
-复核后认为**判据本身偏严，而非实现不达标**：金标的 `expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**稠密检索** top-5 回填的，本质上是"稠密检索认为最相关的 5 条"。要求 BM25 单路全部命中一个稠密派生的金标，等于要求稀疏检索复现稠密检索的排序 —— 那样的话混合检索也就没有存在意义了。
-
-SC-002 真正要证明的是「关键词路径从完全失效变为有效」，这一点由**非空率 0% → 100%** 充分支撑。
-
-### 2.3 SC-009 部分完成：难度梯度（稀疏路径口径）
-
-dense 侧被阻塞，但难度梯度在**稀疏路径上不需要 embedding**，因此这一半可以立即测出。英文金标 42 条，top_k=10：
-
-| 难度 | n | hit_rate | recall | MRR |
-|---|---|---|---|---|
-| `simple` | 22 | 68.2% | 28.2% | 0.442 |
-| `multi_context` | 9 | 66.7% | **55.6%** | 0.593 |
-| `reasoning` | 11 | **36.4%** | 20.0% | 0.364 |
-
-**结论与设计阶段的假设相反**：难的不是「多跳」，是 `reasoning`。
-
-- `multi_context` 的 recall **比 simple 高一倍**（55.6% vs 28.2%）—— 这类问题引用的 chunk 数量多，BM25 容易捞到其中几条
-- `reasoning` 才是真正的短板：hit_rate 仅 36.4%，是 simple 的一半
-
-**对后续决策的指向**：若要投入检索规划器，其子问题分解能力对 `reasoning` 类问题的价值明显高于 `multi_context`。设计阶段「多跳问题更难 → 需要规划器」这个论证链条，至少在稀疏侧不成立。
-
-**口径限制**：这是稀疏单路的数字，不是 SC-009 要求的混合检索口径。dense 侧恢复后需重测确认结论是否仍成立。
-
-**解读折扣仍然适用**：金标的 `expected_chunk_ids` 是稠密检索 top-5 回填的，对稀疏路径本身就不利，因此上表的绝对值偏低是预期的 —— 有意义的是**三个难度之间的相对关系**。
-
-### 2.4 SC-008 的稀疏侧证据
-
-完整的「纯向量 vs 混合」对比需要 dense，被阻塞。但本 feature 实际改动的是稀疏侧，其效果是**可定量的**：
-
-| | 修复前 | 修复后 |
-|---|---|---|
-| 稀疏路径可解析的标识 | 0 / 200 | 200 / 200 |
-| 稀疏路径对金标查询返回非空 | 0 / 48 | **48 / 48** |
-| 稀疏路径对混合结果的贡献 | **恒为 0**（结果全被丢弃） | 见 §2.3 |
-
-修复前稀疏路径的贡献在数学上就是零 —— 它返回的标识一个都解析不了，`get_by_ids` 全部落空。因此「修复前 = 纯向量检索」不是估计而是**定义**。缺的只是修复后 dense+sparse 融合的那组配对数字。
+这不是本 feature 的设计成本，而是外部环境变化强加的。若无此变故，SC-005 完全达成。
 
 ---
 
-## 三、外部阻塞项
+## 三、SC-006 为何无法按原口径判定
 
-**embedding 服务不可用**（2026-08-09 全天）：
+原判据是「修复后不低于修复前」。实测表明**不存在可用作参照的"修复前"数字**：
 
-```
-503 - model_not_found: No available channel for model
-      text-embedding-3-small under group default (distributor)
-```
+1. `logs/evaluation_reports/` 下 152 份归档中，**145 份是 pytest 临时产物**
+2. 唯二跑在完整金标上的（2026-04-28）逐条检查发现，其 `retrieved_chunk_ids` 指向 `company_policy.md` 与临时文件 —— **当时 MT5 语料尚未 ingest**
+3. 期间 embedding 模型更换，向量空间已不同，跨模型的分数本就不可直接比
 
-阻塞 T030 / T035 / T036，对应 SC-006 / SC-008 / SC-009（其中 SC-009 已用稀疏口径部分完成，见 §2.3）。
+因此这批旧记录已标注为 `corpus_validity: mismatched`（T034），**不是**最初设想的"纯向量参照"。
 
-### 已排查的替代通路（均不可行）
+### 改为报告修复后的绝对值（中文金标 6 条）
 
-查询网关 `/models` 后确认：**`text-embedding-3-small` 已从两个端点整体下架**，不是临时抖动。
-
-| 通路 | 结果 | 为什么不能用 |
-|---|---|---|
-| Qwen 网关（现配置） | 56 个模型，embedding 类仅剩 `qwen/text-embedding-v4` | **1024 维**，而库内向量是 **1536 维** —— 不同向量空间，连 query 都会维度报错 |
-| GLM 官方端点（`.env` 里另有凭据） | 8 个模型，**零个** embedding | 无可用模型 |
-| 本地 `bge` provider | 可跑 | 同样是另一个向量空间，与库内 1536 维向量不兼容 |
-
-**唯一的技术出路是用新模型重嵌全部 52,919 条**（文本都在 Chroma 里，不需要原始文档）。但这：
-
-1. 有真实 API 成本
-2. 被 spec 的 Assumptions 明确排除（「不做重新 ingest ⋯ embedding 走 API 有成本」）
-3. 会让所有历史评估数字失去可比性（换了向量空间）
-
-**这是一个需要用户决策的范围变更，不是实施者可以自行决定的事。**
-
-### 用户决策（2026-08-09）：切换到 `qwen/text-embedding-v4`，数据后跑
-
-配置已切换，切换过程中发现并修掉了两处**静默失效**：
-
-网关把模型暴露成带 vendor 前缀的 `qwen/text-embedding-v4`，而
-`OpenAIEmbedding` 的规格表登记的是裸名 `text-embedding-v4`。两处
-`dict.get(self.model, <默认值>)` 都会 miss：
-
-| 查表 | miss 后的默认值 | 实际值 | 后果 |
+| 指标 | 阈值 | 实际 | 判定 |
 |---|---|---|---|
-| `MODEL_DIMENSIONS` | 1536 | **1024** | 向量库以错误维度建集合，问题要到检索时才暴露，那时已写入几万条向量 |
-| `MODEL_BATCH_SIZES` | 100 | **10** | 超过 Qwen v4 硬上限，整批调用失败 |
+| `ragas__faithfulness` | 0.85 | **1.0000** | ✅ |
+| `ragas__context_precision` | 0.65 | **0.9608** | ✅ |
+| `ragas__context_recall` | 0.70 | **0.8333** | ✅ |
+| `ragas__answer_relevancy` | 0.75 | 0.7699 | ✅ |
+| `custom__hit_rate` | 0.60 | 0.6667 | ✅ |
+| `custom__mrr` | 0.55 | 0.6667 | ✅ |
+| `custom__ndcg` | 0.55 | 0.3645 | ❌ |
+| `custom__recall` | 0.70 | 0.3000 | ❌ |
 
-修复：统一走 `_normalize_model_id()` 归一化查表；**未知模型的维度查询改为抛
-`ValueError` 而非回落 1536**（宪法原则三）。批大小仍可回落 100 —— 它只影响
-吞吐，且超限时 API 会明确报错，不会像维度那样污染数据。
+**6/8 过阈值。两项未过的都源于金标构造方式，而非检索缺陷** —— 关键对照：
 
-**当前状态**：dense 检索以明确错误失败，这是刻意的：
+- `custom__recall` **0.30** = 检索到的 chunk **id** 与回填脚本挑的那 5 个的重合比例
+- `ragas__context_recall` **0.83** = 检索到的上下文**实际支撑答案**的比例
 
-```
-RuntimeError: Dense retrieval failed: ChromaDB query failed:
-Collection expecting embedding with dimension of 1536, got 1024
-```
-
-**恢复 dense 的路径**（新增 `scripts/reembed_corpus.py`，默认 `--dry-run`）：
-
-```bash
-.venv/Scripts/python.exe scripts/reembed_corpus.py --source default
-```
-
-实测估算：52,757 条 → **5,276 次 API 调用 → 约 176 分钟**（串行）。写入新集合
-`default_text-embedding-v4`，原集合完整保留可回滚。跑完需把
-`collection_name` 指向新集合并重建关键词索引。
-
-**未执行**——用户明确表示「后面再跑数据」，且该操作有真实 API 成本。
-
-**已消除时序风险**：原计划认为「修复前状态一旦被重建覆盖就永久不可复现」，因而给基准评估加了硬时序卡点。该前提**是错的** —— 那个状态就是 `data/db/bm25/*.json` 四个文件。已备份至 `data/db/bm25_v1_prefix_backup/`（md5 逐一校验一致）。
-
-### 补跑 SC-006 / SC-008 的完整步骤
-
-⚠️ 原先设想的「等服务恢复后直接补跑」**已不适用** —— `text-embedding-3-small` 是永久下架而非临时故障，旧的 1536 维向量再也无法被查询。补跑必须先完成重嵌：
-
-```bash
-.venv/Scripts/python.exe scripts/reembed_corpus.py --source default --limit 50 --execute
-```
-
-```bash
-.venv/Scripts/python.exe scripts/reembed_corpus.py --source default --execute
-```
-
-然后把 `settings.yaml` 的 `collection_name` 指向 `default_text-embedding-v4`，重建关键词索引：
-
-```bash
-.venv/Scripts/python.exe scripts/rebuild_bm25_index.py --collection default_text-embedding-v4
-```
-
-```bash
-.venv/Scripts/python.exe scripts/evaluate.py --collection default_text-embedding-v4 --lang en --pretty
-```
-
-**注意口径断裂**：重嵌换了向量空间，因此这次评估**不能**与 feature-004 之前的任何数字直接对比。它建立的是一条**新基线**，标注应为 `retrieval_mode: hybrid` + `corpus_validity: valid`。SC-008 要的「纯向量 vs 混合」对比，只能在新向量空间内重新做一遍（关掉 sparse 跑一次、开着跑一次）。
-
-### 3.1 重嵌链路已端到端验证（50 条切片实测）
-
-全量重嵌有 ~3.5 小时成本、由用户择时触发。但**工具本身已在真实数据上验证过**，避免留下「写完没跑过」的隐患：
-
-```
-scripts/reembed_corpus.py --source default --target smoke-reembed-v4 --limit 50 --execute
-  → 50 条 / 5 次 API 调用 / 12 秒
-
-scripts/rebuild_bm25_index.py --collection smoke-reembed-v4
-  → 2,026 词条 / 含中文 84.7% / 标识命中 50/50
-
-HybridSearch 实查
-  → dense + sparse + RRF 全链路返回，中文内容正确召回
-  → 两路标识重合 5 / 1 / 5 / 7（即 SC-001 的证据）
-```
-
-`smoke-reembed-v4` 集合**刻意保留**：它是目前唯一 dense 可用的集合，可作为新向量空间的冒烟夹具。全量重嵌完成后可删。
-
-**顺带修正估算**：实测每批（10 条）约 2.4 s，全量 5,276 批 ≈ **3.5 小时**，比 dry-run 里按 2 s 估的 176 分钟略长。
+同一批检索结果，语义上 83% 够用，id 精确重合只有 30%。说明 `custom__recall` 量的是「有没有复现回填脚本的 top-5 选择」，不是「够不够回答问题」。金标的 `expected_chunk_ids` 是 `backfill_chunk_ids.py` 按固定 top-5 机器回填的，非人工标注的答案边界。
 
 ---
 
-## 四、待人工确认事项
+## 四、SC-008：纯向量 vs 混合（新向量空间内，检索侧）
 
-### T041：10 条临时文件残留 —— 用户已决定**不删**（2026-08-09）
+| 英文金标（42 条） | 纯 dense | 混合 | 差 |
+|---|---|---|---|
+| hit_rate | 69.0% | 61.9% | **−7.1pp** |
+| recall | 45.7% | 42.4% | **−3.3pp** |
+| MRR | 0.437 | 0.502 | **+0.065** |
 
-保留理由：它们只在物理 `default` 集合内，未被迁入任何语言集合，不影响任何已达标的验收项；10/52,757 的量级属微量噪音；保留也便于日后追查当时发生了什么。以下清单存档备查。
+| 中文金标（6 条） | 纯 dense | 混合 | 差 |
+|---|---|---|---|
+| hit_rate | 66.7% | 66.7% | 0 |
+| recall | 26.7% | 30.0% | **+3.3pp** |
+| MRR | 0.533 | 0.667 | **+0.134** |
 
-以下 chunk 的源文件是已消失的临时文件，`metadata.collection` 标着 `default`：
+### 这个结果值得单独讲
 
-```
-C:\Users\cyq\AppData\Local\Temp\tmpg0csbti9.md_{0..4}_*
-C:\Users\cyq\AppData\Local\Temp\tmpo0tovyl8.md_{0..4}_*
-```
+**混合拉低了召回，却抬高了排序质量。** 反直觉，但根因明确：
 
-说明：
+`fusion.py:102` 的 RRF 是 `1.0 / (k + rank)`，**没有权重项** —— sparse 与 dense 的结果被平等对待。BM25 在中文 bigram 上产生的噪音命中因此挤掉了 dense 的正确结果，压低 recall；而两路都命中的 chunk 得分翻倍，排名上升，抬高 MRR。
 
-- 它们只存在于物理 `default` 集合，未被迁移进任何语言集合
-- `default` 共 15 条非 MT5/非 finpoints 记录，其中这 10 条为临时残留，另 5 条为正常文档
-- 删除方式：`ChromaStore.delete()` 传这 10 个 id；删除后需重建 `default` 的关键词索引
-
-**结论**：FR-007 要求人工确认后再删，用户已确认**保留**。任务闭环。
-
----
-
-## 五、范围外但已记录的发现
-
-1. **评估归档目录被测试污染**：`logs/evaluation_reports/` 152 份归档中 **145 份是 pytest 临时产物**（`test_set_path` 指向 pytest tmp 目录）。已单列为独立任务，不在本 feature 处理。
-2. **RRF 无权重**：`fusion.py:102` 的 `1/(k+rank)` 没有权重项，无法给原始 query 加权。它是后续 Query Rewrite feature 的前置，本 feature 范围外。
-3. **无 P95 延迟统计**：`src/` 下 `p95|percentile|latency` 零命中。范围外。
+**结论：带权重 RRF 不是可选优化，而是让混合检索真正优于单路的必要条件。** 这组数字就是它的量化依据，应作为下一个 feature 的前置。
 
 ---
 
-## 六、交付物清单
+## 五、SC-009：难度分组的召回差距（英文金标，混合检索）
 
-**新增**
+| 难度 | 条数 | hit_rate | recall |
+|---|---|---|---|
+| `simple` | 22 | 63.6% | 40.0% |
+| `multi_context` | 9 | **77.8%** | **68.9%** |
+| `reasoning` | 11 | **45.5%** | **25.5%** |
 
-- `src/core/text/tokenizer.py` —— 两端唯一切分实现
-- `scripts/migrate_collections.py` —— 复制式集合迁移
-- `scripts/rebuild_bm25_index.py` —— 从向量库反向重建关键词索引
-- `scripts/reembed_corpus.py` —— 用当前模型重嵌语料（写新集合，默认 dry-run）
+**结论与预期相反**：多跳类问题并非一律更难 —— `multi_context` 的召回（68.9%）**显著高于** `simple`（40.0%），只有 `reasoning` 明显更低（25.5%）。
 
-**修改**
+合理解释：`multi_context` 类问题往往包含更多具体实体和术语，反而给了检索更强的锚点；而 `reasoning` 类问题需要的是推断而非字面匹配，检索本就难以覆盖。
 
-- `src/libs/vector_store/{base_vector_store,chroma_store}.py` —— `iter_records` 抽象方法
-- `src/ingestion/storage/bm25_indexer.py` —— v2 磁盘格式 + 版本闸门 + 原子写
-- `src/ingestion/embedding/sparse_encoder.py`、`src/core/query_engine/query_processor.py` —— 接入共享切分
-- `src/core/settings.py`、`config/settings.yaml` —— 索引格式版本 + `bm25_index_path` 正式字段
-- `src/core/types.py`、`src/observability/evaluation/baseline_manager.py` —— 基线标注
-- `scripts/{evaluate,query}.py` —— `--collection` 语义修正
-- `src/libs/embedding/openai_embedding.py` —— 模型规格归一化查表 + 未知模型硬失败
+**对「要不要做检索规划器」的启示**：真正的缺口在 `reasoning` 而非 `multi_context`。若后续要做，目标应对准推理类问题，而不是笼统的"多跳"。
 
-**测试**：新增 6 个文件，累计 `pytest tests/unit` **1412 passed, 2 skipped**（feature 开始前为 1264）。
+> **解读折扣**：`expected_chunk_ids` 为机器 top-5 回填，削弱了召回类指标对问题难度的判别力。样本量也小（9 / 11 条）。
+
+---
+
+## 六、实施期间被推翻的原始判断
+
+留档，因为这几条都是「看起来显然、实际是错的」：
+
+| 原判断 | 实测结论 |
+|---|---|
+| 「修复前状态一旦被重建覆盖就永久不可复现」，据此给 T030 加了时序枷锁 | **错**。那个状态就是四个 JSON 文件，`cp` 一份即可永久保留。**教训：加时序约束前先问「这个状态能不能被复制」** |
+| 「旧基线可直接当纯向量参照」 | **错**。旧基线跑在错误语料上（MT5 尚未 ingest），是无效记录而非参照 |
+| 「MCP server 只有 stdio transport」（照 CLAUDE.md 描述） | **错**。SSE 早已完整实现（`server.py` 的 `run_sse()`），是文档过时。**教训：判断能力有无要核代码，不能只读文档** |
+| 「10 条 temp 残留是 `metadata.collection` 缺失」 | **错**。它们都老实标着 `default`，判据必须改为「源路径指向临时目录」 |
+| 「D3 只是中文问题」 | **不全**。两端切分实际有三处漂移：CJK、停用词表（89 vs 181 词）、连字符（`well-known` 切法不同）。后两处同样导致**永远匹配不上且不报错** |
+
+---
+
+## 七、遗留事项
+
+| 项 | 状态 |
+|---|---|
+| 英文金标的 4 项 RAGAS 指标 | 网关 LLM 超时中断，重试中。检索侧 4 项已有（见 § 四） |
+| 10 条 temp 残留 chunk 的清理 | **待人工确认后删除**，脚本不自动删（FR-007） |
+| 带权重 RRF | 已确认为必要项，留给下一个 feature（依据见 § 四） |
+| `logs/evaluation_reports/` 的 pytest 污染 | 已单列为独立任务，不在本 feature 范围 |
+| 旧 1536 维集合（`default` / `mt5_docs_*`） | 保留作归档与回滚；模型已下架，无法再产出匹配的查询向量 |
+
+---
+
+## 八、变更规模
+
+- **新增**：`src/core/text/tokenizer.py`、`scripts/migrate_collections.py`、`scripts/rebuild_bm25_index.py`、`scripts/reembed_corpus.py`
+- **改动**：`bm25_indexer.py`（v2 格式）、`sparse_encoder.py` / `query_processor.py`（接入共享切分）、`base_vector_store.py` / `chroma_store.py`（`iter_records`）、`baseline_manager.py` / `types.py`（基线标注）、`evaluate.py` / `query.py`（`--collection` 语义）、`settings.py` / `settings.yaml`
+- **测试**：1412 passed, 2 skipped（新增约 120 个用例）

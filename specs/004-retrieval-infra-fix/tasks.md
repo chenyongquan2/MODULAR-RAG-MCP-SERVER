@@ -116,9 +116,9 @@
 - [x] T032 [US3] 在 `src/observability/evaluation/baseline_manager.py` 的基线记录增加 `retrieval_mode`（`dense_only` / `hybrid`）与 `corpus_validity`（`valid` / `mismatched`）两个可选字段；写入沿用既有 `_write_store_atomic()`；**不修改任何既有指标数字**（FR-011）
 - [x] T033 [P] [US3] 更新 `tests/unit/test_baseline_manager.py`：新字段的读写、旧记录缺失该字段时视为「未标注」的向后兼容行为
 - [x] T034 [US3] 把 `logs/baselines.json` 中 2026-04-28 的既有记录标注为 `corpus_validity: mismatched` —— 实测表明当时 MT5 语料尚未 ingest，该次评估检索回的是 `company_policy.md` 与临时文件，**不是**「纯向量参照」（[research.md](./research.md) Decision 7）
-- [⏸] T035 [US3] **待全量重嵌后执行**（同 T030）。注意口径断裂：重嵌换了向量空间，新数字不能与 feature-004 之前任何基线直接对比，SC-008 的对比须在新空间内重做（关 sparse 跑一次、开着跑一次）。原任务：Phase 4 完成后重跑评估（中英文各一次），与 T030 的结果逐指标对比，产出 **SC-008** 的「纯向量 vs 混合」对比表
-- [~] T036 [US3] **稀疏口径已完成**（见 [acceptance.md § 2.3](./acceptance.md)）：英文金标难度梯度实测 —— simple hit 68.2%/recall 28.2%、multi_context 66.7%/55.6%、reasoning 36.4%/20.0%。**结论与设计假设相反：难的是 reasoning 而非多跳**，multi_context 的 recall 反而是 simple 的两倍。混合口径待 dense 恢复后重测。原任务描述：用 T035 的报告做难度分组统计（`case_results` 的 `query` 字段与金标按 query 关联取 `tags.difficulty`），产出 **SC-009**：英文集 22 条 simple vs 20 条 multi_context+reasoning 的召回差距。**解读时须记入折扣**：金标的 `expected_chunk_ids` 是脚本按固定 top-5 回填的，非人工标注的真实答案边界
-- [⏸] T037 [US3] **待 T035 完成后执行**。`annotate_baseline()` 与标注字段已就位并有测试覆盖，只差数据。原任务：把修复后的结果标为新基线（`retrieval_mode: hybrid`、`corpus_validity: valid`）
+- [~] T035 [US3] **中文已完成，英文进行中**。中文金标 8 项指标全部产出（`run_id=0798cc98`，6/8 过阈值，见 [acceptance.md § 三](./acceptance.md)）。英文 42 条的 RAGAS 部分两次被网关 LLM 超时中断（`Request timed out`），检索侧 4 项已用直接测量补齐（见 acceptance.md § 四）。**评估器遇首个答案生成失败即整体中止、无部分结果** —— 对 42 条批量任务偏脆，值得单列改进
+- [x] T036 [US3] **已完成**（混合口径，见 [acceptance.md § 五](./acceptance.md)）：simple hit 63.6%/recall 40.0%、multi_context 77.8%/68.9%、reasoning 45.5%/25.5%。**结论与设计假设相反：难的是 reasoning 而非多跳** —— multi_context 的召回反而显著高于 simple（68.9% vs 40.0%）。对「要不要做检索规划器」的启示是目标该对准推理类，而非笼统的多跳
+- [x] T037 [US3] **已完成**。旧基线 `collection=default` 标注为 `dense_only` / `mismatched`（T034）；中文评估结果标为新基线 `collection=default_text-embedding-v4`、`retrieval_mode=hybrid`、`corpus_validity=valid`（`report=0798cc98`）
 
 **Checkpoint**: 评估数字可解读、可对比、可追溯。
 
@@ -129,7 +129,7 @@
 - [x] T038 [P] 全量跑 `.venv/Scripts/python.exe -m pytest tests/unit -v`，确认 80 个测试文件全通过（宪法原则七）
 - [x] T039 [P] 更新 `docs/learning/agentic-retrieval-boundary.md` 的 § 6.3：把四个缺陷标记为已修复，补上修复后的实测数字
 - [x] T040 [P] 更新 `CLAUDE.md` 中与索引格式、`--collection` 语义相关的描述
-- [x] T041 处置 10 条无归属的 temp 残留 chunk：清单已列出并交用户确认，**用户决定保留不删**（2026-08-09）。FR-007 的「人工确认」环节闭环。清单存档见 [acceptance.md § 四](./acceptance.md)
+- [ ] T041 处置 10 条无归属的 temp 残留 chunk：清单已列出并交用户确认，**用户决定保留不删**（2026-08-09）。FR-007 的「人工确认」环节闭环。清单存档见 [acceptance.md § 四](./acceptance.md)
 - [x] T042 复核 SC-001～SC-011 逐条达成情况，未达成项写明原因，结论记入本 feature 的验收记录
 
 ---
