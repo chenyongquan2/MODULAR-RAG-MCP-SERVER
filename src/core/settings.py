@@ -37,7 +37,19 @@ except ImportError:
 
 @dataclass
 class LLMSettings:
-    """LLM 配置。"""
+    """LLM 配置。
+
+    Attributes:
+        provider: LLM provider(azure | openai | ollama | deepseek | glm)
+        model: 模型标识
+        azure_endpoint: Azure 专用端点
+        api_key: API key(支持 ${VAR} 环境变量注入)
+        base_url: API base URL(OpenAI 兼容端点)
+        request_timeout_sec: 单次 LLM 调用超时(秒)。此前顶层 LLM 没有这个字段,
+            client 用 SDK 默认值,配置改不动 —— 而 42 条金标的批量评估里一次
+            网关抖动就会让整轮白跑(feature-004 T035 实测)。
+        max_retries: 单次调用的自动重试次数。同上,批量任务需要能扛住瞬时故障。
+    """
 
     provider: str  # azure | openai | ollama | deepseek | glm
     model: str
@@ -45,6 +57,8 @@ class LLMSettings:
     # repr=False:防止密钥被 dataclass 默认 repr 打进 traceback / 日志 / 断言输出
     api_key: str = field(default="", repr=False)
     base_url: str = ""
+    request_timeout_sec: int = 120
+    max_retries: int = 3
 
 
 @dataclass

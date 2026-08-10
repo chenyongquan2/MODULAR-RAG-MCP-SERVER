@@ -14,6 +14,10 @@ llm:
   model: z-ai/glm-5.2       # 上游 finpoints 代理的 model id 需要 z-ai/ 前缀;查 ${GLM_BASE_URL}/models 可列出所有可用值
   api_key: ${GLM_API_KEY}
   base_url: ${GLM_BASE_URL}
+  # 批量评估（42 条金标 × 答案生成）对瞬时故障很敏感：评估器遇首个失败即
+  # fail-fast，一次网关抖动就让整轮白跑。给足超时与重试。
+  request_timeout_sec: 180
+  max_retries: 4
 
 # Embedding 配置（使用 OpenAI 兼容接口，可接入 Qwen/其他兼容 API）
 embedding:
