@@ -137,7 +137,7 @@
 | 项 | 状态 |
 |---|---|
 | 英文金标的 4 项 RAGAS 指标 | 网关 LLM 超时中断，重试中。检索侧 4 项已有（见 § 四） |
-| 10 条 temp 残留 chunk 的清理 | **待人工确认后删除**，脚本不自动删（FR-007） |
+| 10 条 temp 残留 chunk 的清理 | ✅ **已完成（2026-08-10）**。用户确认后删除，见下方说明 |
 | 带权重 RRF | 已确认为必要项，留给下一个 feature（依据见 § 四） |
 | `logs/evaluation_reports/` 的 pytest 污染 | 已单列为独立任务，不在本 feature 范围 |
 | 旧 1536 维集合（`default` / `mt5_docs_*`） | 保留作归档与回滚；模型已下架，无法再产出匹配的查询向量 |
@@ -149,3 +149,37 @@
 - **新增**：`src/core/text/tokenizer.py`、`scripts/migrate_collections.py`、`scripts/rebuild_bm25_index.py`、`scripts/reembed_corpus.py`
 - **改动**：`bm25_indexer.py`（v2 格式）、`sparse_encoder.py` / `query_processor.py`（接入共享切分）、`base_vector_store.py` / `chroma_store.py`（`iter_records`）、`baseline_manager.py` / `types.py`（基线标注）、`evaluate.py` / `query.py`（`--collection` 语义）、`settings.py` / `settings.yaml`
 - **测试**：1412 passed, 2 skipped（新增约 120 个用例）
+
+---
+
+## 九、temp 残留清理（T041，2026-08-10 补记）
+
+FR-007 要求「删除前需人工确认」。用户 2026-08-09 先决定保留，2026-08-10 改为删除，已执行。
+
+**删除前核对**：
+
+| 检查项 | 结果 |
+|---|---|
+| 分布 | `default` 10 条、`default_text-embedding-v4` 10 条（重嵌带过去的副本）；`mt5_docs_*` 与 `finpoints_handbook` 均为 0 |
+| 金标引用 | 三份金标（含占位集）对这 10 个标识的引用数**均为 0** |
+
+**删除后必须重建索引** —— 这一步不是可选的：BM25 索引仍持有那 10 个标识，不重建就会引用向量库里已不存在的 chunk，**正好重新制造出本 feature 刚修掉的 D1 那类不一致**。两个集合都已重建。
+
+**核验**：
+
+```
+向量库条数         52,757 → 52,747
+向量库 temp 残留   10 → 0
+索引 temp 残留     10 → 0
+索引孤儿标识       0（抽查 3000 个）
+标识回查命中率     200/200（保持）
+```
+
+被删除的 10 个标识（存档）：
+
+```
+C:\Users\cyq\AppData\Local\Temp\tmpg0csbti9.md_{0..4}_{e28dd56b,f855fd86,46fd266e,740d4641,b36f9019}
+C:\Users\cyq\AppData\Local\Temp\tmpo0tovyl8.md_{0..4}_{e28dd56b,f855fd86,46fd266e,740d4641,b36f9019}
+```
+
+> 这批数据的来历：2026-04-28 那次评估检索回的正是它们与 `company_policy.md` —— 当时 MT5 语料尚未 ingest，库里只有这些临时文件。它们是那段历史的物证，现已清除。
