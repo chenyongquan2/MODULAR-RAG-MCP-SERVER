@@ -73,6 +73,19 @@ splitter:
 retrieval:
   sparse_backend: bm25      # 启用 BM25 稀疏检索
   fusion_algorithm: rrf     # rrf
+  # 融合平滑参数。此前硬编码在 Fusion.DEFAULT_K，Fusion() 构造时不读配置 ——
+  # 属宪法原则二禁止的硬编码可调参数，feature-005 补正。
+  # 默认值刻意保持 60（原硬编码值），确保升级后行为逐条不变。
+  # 必须 > 0：k=0 时第 1 名得分 1/1、第 2 名 1/2，衰减过陡，第 1 名几乎压过
+  # 其后全部结果之和，融合退化为「谁排第一谁赢」。
+  rrf_k: 60
+  # 各检索路径在融合中的相对分量。**只有相对比例有意义** ——
+  # {dense: 1.0, sparse: 0.5} 与 {dense: 2.0, sparse: 1.0} 排序完全相同。
+  # 缺失的路径缺省 1.0；单条设 0 合法，等价于关闭该路；全部为 0 会被启动期拒绝。
+  # 权重是**语料相关的**，换语料需重新校准（同「换 Judge 需重新校准阈值」）。
+  fusion_weights:
+    dense: 1.0
+    sparse: 1.0
   top_k_dense: 20           # dense 召回数量
   top_k_sparse: 20          # sparse 召回数量
   top_k_final: 10           # 最终返回数量

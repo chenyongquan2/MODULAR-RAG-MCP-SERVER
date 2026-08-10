@@ -14,7 +14,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 import yaml
 
@@ -108,13 +108,42 @@ class VectorStoreSettings:
 
 @dataclass
 class RetrievalSettings:
-    """检索配置。"""
+    """检索配置。
+
+    Attributes:
+        sparse_backend: 稀疏检索后端标识。
+        fusion_algorithm: 融合算法标识(当前仅 rrf)。
+        top_k_dense: dense 路召回数量。
+        top_k_sparse: sparse 路召回数量。
+        top_k_final: 最终返回数量。
+        rrf_k: 融合平滑参数,控制排名靠后结果的衰减速度(feature-005 T001)。
+            此前硬编码在 ``Fusion.DEFAULT_K``,且 ``Fusion()`` 构造时不读任何
+            配置 —— 属宪法原则二禁止的硬编码可调参数。默认值保持 60,确保
+            升级后行为逐条不变。
+
+            **为什么必须 > 0**:``k=0`` 时第 1 名得分 1/1、第 2 名 1/2,
+            衰减过陡,第 1 名的分量几乎压过其后全部结果之和,融合退化为
+            「谁排第一谁赢」,失去平滑意义。
+        fusion_weights: 各检索路径在融合中的相对分量(feature-005 T001)。
+            键为路径名(``dense`` / ``sparse``),值为非负数。
+
+            **只有相对比例有意义**:``{dense: 1.0, sparse: 0.5}`` 与
+            ``{dense: 2.0, sparse: 1.0}`` 产出完全相同的排序 —— 所有得分
+            等比缩放,而排序对单调变换不变。因此写比值即可,绝对值无意义。
+
+            配置中缺失的路径缺省为 1.0(新增检索路径时不强制所有部署同步
+            改配置);单条路径为 0 合法,等价于关闭该路。
+    """
 
     sparse_backend: str = "bm25"
     fusion_algorithm: str = "rrf"
     top_k_dense: int = 20
     top_k_sparse: int = 20
     top_k_final: int = 10
+    rrf_k: int = 60
+    fusion_weights: Dict[str, float] = field(
+        default_factory=lambda: {"dense": 1.0, "sparse": 1.0}
+    )
 
 
 @dataclass
@@ -713,6 +742,59 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     return settings
 
 
+def _validate_fusion_settings(retrieval: RetrievalSettings) -> None:
+    """校验融合参数(spec feature-005 T002,宪法原则三:启动期快速失败)。
+
+    这些校验刻意在启动期硬失败而非运行时静默兜底,理由见各分支注释 ——
+    共同点是**违反后不会有任何报错**,只是检索效果悄悄变差或排序失去意义。
+
+    Args:
+        retrieval: 待校验的检索配置。
+
+    Raises:
+        SettingsError: 任一参数非法时。
+    """
+    # rrf_k:必须是正整数。bool 要单独挡掉 —— Python 里 isinstance(True, int)
+    # 为真,不挡的话 YAML 写成 `rrf_k: true` 会被当作 k=1 静默通过。
+    k = retrieval.rrf_k
+    if not isinstance(k, int) or isinstance(k, bool) or k < 1:
+        raise SettingsError(
+            f"Invalid retrieval.rrf_k: {k!r}. Expected a positive integer "
+            "(k=0 makes rank-1 dominate all other results combined, "
+            "losing the smoothing that RRF exists for)"
+        )
+
+    weights = retrieval.fusion_weights
+    if not isinstance(weights, dict):
+        raise SettingsError(
+            f"Invalid retrieval.fusion_weights: {weights!r}. Expected a mapping "
+            "of route name to non-negative number"
+        )
+
+    for route, weight in weights.items():
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise SettingsError(
+                f"Invalid retrieval.fusion_weights['{route}']: {weight!r}. "
+                "Expected a non-negative number"
+            )
+        if weight < 0:
+            raise SettingsError(
+                f"Invalid retrieval.fusion_weights['{route}']: {weight}. "
+                "Weights must be non-negative"
+            )
+
+    # 全零权重必须拒绝:所有融合得分归零后,排序完全由字典遍历顺序决定,
+    # 检索结果实际上变成随机的 —— 而这不会抛任何异常、不会有任何日志。
+    # 单条路径为 0 是合法的(等价于关闭该路)。
+    if weights and not any(float(w) > 0 for w in weights.values()):
+        raise SettingsError(
+            "Invalid retrieval.fusion_weights: all weights are zero. "
+            "Every fused score would collapse to 0 and ordering would become "
+            "arbitrary, with no error raised at runtime. "
+            "Set at least one route to a positive weight"
+        )
+
+
 def validate_settings(settings: Settings) -> None:
     """校验 Settings 中的必填字段。
 
@@ -748,6 +830,9 @@ def validate_settings(settings: Settings) -> None:
             "Invalid mcp_server.port: "
             f"{settings.mcp_server.port}. Expected 1-65535"
         )
+
+    # 融合参数校验（spec feature-005 T002）
+    _validate_fusion_settings(settings.retrieval)
 
     # 关键词索引格式版本校验（spec feature-004 T001）
     # 该值决定 BM25Indexer.load() 接受哪一版磁盘格式。配成非正整数会让

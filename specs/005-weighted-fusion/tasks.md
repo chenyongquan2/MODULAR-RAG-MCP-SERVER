@@ -21,10 +21,10 @@
 
 **Purpose**: 让权重与平滑参数可配置，这是后续一切的前提
 
-- [ ] T001 在 `src/core/settings.py` 的 `RetrievalSettings` 增加 `rrf_k: int = 60` 与 `fusion_weights: Dict[str, float] = field(default_factory=lambda: {"dense": 1.0, "sparse": 1.0})`，附中文注释说明「只有相对比例有意义」（[data-model.md § 2](./data-model.md)）
-- [ ] T002 在 `src/core/settings.py` 的 `validate_settings()` 增加校验（宪法原则三，启动期硬失败）：`rrf_k` 必须为正整数（含挡掉 `bool`）；每个权重必须是非负数值；**权重不得全部为 0**（否则所有得分归零、排序退化为字典序，且不会有任何报错）
-- [ ] T003 [P] 在 `config/settings.yaml` 的 `retrieval` 段增加 `rrf_k: 60` 与 `fusion_weights: {dense: 1.0, sparse: 1.0}`，注释说明默认值刻意保持当前硬编码值以确保升级后行为不变
-- [ ] T004 [P] 新建 `tests/unit/test_settings_retrieval.py`：新字段默认值、非法值逐类被拒（负数 / 全零 / 非数值 / `rrf_k<=0` / `rrf_k=True`）、**向后兼容回归**（`settings.yaml` 不含新字段时仍能加载并通过校验）
+- [x] T001 在 `src/core/settings.py` 的 `RetrievalSettings` 增加 `rrf_k: int = 60` 与 `fusion_weights: Dict[str, float] = field(default_factory=lambda: {"dense": 1.0, "sparse": 1.0})`，附中文注释说明「只有相对比例有意义」（[data-model.md § 2](./data-model.md)）
+- [x] T002 在 `src/core/settings.py` 的 `validate_settings()` 增加校验（宪法原则三，启动期硬失败）：`rrf_k` 必须为正整数（含挡掉 `bool`）；每个权重必须是非负数值；**权重不得全部为 0**（否则所有得分归零、排序退化为字典序，且不会有任何报错）
+- [x] T003 [P] 在 `config/settings.yaml` 的 `retrieval` 段增加 `rrf_k: 60` 与 `fusion_weights: {dense: 1.0, sparse: 1.0}`，注释说明默认值刻意保持当前硬编码值以确保升级后行为不变
+- [x] T004 [P] 新建 `tests/unit/test_settings_retrieval.py`：新字段默认值、非法值逐类被拒（负数 / 全零 / 非数值 / `rrf_k<=0` / `rrf_k=True`）、**向后兼容回归**（`settings.yaml` 不含新字段时仍能加载并通过校验）
 
 **Checkpoint**: 配置可读、非法值在启动期即被拒绝
 
