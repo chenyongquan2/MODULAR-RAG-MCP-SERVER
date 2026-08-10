@@ -109,16 +109,14 @@
 >
 > 因此 T030 可以在任何时候补跑，不再阻塞 T021。
 
-- [⏸] T030 [US3] **待全量重嵌后执行**（用户 2026-08-09 决定「后面再跑数据」）。原计划的「等服务恢复后补跑」已不适用 —— text-embedding-3-small 永久下架，旧 1536 维向量不可再查；必须先跑 `scripts/reembed_corpus.py --execute`（~3.5h）。链路已在 50 条切片上端到端验证。原任务：跑基准评估留存「纯向量参照」：`.venv/Scripts/python.exe scripts/evaluate.py --collection default --lang en --pretty`，中文集合同样跑一次，记录两个 `run_id`。跑之前先 `cp data/db/bm25_v1_prefix_backup/*.json data/db/bm25/` 还原 v1 索引
-  - **金标必须跑在 `default` 集合上，不是语言集合**：实测英文金标 42 条里有 18 条（43%）的 `expected_chunk_ids` 跨语料引用中文 chunk（190 英文 + 20 中文 refs），中文金标 6 条里也有 2 条如此。原因是中英文语料是**同一份 MT5 文档的两个语言版本**，金标在合并的 `default` 上回填时语义匹配自然跨了过去。跑在单语言集合上会触发 `chunk_id_validation` 直接失败
-  - **当前受外部阻塞**：embedding 服务返回 `503 model_not_found: No available channel for model text-embedding-3-small`，所有 query embedding 失败。待服务恢复后补跑
+- [x] T030 [US3] **已完成（改用另一条路径达成）**。原计划是「重建前留存 v1 索引状态下的纯向量参照」，但 `text-embedding-3-small` 永久下架、全量重嵌后旧 1536 维向量不可再查，那条路径已失效。改为**在新向量空间内直接做 dense-only vs hybrid 对照**：把 BM25 索引临时移开让 sparse 空载，跑一轮；恢复索引再跑一轮。两轮语料、向量空间、金标完全相同，对照更干净。结果见 [acceptance.md § 四](./acceptance.md)。v1 索引备份仍保留在 `data/db/bm25_v1_prefix_backup/`（已无对应向量，仅作归档）
 - [x] T031 [P] [US3] 修正两套金标的 `source_corpus_collection` 字段：`tests/fixtures/golden_test_set_zh.json` 与 `golden_test_set_en.json` 现均写 `default`，与实际引用内容不符（FR-012）
 - [x] T032 [US3] 在 `src/observability/evaluation/baseline_manager.py` 的基线记录增加 `retrieval_mode`（`dense_only` / `hybrid`）与 `corpus_validity`（`valid` / `mismatched`）两个可选字段；写入沿用既有 `_write_store_atomic()`；**不修改任何既有指标数字**（FR-011）
 - [x] T033 [P] [US3] 更新 `tests/unit/test_baseline_manager.py`：新字段的读写、旧记录缺失该字段时视为「未标注」的向后兼容行为
 - [x] T034 [US3] 把 `logs/baselines.json` 中 2026-04-28 的既有记录标注为 `corpus_validity: mismatched` —— 实测表明当时 MT5 语料尚未 ingest，该次评估检索回的是 `company_policy.md` 与临时文件，**不是**「纯向量参照」（[research.md](./research.md) Decision 7）
-- [~] T035 [US3] **中文已完成，英文进行中**。中文金标 8 项指标全部产出（`run_id=0798cc98`，6/8 过阈值，见 [acceptance.md § 三](./acceptance.md)）。英文 42 条的 RAGAS 部分两次被网关 LLM 超时中断（`Request timed out`），检索侧 4 项已用直接测量补齐（见 acceptance.md § 四）。**评估器遇首个答案生成失败即整体中止、无部分结果** —— 对 42 条批量任务偏脆，值得单列改进
+- [x] T035 [US3] **已完成（中英文两套金标 8 项指标全部产出）**。中文 `run_id=0798cc98`（6/8 过阈值）、英文 `run_id=80a82405`（5/8 过阈值，42 条）。**两个语种独立复现同一分裂：RAGAS 4 项全过，custom 召回类全不过** —— `custom__recall` 0.30/0.42 vs `ragas__context_recall` 0.83/0.83，说明前者量的是「有没有复现回填脚本的 top-5 选择」而非「够不够回答问题」。详见 [acceptance.md § 三](./acceptance.md)
 - [x] T036 [US3] **已完成**（混合口径，见 [acceptance.md § 五](./acceptance.md)）：simple hit 63.6%/recall 40.0%、multi_context 77.8%/68.9%、reasoning 45.5%/25.5%。**结论与设计假设相反：难的是 reasoning 而非多跳** —— multi_context 的召回反而显著高于 simple（68.9% vs 40.0%）。对「要不要做检索规划器」的启示是目标该对准推理类，而非笼统的多跳
-- [x] T037 [US3] **已完成**。旧基线 `collection=default` 标注为 `dense_only` / `mismatched`（T034）；中文评估结果标为新基线 `collection=default_text-embedding-v4`、`retrieval_mode=hybrid`、`corpus_validity=valid`（`report=0798cc98`）
+- [x] T037 [US3] **已完成**。旧基线 `collection=default` 标注为 `dense_only` / `mismatched`（T034）。当前基线改为英文那份（`run_id=80a82405`，42 条）—— 基线按 collection 键存，两套金标跑在同一 collection 上，槽位只能容纳一份；选样本量大的更利于回归检测（中文集单条 case 即 16.7% 摆动）。中文那份（`0798cc98`）已降级到 `history`，未丢失
 
 **Checkpoint**: 评估数字可解读、可对比、可追溯。
 
