@@ -338,7 +338,26 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 
 ## Active Feature (Spec-Kit managed — do not edit manually)
 
-> 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->` 与 `<!-- SPECKIT END -->` 之间的内容。
+> 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->
+**Active SDD Plan**: [specs/005-weighted-fusion/plan.md](specs/005-weighted-fusion/plan.md)
+
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+above (Feature-005: 带权重的结果融合(混合检索劣于单路的倒退)). Sibling
+artifacts in the same directory:
+[spec.md](specs/005-weighted-fusion/spec.md),
+[research.md](specs/005-weighted-fusion/research.md),
+[data-model.md](specs/005-weighted-fusion/data-model.md),
+[contracts/](specs/005-weighted-fusion/contracts/),
+[quickstart.md](specs/005-weighted-fusion/quickstart.md).
+
+> 注:本 feature 不单开 git 分支,沿用 `dev-from-clean-start`。speckit 脚本
+> 需要 `005-*` 形式的分支名,故调用时用 `SPECIFY_FEATURE=005-weighted-fusion`
+> 旁路 `check_feature_branch` 校验(该变量是 spec-kit 官方支持的覆写点)。
+
+> ⚠️ **本 feature 的所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的
+> protobuf 是 5.29.3,`import chromadb` 会失败;`.venv` 里是 3.20.3。
+<!-- SPECKIT END -->` 之间的内容。
 
 <!-- SPECKIT START -->
 **Active SDD Plan**: [specs/004-retrieval-infra-fix/plan.md](specs/004-retrieval-infra-fix/plan.md)
