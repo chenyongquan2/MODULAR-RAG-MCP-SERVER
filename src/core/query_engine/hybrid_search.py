@@ -88,7 +88,16 @@ class HybridSearch:
             self._fusion = fusion
         else:
             from src.core.query_engine.fusion import Fusion
-            self._fusion = Fusion()
+
+            # feature-005 T012:从配置构造，不再无参构造。
+            # 此前 Fusion() 不读任何配置、k=60 硬编码在 DEFAULT_K，属宪法
+            # 原则二禁止的硬编码可调参数。
+            if settings is None:
+                raise ValueError("settings must be provided if fusion is not provided")
+            self._fusion = Fusion(
+                k=settings.retrieval.rrf_k,
+                weights=settings.retrieval.fusion_weights,
+            )
 
         if reranker is not None:
             self._reranker = reranker
@@ -201,8 +210,13 @@ class HybridSearch:
         if trace is not None:
             trace.start_stage("fusion")
 
+        # feature-005 T013:按**命名映射**调用，权重靠键查找而非位置。
+        # 此前传的是位置列表，靠下标区分两路 —— 而本文件与 fusion.py 曾经
+        # 对这两路的顺序理解相反（fusion.py 的注释写作 [sparse, dense]）。
+        # 等权时该错误无害，加权重后就是让 dense 拿到 sparse 权重的真 bug，
+        # 且不会报错。
         fused_results = self._fusion.fuse(
-            [dense_results, sparse_results],
+            {"dense": dense_results, "sparse": sparse_results},
             top_k=effective_top_k * 2,
         )
 
@@ -214,6 +228,11 @@ class HybridSearch:
                     "input_dense": len(dense_results),
                     "input_sparse": len(sparse_results),
                     "output_count": len(fused_results),
+                    # feature-005 T014 / FR-008:记录本次实际生效的权重。
+                    # 没有它，事后无法判断某次检索用的什么配比 —— 而权重
+                    # 配错不会报错，只会让效果悄悄变差。
+                    "weights": getattr(self._fusion, "weights", None),
+                    "rrf_k": getattr(self._fusion, "_k", None),
                 },
             )
 

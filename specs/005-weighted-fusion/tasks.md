@@ -36,13 +36,13 @@
 
 **⚠️ CRITICAL**: 本阶段完成前，任何 user story 不能开工
 
-- [ ] T005 按 [contracts/fusion.contract.md](./contracts/fusion.contract.md) 改造 `src/core/query_engine/fusion.py`：`__init__` 接受 `k: int = 60` 与 `weights: Optional[Mapping[str, float]] = None`；`fuse()` 入参从 `List[List[RetrievalResult]]` 改为 `Mapping[str, Sequence[RetrievalResult]]`；得分公式改为 `weight[r] / (k + rank)`；权重按**键**查找，缺失的键缺省 `1.0`
-- [ ] T006 删除 `src/core/query_engine/fusion.py:87` 那条**把两路顺序写反**的注释（它写 `[sparse_result, dense_result]`，而 `hybrid_search.py:204` 传的是相反顺序）。改接口后该注释既过时又有害 —— 它正是「按顺序对应会出错」的现成例证，理由留在 contract 与 data-model 里，代码里不留错误注释
-- [ ] T007 更新 `tests/unit/test_fusion_rrf.py` 的 9 个既有用例适配新入参形态。**每一处断言改动都必须在用例 docstring 里写明理由** —— 沿用 Feature-003 T017 与 Feature-004 T028 的纪律，防止靠改断言蒙过
-- [ ] T008 在 `tests/unit/test_fusion_rrf.py` 增加**顺序无关守卫**（SC-012 / FR-002）：`fuse({"dense": D, "sparse": S})` 与 `fuse({"sparse": S, "dense": D})` 输出逐条相等。这是本 feature 最危险失败模式的唯一闸门 —— 权重与路径错配**不报错**，只是效果悄悄变差
-- [ ] T009 在 `tests/unit/test_fusion_rrf.py` 增加**空路无副作用守卫**（SC-013 / FR-004）：`fuse({"dense": D, "sparse": []})` 的排序与 `fuse({"dense": D})` 一致。同时守住 [research.md](./research.md) Decision 4 的「刻意不做动态归一化」不被后人当作优化加回来
-- [ ] T010 在 `tests/unit/test_fusion_rrf.py` 增加**等权兼容守卫**（SC-006 / FR-003）：权重全相等时输出排序与本 feature 之前逐条一致（等权时新公式是旧公式的常数倍，排序不变）
-- [ ] T011 [P] 在 `tests/unit/test_fusion_rrf.py` 增加权重语义用例：某路权重为 0 时该路不影响任何结果（SC-005）；权重比例相同的两组配置（如 `1:0.5` 与 `2:1`）输出完全相同（[data-model.md § 2](./data-model.md) 的「只有相对比例有意义」）
+- [x] T005 按 [contracts/fusion.contract.md](./contracts/fusion.contract.md) 改造 `src/core/query_engine/fusion.py`：`__init__` 接受 `k: int = 60` 与 `weights: Optional[Mapping[str, float]] = None`；`fuse()` 入参从 `List[List[RetrievalResult]]` 改为 `Mapping[str, Sequence[RetrievalResult]]`；得分公式改为 `weight[r] / (k + rank)`；权重按**键**查找，缺失的键缺省 `1.0`
+- [x] T006 删除 `src/core/query_engine/fusion.py:87` 那条**把两路顺序写反**的注释（它写 `[sparse_result, dense_result]`，而 `hybrid_search.py:204` 传的是相反顺序）。改接口后该注释既过时又有害 —— 它正是「按顺序对应会出错」的现成例证，理由留在 contract 与 data-model 里，代码里不留错误注释
+- [x] T007 更新 `tests/unit/test_fusion_rrf.py` 的 9 个既有用例适配新入参形态。**每一处断言改动都必须在用例 docstring 里写明理由** —— 沿用 Feature-003 T017 与 Feature-004 T028 的纪律，防止靠改断言蒙过
+- [x] T008 在 `tests/unit/test_fusion_rrf.py` 增加**顺序无关守卫**（SC-012 / FR-002）：`fuse({"dense": D, "sparse": S})` 与 `fuse({"sparse": S, "dense": D})` 输出逐条相等。这是本 feature 最危险失败模式的唯一闸门 —— 权重与路径错配**不报错**，只是效果悄悄变差
+- [x] T009 在 `tests/unit/test_fusion_rrf.py` 增加**空路无副作用守卫**（SC-013 / FR-004）：`fuse({"dense": D, "sparse": []})` 的排序与 `fuse({"dense": D})` 一致。同时守住 [research.md](./research.md) Decision 4 的「刻意不做动态归一化」不被后人当作优化加回来
+- [x] T010 在 `tests/unit/test_fusion_rrf.py` 增加**等权兼容守卫**（SC-006 / FR-003）：权重全相等时输出排序与本 feature 之前逐条一致（等权时新公式是旧公式的常数倍，排序不变）
+- [x] T011 [P] 在 `tests/unit/test_fusion_rrf.py` 增加权重语义用例：某路权重为 0 时该路不影响任何结果（SC-005）；权重比例相同的两组配置（如 `1:0.5` 与 `2:1`）输出完全相同（[data-model.md § 2](./data-model.md) 的「只有相对比例有意义」）
 
 **Checkpoint**: 融合支持权重，三条不变量由测试固定
 
@@ -54,11 +54,11 @@
 
 **Independent Test**: 修改权重配置并重启，同一查询的融合排序发生可观测变化；关键词路径权重设为 0 时结果与纯语义检索一致。**本阶段完成即可独立交付** —— 运维者获得调节手段，默认仍是等权（行为不变）。
 
-- [ ] T012 [US1] 修改 `src/core/query_engine/hybrid_search.py:91`：`Fusion` 改为从 `settings` 构造（传 `settings.retrieval.rrf_k` 与 `settings.retrieval.fusion_weights`），不再无参构造。这同时修掉一处既有的配置驱动违规（`DEFAULT_K = 60` 硬编码、构造时不读任何配置）
-- [ ] T013 [US1] 修改 `src/core/query_engine/hybrid_search.py:204`：改为按命名映射调用 `fuse({"dense": dense_results, "sparse": sparse_results}, top_k=...)`
-- [ ] T014 [US1] 在 `src/core/query_engine/hybrid_search.py` 的 `finish_stage("fusion", ...)` payload 中加入本次生效的权重（FR-008 / SC-008），与既有的 `input_dense` / `input_sparse` / `output_count` 并列
-- [ ] T015 [P] [US1] 新建 `tests/unit/test_hybrid_search_fusion_wiring.py`：验证 `Fusion` 由 settings 构造（改配置 `rrf_k` / 权重能传达到融合器）、`fuse` 收到的是命名映射而非位置列表、fusion 打点 payload 含生效权重
-- [ ] T016 [US1] 端到端手工核验：`--collection default_text-embedding-v4` 下对同一查询分别跑 `sparse: 1.0` 与 `sparse: 0`，确认前者结果含仅被关键词路径命中的内容、后者与纯语义检索一致（SC-004 / SC-005）
+- [x] T012 [US1] 修改 `src/core/query_engine/hybrid_search.py:91`：`Fusion` 改为从 `settings` 构造（传 `settings.retrieval.rrf_k` 与 `settings.retrieval.fusion_weights`），不再无参构造。这同时修掉一处既有的配置驱动违规（`DEFAULT_K = 60` 硬编码、构造时不读任何配置）
+- [x] T013 [US1] 修改 `src/core/query_engine/hybrid_search.py:204`：改为按命名映射调用 `fuse({"dense": dense_results, "sparse": sparse_results}, top_k=...)`
+- [x] T014 [US1] 在 `src/core/query_engine/hybrid_search.py` 的 `finish_stage("fusion", ...)` payload 中加入本次生效的权重（FR-008 / SC-008），与既有的 `input_dense` / `input_sparse` / `output_count` 并列
+- [x] T015 [P] [US1] 新建 `tests/unit/test_hybrid_search_fusion_wiring.py`：验证 `Fusion` 由 settings 构造（改配置 `rrf_k` / 权重能传达到融合器）、`fuse` 收到的是命名映射而非位置列表、fusion 打点 payload 含生效权重
+- [x] T016 [US1] 端到端手工核验：`--collection default_text-embedding-v4` 下对同一查询分别跑 `sparse: 1.0` 与 `sparse: 0`，确认前者结果含仅被关键词路径命中的内容、后者与纯语义检索一致（SC-004 / SC-005）
 
 **Checkpoint**: 权重可配置、可观测、可验证。默认等权，行为与之前一致。
 
