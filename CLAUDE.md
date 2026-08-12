@@ -129,33 +129,45 @@ The Streamlit dashboard reads these traces and dynamically renders based on `met
 
 ## Development Workflow
 
-### Spec-Driven Development (Legacy — Transitional)
+### Mandatory SDD Workflow — OpenSpec
 
-> **Status**: 本节描述项目早期的自研 SDD 模式,目前处于退役过渡期。**新 feature 走 Spec-Kit**(见下节 § Mandatory SDD Workflow),legacy DEV_SPEC.md 任务迁移完后本节会移除。
+自 2026-08-12 起本项目用 **OpenSpec** 做 spec-driven development(此前是 GitHub Spec-Kit,已退役,见下节 § SDD 历史)。
 
-Originally this project used DEV_SPEC.md as the single source of truth:
-- All features are defined with detailed technical specs in DEV_SPEC.md
-- Tasks are tracked with progress status directly in DEV_SPEC.md
-- The `auto-coder` skill automates this workflow
+**硬约束与项目底座在 [openspec/config.yaml](openspec/config.yaml) 的 `context:` 字段** —— 七条核心原则(provider 无关、配置驱动、快速失败、追踪显式、结构化日志、类型安全、测试支撑变更)、追溯性要求、以及一份「已知陷阱」清单都在那里。**冲突时以 config.yaml 为准。**
 
-**新 feature 不要走这个流程** —— 直接看下一节。
+> OpenSpec 的规格是 **delta 模型**(`ADDED` / `MODIFIED` / `REMOVED`),只描述这次改了什么、不重述整个系统。这意味着 AI 必须先知道「现在是什么」—— 所以 `config.yaml` 的 § 已知陷阱 和本文件的 § Important Implementation Notes 是 delta 能否成立的前提,**它们不是可选背景资料**。
 
-### Mandatory SDD Workflow
+目录布局:
 
-Since 2026-04-23, this project uses GitHub Spec-Kit for feature development. See [docs/sdd-guide.md](docs/sdd-guide.md) for the full guide.
+| 路径 | 含义 |
+|---|---|
+| `openspec/specs/` | 当前真相 —— 已落地能力的需求规格 |
+| `openspec/changes/<name>/` | 在途变更(`proposal.md` / `design.md` / `tasks.md` / `specs/`) |
+| `openspec/changes/archive/` | 已完成变更,按日期归档 |
+| `openspec/config.yaml` | 项目底座 + 各产物的撰写规则 |
 
-**Project Constitution**: 本项目硬约束在 [.specify/memory/constitution.md](.specify/memory/constitution.md)(2026-04-25 立宪 v1.0.0)。**冲突时以宪法为准**(见宪法 § Governance / Authority)。AI 在生成 plan 时必须执行 plan-template.md 的 Constitution Check 区段。
+流程(非平凡变更走这条,slash command 或同名 skill 均可):
 
-For any feature or non-trivial change, the AI MUST follow:
+1. `/opsx:explore` —— 想不清楚时先探索,不产出正式产物(可跳过)
+2. `/opsx:propose "<想做什么>"` —— 一步生成 proposal + design + specs + tasks
+3. `/opsx:apply` —— 按 tasks 实现;改完 `src/` 必须在 `.venv` 下 `pytest tests/unit -v` 全绿
+4. `/opsx:archive` —— 归档,并把这次的教训回写到 `CLAUDE.md` + `config.yaml` 的 § 已知陷阱
 
-1. Check if `.specify/features/<name>/` exists for this task
-2. If NO: run `speckit-specify` first → `speckit-plan` → `speckit-tasks`
-3. Only AFTER `tasks.md` exists, run `speckit-implement` or write code directly
-4. NEVER jump straight to Edit/Write for new features
+常用 CLI:`openspec list` / `openspec status <change>` / `openspec validate --all` / `openspec view`。
 
-**Exceptions (SDD not required)**: 见宪法 [Rule VIII 的例外清单](.specify/memory/constitution.md)(避免本文件与宪法漂移)。
+**没有相位门** —— 任何产物随时可改,改方向不需要重跑整条链。这是换掉 Spec-Kit 的主要原因。代价是纪律靠约定而非工具强制,所以下面的例外清单要自觉遵守。
 
-**Transition period**: `auto-coder` skill and `speckit-implement` coexist. New features should prefer `speckit-implement`. `auto-coder` will be retired once all legacy DEV_SPEC tasks are migrated.
+**例外(不需要走 SDD)**:单文件 typo / 注释;依赖版本升级;`scripts/dev/` 下一次性探索脚本;根因明确且 < 10 行的 bug 修复;纯文档变更(`docs/`、`DEV_SPEC.md`、`CLAUDE.md`);为已有代码补测试(纯 `tests/` 新增,不改 `src/`)。
+
+**追溯性**:修改 `src/` 的 commit message 需引用对应任务(如 `refs T-003`),上述例外不强制。
+
+### SDD 历史(只读,不要在里面新增)
+
+| 资产 | 时期 | 现状 |
+|---|---|---|
+| `specs/001-005/` + `.specify/` | 2026-04 ~ 2026-08,GitHub Spec-Kit | **已冻结**。当作探索时的参考材料,不要转换成 OpenSpec 规格。宪法 v1.0.0 原文留在 `.specify/memory/constitution.md` 作 ADR,其效力已转移到 `openspec/config.yaml` |
+| `.specify/archived-skills/` | 同上 | 8 个 `speckit-*` skill 已停用移入此处(`.claude/` 被 gitignore,故存于跟踪目录以便回滚) |
+| `DEV_SPEC.md` + `auto-coder` skill | 更早的自研 SDD | DEV_SPEC.md 现仅作高层技术设计参考(类似 ADR);`auto-coder` skill 保留,用于处理尚未迁移的 legacy 任务。**新 feature 不走这两条** |
 
 ### Adding a New Provider
 
@@ -320,7 +332,7 @@ evaluation:
 
 ## Working with DEV_SPEC.md
 
-> **过渡期说明**:DEV_SPEC.md 现仅作**高层技术设计参考**(类似 ADR);新 feature 的任务追踪在 `.specify/features/<name>/tasks.md`,**不在** DEV_SPEC.md。本节描述的是 legacy 流程,留作历史参考与 legacy 任务定位。
+> **说明**:DEV_SPEC.md 现仅作**高层技术设计参考**(类似 ADR);新变更的任务追踪在 `openspec/changes/<name>/tasks.md`,**不在** DEV_SPEC.md。本节描述的是 legacy 流程,留作历史参考与 legacy 任务定位。
 
 DEV_SPEC.md contains the complete technical specification organized as:
 - Section 1-2: Project overview and design principles
@@ -338,46 +350,12 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 - **Code Comments**: 相关代码需要加上必要的中文注释，帮助理解 RAG 概念和实现细节
 - **Testing**: 编写代码后，需要运行单元测试 (`pytest tests/unit -v`)，确保用例通过
 
-## Active Feature (Spec-Kit managed — do not edit manually)
+## Active Change
 
-> 本节由 `speckit-plan` 自动维护,指向**当前在做的单个 active feature**。每次有新 feature 进入 implement 阶段时,Spec-Kit 会**覆写**这个块的内容(不累积、不拓展)。**请勿手工编辑** `<!-- SPECKIT START -->
-**Active SDD Plan**: [specs/005-weighted-fusion/plan.md](specs/005-weighted-fusion/plan.md)
+当前在途的变更用 `openspec list` 查看,不在本文件里登记 —— 这里曾有一个 `speckit-plan` 自动维护的 "Active Feature" 块,它在 2026-08-12 随 Spec-Kit 一起移除(该块设计上应覆写,实际却累积出了一个陈旧的 Feature-004 副本,是它退役的一个理由)。
 
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
-above (Feature-005: 带权重的结果融合(混合检索劣于单路的倒退)). Sibling
-artifacts in the same directory:
-[spec.md](specs/005-weighted-fusion/spec.md),
-[research.md](specs/005-weighted-fusion/research.md),
-[data-model.md](specs/005-weighted-fusion/data-model.md),
-[contracts/](specs/005-weighted-fusion/contracts/),
-[quickstart.md](specs/005-weighted-fusion/quickstart.md).
+最后一个 Spec-Kit feature 是 **005-weighted-fusion**(带权重的结果融合),已完成并冻结在 [specs/005-weighted-fusion/](specs/005-weighted-fusion/)。
 
-> 注:本 feature 不单开 git 分支,沿用 `dev-from-clean-start`。speckit 脚本
-> 需要 `005-*` 形式的分支名,故调用时用 `SPECIFY_FEATURE=005-weighted-fusion`
-> 旁路 `check_feature_branch` 校验(该变量是 spec-kit 官方支持的覆写点)。
+> ⚠️ **本项目所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的 protobuf 是 5.29.3,`import chromadb` 会失败;`.venv` 里是 3.20.3。
 
-> ⚠️ **本 feature 的所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的
-> protobuf 是 5.29.3,`import chromadb` 会失败;`.venv` 里是 3.20.3。
-<!-- SPECKIT END -->` 之间的内容。
-
-<!-- SPECKIT START -->
-**Active SDD Plan**: [specs/004-retrieval-infra-fix/plan.md](specs/004-retrieval-infra-fix/plan.md)
-
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
-above (Feature-004: 检索基础设施修正(混合检索从未生效)). Sibling
-artifacts in the same directory:
-[spec.md](specs/004-retrieval-infra-fix/spec.md),
-[research.md](specs/004-retrieval-infra-fix/research.md),
-[data-model.md](specs/004-retrieval-infra-fix/data-model.md),
-[contracts/](specs/004-retrieval-infra-fix/contracts/),
-[quickstart.md](specs/004-retrieval-infra-fix/quickstart.md).
-
-> 注:本 feature 不单开 git 分支,沿用 `dev-from-clean-start`。speckit 脚本
-> 需要 `004-*` 形式的分支名,故调用时用 `SPECIFY_FEATURE=004-retrieval-infra-fix`
-> 旁路 `check_feature_branch` 校验(该变量是 spec-kit 官方支持的覆写点)。
-
-> ⚠️ **本 feature 的所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的
-> protobuf 是 5.29.3,`import chromadb` 会失败;`.venv` 里是 3.20.3。
-<!-- SPECKIT END -->
+> 注:本项目不为单个变更开 git 分支,一律沿用 `dev-from-clean-start`。

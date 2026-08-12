@@ -1,0 +1,123 @@
+schema: spec-driven
+
+# ---------------------------------------------------------------------------
+# Project context — 提供给 AI 生成 proposal / design / tasks 时的项目底座。
+#
+# 这里承载两类东西:
+#   (A) 硬约束 —— 原 .specify/memory/constitution.md v1.0.0 的七条核心原则。
+#       宪法本身已冻结归档,内容以此处为准。
+#   (B) 当前状态 —— OpenSpec 的 delta 规格模型(ADDED/MODIFIED/REMOVED)只描述
+#       "改了什么",因此必须让 AI 先知道"现在是什么"。下面 § 已知陷阱 里那些
+#       都是踩过的坑,漏掉任何一条都会让 delta 建立在错误的前提上。
+# ---------------------------------------------------------------------------
+context: |
+  ## 项目
+  Modular RAG MCP Server —— 通过 MCP 协议暴露知识检索能力的模块化 RAG 服务。
+  核心价值:每个组件(LLM / embedding / splitter / 向量库 / reranker / evaluator)
+  都可插拔,换 provider 只改配置不改代码。
+
+  技术栈:Python 3.11+ / ChromaDB / BM25 / MCP(stdio + SSE)/ Streamlit dashboard /
+  RAGAS + 自研 custom 双评估后端。
+  沟通语言:中文。用户是 RAG 经验尚浅的学习者,代码需配中文注释解释 RAG 概念。
+
+  ## 硬约束(NON-NEGOTIABLE 者不接受例外登记)
+
+  1. Provider 无关性 —— 可替换组件必须经抽象基类访问。业务代码
+     (`src/core/`、`src/mcp/`、`scripts/`)禁止 import 具体 provider 实现、禁止
+     出现 `if provider == "openai"` 这类分支。实例化只走
+     `src/libs/<component>/<component>_factory.py`。
+     理由:硬编码 provider 名 = 项目核心价值破产。
+
+  2. 配置驱动 —— 所有运行时行为差异经 `config/settings.yaml` + 环境变量控制,
+     每个可调参数有 `src/core/settings.py` 的 dataclass 字段对应。允许从 env 读
+     取「值」(API key),禁止据 env 改变「逻辑结构」(如 `if env == "prod"`)。
+
+  3. 快速失败校验 —— 配置校验在 `load_settings()` 启动期完成,非法配置立刻抛
+     `ValueError`。禁止 try/except 吞掉后静默回退默认值。
+
+  4. 追踪显式化 —— TraceContext 必须是显式函数参数。禁止 `contextvars` /
+     `threading.local` / 全局状态。所有 pipeline 函数签名带 `trace_ctx`。
+
+  5. 结构化日志(NON-NEGOTIABLE)—— 日志一律走
+     `from observability.logger import get_logger`,写 stderr。`src/` 下禁止任何
+     `print()`。理由:MCP stdio transport 用 stdout 传 JSON-RPC,混入 stdout 的
+     print 会直接破坏协议、整个 server 不可用。这是正确性约束不是风格偏好。
+
+  6. 类型安全 —— `src/` 下 public 函数(非 `_` 开头)需完整类型注解;跨模块共享
+     的领域类型(Document / Chunk / SearchResult / TraceContext)集中定义在
+     `src/core/types.py`。
+
+  7. 测试支撑变更(NON-NEGOTIABLE)—— 每个实现任务配套 `tests/unit/` 单元测试;
+     改 `src/` 的 commit 之前 `pytest tests/unit -v` 必须全绿。集成/E2E 可分阶段
+     补,单元测试不可缺位。
+
+  ## 追溯性
+  修改 `src/` 的 commit message 需引用对应任务(如 `refs T-003`)。
+  例外:单文件 typo / 依赖升级 / `scripts/dev/` 一次性脚本 / 根因明确且 < 10 行的
+  bug 修复 / 纯文档变更 / 纯 `tests/` 新增。
+
+  ## 已知陷阱(delta 规格必须建立在这些前提上)
+
+  - 生效集合是 `default_text-embedding-v4`(1024 维,qwen/text-embedding-v4)。
+    旧的 1536 维集合(`default` / `mt5_docs_*`)是归档,其模型
+    `text-embedding-3-small` 已于 2026-08-09 永久下架,**不要把 collection_name
+    指回去**。
+  - 模型下架是这个网关的常态,不是一次性事故。遇到 `503 model_not_found` 先跑
+    `curl ${GLM_BASE_URL}/models` 看可用清单,再改 `settings.yaml`。
+  - `settings.vector_store.collection_name` 是 dense 与 sparse 两路共同的唯一
+    真源:dense 用它选物理 collection,sparse 用它选 BM25 索引文件。CLI 的
+    `--collection` 覆盖这个值(真正切换检索范围),不是塞进 `filters` 做融合后
+    过滤。`filters` 只用于 `doc_type` / `tags` 维度。
+  - 切分口径:查询端与索引端必须共用 `src/core/text/tokenizer.py`,禁止各留一份。
+    两端漂移的失败是**静默的** —— 不报错,只是召回恒为空。由
+    `tests/unit/test_tokenizer.py::TestBothEndsAgree` 守住。
+  - BM25 索引格式 v2,版本不匹配时 `BM25Indexer.load()` 直接抛 `ValueError`,
+    不静默降级。重建:`python scripts/rebuild_bm25_index.py --all`。
+  - 融合权重 `retrieval.fusion_weights` 与 `retrieval.rrf_k` 是配置项且**语料
+    相关**。只有相对比例有意义。当前 `sparse=0.1` 由英文金标校准得出,换语料必须
+    用 `scripts/calibrate_fusion_weights.py` 重新校准。
+  - 金标的 `recall` / `hit_rate` 不是混合检索的中立裁判:`backfill_chunk_ids.py`
+    用纯 dense 检索回填期望 chunk_id(无 BM25、无融合),所以这两项结构性偏向
+    dense。比较混合 vs 单路时看 `MRR` / `nDCG`,不看 `recall` / `hit_rate`。
+  - `custom__recall` 与 `ragas__context_recall` 量的不是一回事(实测同批结果
+    0.30 vs 0.83),前者是 chunk id 重合比例,后者是上下文对答案的支撑度。
+  - 金标评估必须在含全部语料的集合上跑,不要指向分语言集合 —— 中英金标存在跨
+    语言匹配,分语言集合会触发 `chunk_id_validation` 失败。
+  - 换 Judge LLM 或 embedding 后,`evaluation.acceptance_thresholds.*` 的默认阈值
+    不再适用,必须重新校准(不同 Judge 对同一样本有 3-10% 系统性差异)。
+    同理 `screening_llm` 的 `keep/drop_threshold`。
+  - `screening_llm` 必须与 `judge_llm` 异源,判据是完整标识串 `<provider>:<model>`
+    相等,不是 provider 相等(实测 judge 是 `glm:minimax/minimax-m2.7` —— provider
+    名义 glm 但模型经兼容端点路由到 minimax)。
+  - **所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的 protobuf 是 5.29.3,
+    `import chromadb` 会失败;`.venv` 里是 3.20.3。
+
+  ## 历史资产(只读,不要在里面新增)
+  - `specs/001-005/` + `.specify/` —— 2026-04~08 用 GitHub Spec-Kit 做的 5 个
+    feature,已冻结。当作探索时的参考材料,不要转换成 OpenSpec 规格。
+  - `DEV_SPEC.md` —— 更早的自研 SDD,现仅作高层技术设计参考(类似 ADR)。
+
+rules:
+  proposal:
+    - 用中文撰写。
+    - 必须有 "Non-goals" 段落,写明这次明确不做什么。
+    - 若变更涉及检索质量,必须写明用哪个金标集合、看哪几项指标判定成败
+      (注意 recall/hit_rate 偏向 dense 的已知偏差)。
+  design:
+    - 用中文撰写,保持简短 —— 只写选型结论和被否掉的选项各一行,不写调研过程。
+    - 必须显式列出对七条硬约束的合规性;涉及新增配置项时贴出
+      `settings.yaml` 片段与对应 dataclass 字段。
+  tasks:
+    - 用中文撰写。粗粒度,单个变更控制在 5-12 条。
+    - 一条任务 = 一次能独立跑通测试的提交,不要拆到「改一个字段」的粒度。
+    - 每个改 `src/` 的实现任务必须配套 `tests/unit/` 测试任务(硬约束 7)。
+
+operations:
+  apply:
+    guidance:
+      - 改完 `src/` 后运行 `.venv` 下的 `pytest tests/unit -v`,失败禁止收尾。
+      - 代码需配中文注释,解释 RAG 概念与实现细节(用户是学习者)。
+  archive:
+    guidance:
+      - 归档时把这次学到的、下次会再踩的教训写进 `CLAUDE.md` 与本文件的
+        § 已知陷阱 —— specs 是过程产物,CLAUDE.md 与 config.yaml 才是长期记忆。

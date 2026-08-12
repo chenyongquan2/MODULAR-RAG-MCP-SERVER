@@ -1,7 +1,24 @@
 # Spec-Driven Development (SDD) 学习与使用指南
 
-> **文档性质**：本项目引入 GitHub Spec-Kit 的完整记录 + 日常使用手册。
-> **面向读者**：初次接触 SDD 的开发者、接手本项目的 AI/新成员。
+> # ⚠️ 已废弃(2026-08-12)
+>
+> **本文写的是 GitHub Spec-Kit,该工具已在 2026-08-12 从本项目退役。**
+> 现行 SDD 流程是 **OpenSpec** —— 见 [CLAUDE.md § Mandatory SDD Workflow](../CLAUDE.md)
+> 与 [openspec/config.yaml](../openspec/config.yaml)。
+>
+> 退役原因:每个 feature 产出 8–12 个文件、1150–2100 行规格文档,其中
+> `research.md` / `data-model.md` / `checklists/` 写完后再没被引用过;且改方向
+> 意味着重跑整条 `specify → plan → tasks` 链。OpenSpec 用 delta 规格
+> (`ADDED`/`MODIFIED`/`REMOVED`)+ 无相位门解决这两点。
+>
+> **本文保留的价值**:§ 5「踩过的坑」与 § 2「核心概念」讲的是 SDD 方法论本身,
+> 与具体工具无关,仍值得读。其余章节(命令、模板、SPECKIT 块管理)已失效。
+>
+> 历史资产位置:`specs/001-005/`、`.specify/`(含宪法 v1.0.0 原文)、
+> `.specify/archived-skills/`(8 个停用的 `speckit-*` skill)。
+
+> **文档性质**：本项目引入 GitHub Spec-Kit 的完整记录 + 日常使用手册（历史文档）。
+> **面向读者**：想了解本项目 SDD 演进史、或学习 SDD 方法论的开发者。
 > **关联文档**：[CLAUDE.md](../CLAUDE.md)、[DEV_SPEC.md](../DEV_SPEC.md)、[docs/rag-acceptance-plan.md](rag-acceptance-plan.md)、[docs/ragas-guide.md](ragas-guide.md)
 
 ---
