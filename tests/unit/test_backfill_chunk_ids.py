@@ -63,7 +63,6 @@ class TestBackfillOne:
             ground_truth="some text",
             embedding_factory_instance=embedding,
             vector_store=store,
-            collection="default",
             top_k=3,
             threshold=0.6,
         )
@@ -79,7 +78,6 @@ class TestBackfillOne:
             ground_truth="",
             embedding_factory_instance=embedding,
             vector_store=store,
-            collection="default",
             top_k=5,
             threshold=0.6,
         )
@@ -94,7 +92,6 @@ class TestBackfillOne:
             ground_truth="   \n  ",
             embedding_factory_instance=embedding,
             vector_store=store,
-            collection="default",
             top_k=5,
             threshold=0.6,
         )
@@ -113,7 +110,6 @@ class TestBackfillOne:
             ground_truth="text",
             embedding_factory_instance=embedding,
             vector_store=store,
-            collection="default",
             top_k=1,
             threshold=0.5,
         )
@@ -132,7 +128,6 @@ class TestBackfillOne:
             ground_truth="text",
             embedding_factory_instance=embedding,
             vector_store=store,
-            collection="default",
             top_k=2,
             threshold=0.5,
         )

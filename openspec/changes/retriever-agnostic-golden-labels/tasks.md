@@ -12,19 +12,19 @@
 
 ## 3. LLM 判定
 
-- [ ] 3.1 判定模块（`src/observability/evaluation/chunk_labeler.py`）：对每个 `(query, ground_truth, chunk)` 让 LLM 返回 0-3 分级相关度 + 理由，`>= relevance_threshold` 纳入。**严格区分「模型整体不可用」与「输出不合格」** —— 复用 `testset_screener.py` 的 `ScreeningUnavailableError` 先例，前者显式失败、后者标记判定失败并继续。配套单测（LLM 全 mock，不触网）：四档解析、无法解析 → 标记失败而非静默算不相关、失败率超阈值告警、单候选失败不终止整轮
-- [ ] 3.2 异源前置检查：复用 `SourceRelation`（`testset_screener.py:92`）与 `get_judge_identifier`（`_ragas_wrappers.py:351`）的口径，比对 `labeling_llm` 标识与 candidate 的 `_synthesis_metadata.judge_llm_identifier`。**同源 → 拒绝执行（退出码 2）；provider 同名但模型不同 → 视为异源；无法确认 → 默认拒绝，`--allow-same-source` 可豁免但不豁免已确认的同源**。沿用 Feature-003 的退出码语义，使用者不必学第二套。配套单测覆盖三种 relation
+- [x] 3.1 判定模块（`src/observability/evaluation/chunk_labeler.py`）：对每个 `(query, ground_truth, chunk)` 让 LLM 返回 0-3 分级相关度 + 理由，`>= relevance_threshold` 纳入。**严格区分「模型整体不可用」与「输出不合格」** —— 复用 `testset_screener.py` 的 `ScreeningUnavailableError` 先例，前者显式失败、后者标记判定失败并继续。配套单测（LLM 全 mock，不触网）：四档解析、无法解析 → 标记失败而非静默算不相关、失败率超阈值告警、单候选失败不终止整轮
+- [x] 3.2 异源前置检查：复用 `SourceRelation`（`testset_screener.py:92`）与 `get_judge_identifier`（`_ragas_wrappers.py:351`）的口径，比对 `labeling_llm` 标识与 candidate 的 `_synthesis_metadata.judge_llm_identifier`。**同源 → 拒绝执行（退出码 2）；provider 同名但模型不同 → 视为异源；无法确认 → 默认拒绝，`--allow-same-source` 可豁免但不豁免已确认的同源**。沿用 Feature-003 的退出码语义，使用者不必学第二套。配套单测覆盖三种 relation
 
 ## 4. CLI 与产出
 
-- [ ] 4.1 新增 `scripts/label_golden_chunks.py`：串起 2.x 池化 + 3.x 判定，写出 `expected_chunk_ids`（二值，字段名与类型不变 → `custom_evaluator.py` 零改动）+ sidecar `_chunk_labels`（分级原值、理由、贡献来源、判定时间）+ `_labeling_metadata`（各路贡献计数、池规模、通过/拒绝/失败计数、两端模型标识、配置快照、告警列表）。`version: "v2.0"` + `_labeling_method: "pooled-llm-judged"`。**不原地覆盖输入文件**（design D9）
-- [ ] 4.2 `max_judgements` 上限生效 + 续跑：达到上限即停止并写出部分结果，元数据记录**被跳过的候选数**（不谎称已全部判定）；再次执行时读入已有产出，只对无 `label` 的候选发起调用。中断（Ctrl-C）时写出并标 partial，沿用 Feature-003 的 130 退出码。配套单测：上限截断、续跑跳过已判定、中断保留
-- [ ] 4.3 人工抽检：`--export-sample N` 导出随机三元组（**必须覆盖判定为相关与不相关两类**，不能只抽通过的），`--import-sample` 回填 `human_label` 并把一致率写进元数据，低于 `human_agreement_warn` 产出告警。配套单测：抽样分层、一致率计算、告警触发
+- [x] 4.1 新增 `scripts/label_golden_chunks.py`：串起 2.x 池化 + 3.x 判定，写出 `expected_chunk_ids`（二值，字段名与类型不变 → `custom_evaluator.py` 零改动）+ sidecar `_chunk_labels`（分级原值、理由、贡献来源、判定时间）+ `_labeling_metadata`（各路贡献计数、池规模、通过/拒绝/失败计数、两端模型标识、配置快照、告警列表）。`version: "v2.0"` + `_labeling_method: "pooled-llm-judged"`。**不原地覆盖输入文件**（design D9）
+- [x] 4.2 `max_judgements` 上限生效 + 续跑：达到上限即停止并写出部分结果，元数据记录**被跳过的候选数**（不谎称已全部判定）；再次执行时读入已有产出，只对无 `label` 的候选发起调用。中断（Ctrl-C）时写出并标 partial，沿用 Feature-003 的 130 退出码。配套单测：上限截断、续跑跳过已判定、中断保留
+- [x] 4.3 人工抽检：`--export-sample N` 导出随机三元组（**必须覆盖判定为相关与不相关两类**，不能只抽通过的），`--import-sample` 回填 `human_label` 并把一致率写进元数据，低于 `human_agreement_warn` 产出告警。配套单测：抽样分层、一致率计算、告警触发
 
 ## 5. 两代金标可区分
 
-- [ ] 5.1 报告侧读 `version` + `_labeling_method`：评估报告记录所用金标的代次与标注方式；当报告与其基线代次不同时，**该 delta 显式标注为不可比**（spec 要求）。涉及 `src/observability/evaluation/eval_runner.py` 与 `baseline_manager.py`。配套单测：同代可比、跨代标不可比
-- [ ] 5.2 `scripts/backfill_chunk_ids.py` 收尾：docstring 顶部标注「产出第一代（dense-anchored）标签，新标注用 `label_golden_chunks.py`」；修掉死参数 `--collection`（被接受但从不用于实际查询，脚本自己的 docstring 第 74-77 行已承认）—— 要么真正生效，要么移除并说明。**脚本本身保留**，它是第一代金标的可复现来源
+- [x] 5.1 报告侧读 `version` + `_labeling_method`：评估报告记录所用金标的代次与标注方式；当报告与其基线代次不同时，**该 delta 显式标注为不可比**（spec 要求）。涉及 `src/observability/evaluation/eval_runner.py` 与 `baseline_manager.py`。配套单测：同代可比、跨代标不可比
+- [x] 5.2 `scripts/backfill_chunk_ids.py` 收尾：docstring 顶部标注「产出第一代（dense-anchored）标签，新标注用 `label_golden_chunks.py`」；修掉死参数 `--collection`（被接受但从不用于实际查询，脚本自己的 docstring 第 74-77 行已承认）—— 要么真正生效，要么移除并说明。**脚本本身保留**，它是第一代金标的可复现来源
 
 ## 6. 验收与文档
 

@@ -1,4 +1,28 @@
-"""US2 chunk_id 回填 CLI (T022, refs FR-007 / contracts/cli_contracts.md § 4)。
+"""US2 chunk_id 回填 CLI —— **产出第一代(dense-anchored)金标标签**。
+
+.. warning::
+
+    **新标注请用 ``scripts/label_golden_chunks.py``。**
+
+    本脚本的做法是:把 ``ground_truth``(答案文本)编码成向量,查 dense top-K,
+    过相似度阈值后写入 ``expected_chunk_ids`` —— 也就是说**标准答案就是
+    「embedding 模型认为最像答案的那几条」**。
+
+    后果是所有召回类指标都锚定 dense 这一条路径:那条路径永远「全对」,其他
+    路径找到的正确结果连进入标准答案的机会都没有。2026-08-13 的重排 A/B 把
+    这个问题顶到台面上 —— cross-encoder 让英文金标 MRR 从 0.4914 掉到
+    0.3668,而同一个模型在集成测试里每次都能把故意放在末位的相关段落提到
+    首位。模型在做正确的事,指标却在跌,因为重排的全部工作就是不同意第一
+    阶段的排序,而标准答案正是第一阶段的输出。
+
+    **本脚本刻意保留**:它是第一代金标(``version: v1.0``,报告里
+    ``labeling_method: dense-top-k``)的可复现来源,删了就无法重现历史基线
+    是怎么来的。但不要用它产出新金标。
+
+    替代方案见 change ``retriever-agnostic-golden-labels``:多路候选池化
+    (dense ∪ sparse ∪ rerank)+ LLM 逐条判定分级相关度。
+
+原始说明:
 
 精修后的金标 case 的 expected_chunk_ids 通常仍为空(由合成阶段留空)。本工具:
 1. 用项目 EmbeddingFactory 把每条 case 的 ground_truth 编码为向量
@@ -65,15 +89,18 @@ def _backfill_one(
     ground_truth: str,
     embedding_factory_instance: Any,
     vector_store: Any,
-    collection: str,
     top_k: int,
     threshold: float,
 ) -> tuple[list[str], list[float]]:
     """Embed ground_truth + query vector store; return (chunk_ids_above_threshold, scores).
 
-    Note: ``collection`` 参数当前被记录但实际查询走 ``settings.vector_store.collection_name``
-    (BaseVectorStore.query 不接受 collection 重载)。CLI 调用方需保证 settings 已指向
-    正确 collection,或在调用前临时改 settings。
+    检索范围由 ``settings.vector_store.collection_name`` 决定 —— ``main()`` 已在
+    构造 vector_store **之前**用 ``--collection`` 覆盖它。
+
+    此前本函数收一个 ``collection`` 参数却从不使用(``BaseVectorStore.query``
+    不接受 collection 重载),属「看起来可配、实际不起作用」那类死参数:用户以为
+    ``--collection`` 切换了检索范围,实际查的一直是配置里那个集合,而且不报错。
+    与 Feature-004 修掉的 ``getattr(..., "bm25_index_path", default)`` 同类。
     """
     if not ground_truth or not ground_truth.strip():
         return [], []
@@ -122,6 +149,16 @@ def main() -> int:
 
     try:
         settings = load_settings()
+        # --collection 必须在构造 vector_store **之前**覆盖配置 —— dense 路的
+        # 检索范围由 settings.vector_store.collection_name 决定,这是 dense 与
+        # sparse 共同的唯一真源。此前这个参数被接受但从不生效。
+        if args.collection and args.collection != settings.vector_store.collection_name:
+            logger.info(
+                "overriding retrieval collection: %s -> %s",
+                settings.vector_store.collection_name,
+                args.collection,
+            )
+        settings.vector_store.collection_name = args.collection
         embedding = EmbeddingFactory.create(settings=settings)
         vector_store = VectorStoreFactory.create(settings=settings)
     except Exception as exc:
@@ -137,7 +174,6 @@ def main() -> int:
                 ground_truth=ground_truth,
                 embedding_factory_instance=embedding,
                 vector_store=vector_store,
-                collection=args.collection,
                 top_k=args.top_k,
                 threshold=args.threshold,
             )

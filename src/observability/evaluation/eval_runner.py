@@ -85,6 +85,15 @@ class EvalCaseResult:
         return result
 
 
+LABELING_METHOD_DENSE_TOP_K = "dense-top-k"
+"""第一代金标的标注方式:``backfill_chunk_ids.py`` 用纯 dense top-K 回填。
+
+第一代金标文件里**没有** ``_labeling_method`` 字段,所以缺失即视为这一代。
+这一代的 ``expected_chunk_ids`` 就是「embedding 认为最像答案的那几条」,因此
+所有召回类指标都锚定 dense 一路 —— 与新一代不是同一把尺子,跨代 delta 不可比。
+"""
+
+
 @dataclass
 class EvalReport:
     """评估报告 (Feature-001 后扩展)。
@@ -109,6 +118,15 @@ class EvalReport:
     collection: str = ""
     test_set_path: str = ""
     test_set_version: str = ""
+    # 金标的标注方式(change retriever-agnostic-golden-labels T-5.1)。
+    # 第一代金标没有这个字段,回落为 LABELING_METHOD_DENSE_TOP_K —— 那一代的
+    # expected_chunk_ids 是纯 dense top-K 回填的,与新一代**不是同一把尺子**。
+    labeling_method: str = ""
+    # 与基线的 delta 是否可比。跨代次(标注方式不同)时为 False,并在
+    # delta_incomparable_reason 里说明。**不可比时 delta 仍然输出** ——
+    # 隐藏它会让人以为没算,标注它才能让人知道别误读。
+    delta_comparable: Optional[bool] = None
+    delta_incomparable_reason: Optional[str] = None
     created_at: str = ""
     judge_llm_identifier: Optional[str] = None
     embedding_identifier: Optional[str] = None
@@ -145,6 +163,8 @@ class EvalReport:
             result["test_set_path"] = self.test_set_path
         if self.test_set_version:
             result["test_set_version"] = self.test_set_version
+        if self.labeling_method:
+            result["labeling_method"] = self.labeling_method
         if self.created_at:
             result["created_at"] = self.created_at
         if self.judge_llm_identifier is not None:
@@ -167,6 +187,11 @@ class EvalReport:
             result["delta_aggregate_metrics"] = self.delta_aggregate_metrics
             if self.per_tag_delta is not None:
                 result["per_tag_delta"] = self.per_tag_delta
+            # 跨代次时必须让读报告的人看到「这些 delta 不可比」
+            if self.delta_comparable is not None:
+                result["delta_comparable"] = self.delta_comparable
+            if self.delta_incomparable_reason:
+                result["delta_incomparable_reason"] = self.delta_incomparable_reason
         return result
 
 
@@ -341,6 +366,9 @@ class EvalRunner:
             collection=str((filters or {}).get("collection", self._settings.vector_store.collection_name)),
             test_set_path=test_set_path,
             test_set_version=test_set_meta.get("version", ""),
+            labeling_method=str(
+                test_set_meta.get("_labeling_method") or LABELING_METHOD_DENSE_TOP_K
+            ),
             created_at=created_at,
             judge_llm_identifier=judge_id,
             embedding_identifier=embedding_id,
@@ -721,6 +749,35 @@ class EvalRunner:
 
         report.baseline_id = current_baseline.report_id
         report.delta_aggregate_metrics = dict(delta.per_metric_delta)
+
+        # 跨代次的 delta 不可比(change retriever-agnostic-golden-labels T-5.1)。
+        #
+        # 两代金标的 expected_chunk_ids 构造方式不同 —— 第一代是纯 dense top-K
+        # 回填,新一代是多路池化 + LLM 判定。分数不是同一把尺子,直接做减法会把
+        # 「标注口径变了」误读成「检索质量变了」,而且方向完全可能相反。
+        #
+        # **delta 仍然输出**,只是标注为不可比:隐藏它会让人以为没算,标注它才
+        # 能让人知道别误读。
+        baseline_method = str(
+            baseline_report_dict.get("labeling_method") or LABELING_METHOD_DENSE_TOP_K
+        )
+        current_method = report.labeling_method or LABELING_METHOD_DENSE_TOP_K
+        if baseline_method != current_method:
+            report.delta_comparable = False
+            report.delta_incomparable_reason = (
+                f"golden set labeling method changed: baseline used "
+                f"{baseline_method!r}, this run used {current_method!r}. The two "
+                "generations define 'correct answer' differently, so these deltas "
+                "measure a change in the measuring stick, not a change in "
+                "retrieval quality. Re-baseline before reading them."
+            )
+            logger.warning(
+                "baseline delta is NOT comparable: labeling method %s -> %s",
+                baseline_method,
+                current_method,
+            )
+        else:
+            report.delta_comparable = True
         report.per_tag_delta = dict(delta.per_tag_delta) if delta.per_tag_delta else None
         # 顶层 hit_rate / mrr 的 delta(从 baseline_report 直接读取顶层字段)
         try:
