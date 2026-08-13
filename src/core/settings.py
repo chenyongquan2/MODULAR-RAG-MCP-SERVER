@@ -416,6 +416,101 @@ class AcceptanceThresholds:
 
 
 @dataclass
+class LabelingLLMSettings:
+    """金标标注的判定 LLM 配置 (change retriever-agnostic-golden-labels)。
+
+    仅 ``scripts/label_golden_chunks.py`` 使用。与 JudgeLLMSettings /
+    ScreeningLLMSettings 结构对称,同样复用 LLMFactory 注册的 provider,
+    换判定模型不需改代码。
+
+    **provider / model 默认为空 = 未启用**。非空校验推迟到 CLI 入口 ——
+    否则所有不做标注的既有用法都会启动失败(与 ScreeningLLMSettings 同理)。
+
+    **为什么不复用 screening_llm**:两者的异源对象相同(都要 ≠ 合成端
+    ``judge_llm``),但**阈值标度不同** —— 预筛问的是「这条 case 该不该留」,
+    标注问的是「这个 chunk 相关到什么程度」。共用一份配置会让两处校准互相
+    干扰,而「换模型必须重新校准」正是本项目已记录的陷阱。
+
+    异源判据是完整标识串 ``"<provider>:<model>"`` 不相等,**不是 provider 不
+    相等** —— 实测某 candidate 的 judge 标识为 ``"glm:minimax/minimax-m2.7"``,
+    provider 名义是 glm 但模型经 OpenAI 兼容端点路由到 minimax。该校验在 CLI
+    入口读取 candidate 后执行(需要 candidate 里的合成端标识),不在本处。
+
+    Attributes:
+        provider: LLM provider(glm/azure/openai/ollama/deepseek);空 = 未启用
+        model: 模型标识;空 = 未启用
+        api_key: API key(支持 ${VAR} 环境变量注入)
+        base_url: API base URL(可选,如 OpenAI 兼容端点)
+        temperature: 采样温度(判定应尽量确定,推荐 0.0)
+        request_timeout_sec: 单次 LLM 调用超时(秒)
+        max_retries: 单次调用的自动重试次数。网关实测存在常态性超时,
+            标注要发上千次调用,没有重试会让整轮频繁中断
+    """
+
+    provider: str = ""
+    model: str = ""
+    # repr=False:dataclass 默认 repr 会把 api_key 原样打进 traceback / 日志 /
+    # pytest 断言输出。实测一次断言失败就把完整密钥打到了控制台。
+    api_key: str = field(default="", repr=False)
+    base_url: Optional[str] = None
+    temperature: float = 0.0
+    request_timeout_sec: int = 60
+    max_retries: int = 3
+
+    def is_enabled(self) -> bool:
+        """provider 与 model 均非空才算启用。"""
+        return bool(self.provider.strip()) and bool(self.model.strip())
+
+
+@dataclass
+class LabelingSettings:
+    """金标标注配置 (change retriever-agnostic-golden-labels)。
+
+    本节控制「哪些 chunk 算作某个问题的正确答案」这个基准是怎么造出来的。
+
+    背景 —— 第一代金标的 ``expected_chunk_ids`` 由 ``backfill_chunk_ids.py``
+    把 ground_truth 编码后查 dense top-5 回填,即**标准答案就是 embedding 认为
+    最像答案的那几条**。后果是所有召回类指标都锚定在 dense 一路上:2026-08-13
+    的重排 A/B 实测 MRR 从 0.4914 掉到 0.3668,而同一模型在集成测试里每次都能
+    把故意放在末位的相关段落提到首位 —— 模型在做正确的事,指标却在跌。
+
+    本节的做法:多路召回各取 top-N 取并集(池化),再让 LLM 逐条判定分级相关度。
+    没有任何一路能垄断标准答案。
+
+    Attributes:
+        pool_top_n_dense: 稠密检索取多少条进候选池。
+        pool_top_n_sparse: 稀疏检索(BM25)取多少条进候选池。
+        pool_top_n_rerank: 重排后顺序取多少条进候选池。**0 = 不启用该路** ——
+            重排依赖是 optional extra(`.[rerank]`),默认置 0 保证核心安装
+            即可标注。
+        relevance_threshold: 分级相关度 >= 此值纳入 expected_chunk_ids。
+            分级含义:0 无关 / 1 沾边 / 2 部分支撑 / 3 直接回答。
+        max_judgements: 单次标注的判定调用上限。达到即停止并写出部分结果,
+            元数据记录被跳过的候选数 —— **不静默截断**。按池化后每 case 约
+            25-40 个候选估算,中英金标 48 条 case 约需 1200-1900 次调用。
+        judge_failure_warn_ratio: 判定失败(输出无法解析)比例超此值告警。
+            与「模型整体不可用」严格区分 —— 后者应显式失败而非告警。
+        dense_overlap_warn: 产出与「纯 dense top-5」的 Jaccard 超此值告警,
+            提示池化或判定疑似未生效。这守的是「新方法到底有没有起作用」。
+        human_agreement_warn: 人工抽检一致率低于此值告警。
+
+    Note:
+        ``relevance_threshold`` / ``human_agreement_warn`` 的默认值是初始猜测。
+        不同判定模型的标度不可互换,换模型后必须重新校准 —— 与「换 Judge 后
+        acceptance_thresholds 失效」是同一回事。
+    """
+
+    pool_top_n_dense: int = 20
+    pool_top_n_sparse: int = 20
+    pool_top_n_rerank: int = 0
+    relevance_threshold: int = 2
+    max_judgements: int = 2000
+    judge_failure_warn_ratio: float = 0.10
+    dense_overlap_warn: float = 0.90
+    human_agreement_warn: float = 0.80
+
+
+@dataclass
 class EvaluationSettings:
     """评估配置(Feature-001 后扩展)。
 
@@ -444,6 +539,8 @@ class EvaluationSettings:
     golden_test_sets_by_lang: dict[str, str] = field(default_factory=dict)
     judge_llm: JudgeLLMSettings = field(default_factory=JudgeLLMSettings)
     screening_llm: ScreeningLLMSettings = field(default_factory=ScreeningLLMSettings)
+    labeling_llm: LabelingLLMSettings = field(default_factory=LabelingLLMSettings)
+    labeling: LabelingSettings = field(default_factory=LabelingSettings)
     embedding: EvaluationEmbeddingSettings = field(default_factory=EvaluationEmbeddingSettings)
     acceptance_thresholds: AcceptanceThresholds = field(default_factory=AcceptanceThresholds)
     by_tag_dimensions: list[str] = field(default_factory=lambda: ["content_type", "difficulty"])
@@ -711,12 +808,21 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
         evaluation_raw["schema_version"] = evaluation_raw.pop("_schema_version")
     judge_llm_raw = evaluation_raw.get("judge_llm") or {}
     screening_llm_raw = evaluation_raw.get("screening_llm") or {}
+    labeling_llm_raw = evaluation_raw.get("labeling_llm") or {}
+    labeling_raw = evaluation_raw.get("labeling") or {}
     eval_embedding_raw = evaluation_raw.get("embedding") or {}
     acceptance_thresholds_raw = evaluation_raw.get("acceptance_thresholds") or {}
     # 顶层 EvaluationSettings 字段(去掉嵌套子段,后续显式注入)
     eval_top_raw = {
         k: v for k, v in evaluation_raw.items()
-        if k not in {"judge_llm", "screening_llm", "embedding", "acceptance_thresholds"}
+        if k not in {
+            "judge_llm",
+            "screening_llm",
+            "labeling_llm",
+            "labeling",
+            "embedding",
+            "acceptance_thresholds",
+        }
     }
     evaluation_settings = EvaluationSettings(
         **{k: v for k, v in eval_top_raw.items() if v is not None}
@@ -726,6 +832,12 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     )
     evaluation_settings.screening_llm = _build_sub_settings(
         screening_llm_raw, ScreeningLLMSettings, "evaluation.screening_llm"
+    )
+    evaluation_settings.labeling_llm = _build_sub_settings(
+        labeling_llm_raw, LabelingLLMSettings, "evaluation.labeling_llm"
+    )
+    evaluation_settings.labeling = _build_sub_settings(
+        labeling_raw, LabelingSettings, "evaluation.labeling"
     )
     evaluation_settings.embedding = _build_sub_settings(
         eval_embedding_raw, EvaluationEmbeddingSettings, "evaluation.embedding"
@@ -982,6 +1094,9 @@ def validate_settings(settings: Settings) -> None:
     # Feature-001 评估配置校验
     _validate_evaluation_settings(settings)
 
+    # 金标标注配置校验（change retriever-agnostic-golden-labels T-1.1）
+    _validate_labeling_settings(settings.evaluation.labeling)
+
 
 # ---------------------------------------------------------------------------
 # Feature-001: evaluation 段启动期校验 (宪法 § III 快速失败)
@@ -1011,6 +1126,84 @@ _REQUIRED_THRESHOLD_KEYS: frozenset[str] = frozenset({
     "custom__recall",
     "custom__ndcg",
 })
+
+
+def _validate_labeling_settings(labeling: LabelingSettings) -> None:
+    """校验金标标注配置(change retriever-agnostic-golden-labels,宪法原则三)。
+
+    最重要的一条是**至少两路池化**:如果只有一路 > 0,候选池就完全由那一路
+    决定,那条路径永远「全对」,其他路径找到的正确结果连进入标准答案的机会都
+    没有 —— 这正是第一代纯 dense top-5 回填造成的偏差,本变更的全部意义就在
+    于消除它。只配一路等于把新方法退化成旧方法,**而且不会有任何报错**。
+
+    Args:
+        labeling: 待校验的标注配置。
+
+    Raises:
+        SettingsError: 任一参数非法时。
+    """
+    pool_fields = (
+        ("pool_top_n_dense", labeling.pool_top_n_dense),
+        ("pool_top_n_sparse", labeling.pool_top_n_sparse),
+        ("pool_top_n_rerank", labeling.pool_top_n_rerank),
+    )
+    # bool 要单独挡 —— isinstance(True, int) 为真,YAML 写 `pool_top_n_dense: true`
+    # 会被当作 1 静默通过(池子只有 1 条候选)。
+    for name, value in pool_fields:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise SettingsError(
+                f"Invalid evaluation.labeling.{name}: {value!r}. "
+                "Expected a non-negative integer (0 disables that route)"
+            )
+
+    enabled_routes = [name for name, value in pool_fields if value > 0]
+    if len(enabled_routes) < 2:
+        raise SettingsError(
+            "evaluation.labeling requires at least TWO retrieval routes with "
+            f"pool_top_n_* > 0, but only {len(enabled_routes)} enabled "
+            f"({enabled_routes or 'none'}). A single-route pool lets that route "
+            "monopolise the ground truth — it would always score perfectly while "
+            "other routes never get a chance to contribute, which is exactly the "
+            "dense-anchored bias this change exists to remove. Single-route "
+            "pooling degrades the new method back to the old one, silently."
+        )
+
+    threshold = labeling.relevance_threshold
+    if not isinstance(threshold, int) or isinstance(threshold, bool) or threshold not in (1, 2, 3):
+        raise SettingsError(
+            f"Invalid evaluation.labeling.relevance_threshold: {threshold!r}. "
+            "Expected 1, 2 or 3 (grades: 0 irrelevant / 1 tangential / "
+            "2 partially supports / 3 directly answers). 0 would accept every "
+            "candidate in the pool as ground truth"
+        )
+
+    max_judgements = labeling.max_judgements
+    if (
+        not isinstance(max_judgements, int)
+        or isinstance(max_judgements, bool)
+        or max_judgements < 1
+    ):
+        raise SettingsError(
+            f"Invalid evaluation.labeling.max_judgements: {max_judgements!r}. "
+            "Expected a positive integer"
+        )
+
+    ratio_fields = (
+        ("judge_failure_warn_ratio", labeling.judge_failure_warn_ratio),
+        ("dense_overlap_warn", labeling.dense_overlap_warn),
+        ("human_agreement_warn", labeling.human_agreement_warn),
+    )
+    for name, value in ratio_fields:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise SettingsError(
+                f"Invalid evaluation.labeling.{name}: {value!r}. "
+                "Expected a number in [0.0, 1.0]"
+            )
+        if not (0.0 <= value <= 1.0):
+            raise SettingsError(
+                f"Invalid evaluation.labeling.{name}: {value}. "
+                "Expected a ratio in [0.0, 1.0]"
+            )
 
 
 def _validate_evaluation_settings(settings: Settings) -> None:

@@ -228,6 +228,71 @@ evaluation:
     sample_ratio: 0.10          # 抽样自检比例(FR-006, 源自 Feature-001 SC-002)
     compliance_gate: 0.90       # 抽样合规率门控(FR-007, 源自 SC-002)
 
+  # ─── 金标标注 (change retriever-agnostic-golden-labels) ───
+  #
+  # 本节控制「哪些 chunk 算作某个问题的正确答案」这个基准是怎么造出来的。
+  #
+  # ⚠️ 为什么需要它:第一代金标的 expected_chunk_ids 由 backfill_chunk_ids.py
+  #    把 ground_truth 编码后查 dense top-5 回填 —— **标准答案就是 embedding
+  #    认为最像答案的那几条**。后果是所有召回类指标都锚定在 dense 一路上。
+  #    2026-08-13 重排 A/B 实测:MRR 从 0.4914 掉到 0.3668,而同一模型在集成
+  #    测试里每次都能把故意放在末位的相关段落提到首位 —— 模型在做正确的事,
+  #    指标却在跌。因为重排的全部工作就是不同意第一阶段的排序,而标准答案
+  #    正是第一阶段的输出。
+  #
+  #    新做法:多路召回各取 top-N 取并集(池化)+ LLM 逐条判定分级相关度。
+  #    没有任何一路能垄断标准答案。
+  labeling:
+    # 各路召回取多少条进候选池。**至少两路必须 > 0** —— 只配一路会让那条路径
+    # 永远「全对」,等于把新方法静默退化成第一代做法,启动期会直接拒绝。
+    # 三路并集去重后每 case 约 25-40 个候选。
+    pool_top_n_dense: 20
+    pool_top_n_sparse: 20
+    pool_top_n_rerank: 0        # 0 = 不启用重排路(重排依赖是 optional extra
+                                # `.[rerank]`,默认置 0 保证核心安装即可标注)
+
+    # 分级相关度 >= 此值纳入 expected_chunk_ids
+    # 分级:0 无关 / 1 沾边 / 2 部分支撑 / 3 直接回答
+    # ⚠️ 不同判定模型的标度不可互换,换 labeling_llm 后必须重新校准 ——
+    #    与「换 Judge 后 acceptance_thresholds 失效」是同一回事
+    relevance_threshold: 2
+
+    # 单次标注的判定调用上限。达到即停止并写出部分结果,元数据记录被跳过的
+    # 候选数 —— **不静默截断**。中英金标 48 条 case 约需 1200-1900 次调用。
+    max_judgements: 2000
+
+    # 判定失败(LLM 输出无法解析)比例超此值告警。与「模型整体不可用」严格
+    # 区分 —— 后者显式失败(退出码 3),不是告警。
+    judge_failure_warn_ratio: 0.10
+
+    # 产出与「纯 dense top-5」的 Jaccard 超此值告警,提示池化或判定疑似未生效。
+    # 这守的是「新方法到底有没有起作用」。
+    dense_overlap_warn: 0.90
+
+    # 人工抽检一致率低于此值告警。
+    # ⚠️ 0.80 是初始猜测,需跑一轮看分布再校准(同 screening_llm 的阈值)
+    human_agreement_warn: 0.80
+
+  # 金标标注的判定 LLM (仅 label_golden_chunks.py 使用)
+  # MUST 与上方 judge_llm 异源 —— ground_truth 是 judge_llm 合成的,用同一个
+  # 模型判断「哪些 chunk 支撑我自己写的答案」是自我确认。判据同 screening_llm:
+  # 完整标识串 "<provider>:<model>" 不相等,不是 provider 不相等。
+  #
+  # 刻意**不复用 screening_llm**:两者异源对象相同,但阈值标度不同 ——
+  # 预筛问「这条 case 该不该留」,标注问「这个 chunk 相关到什么程度」。
+  # 共用一份配置会让两处校准互相干扰。
+  #
+  # 默认留空 = 未启用,不影响任何既有用法;跑标注时留空会以退出码 2 快速失败。
+  labeling_llm:
+    provider: glm
+    model: ""                   # 必填,且标识须 ≠ judge_llm 的
+                                # (judge 当前是 "glm:minimax/minimax-m2.7")
+    api_key: ${GLM_API_KEY}
+    base_url: ${GLM_BASE_URL}
+    temperature: 0.0            # 判定应尽量确定,便于复现
+    request_timeout_sec: 60
+    max_retries: 3              # 标注要发上千次调用,网关实测常态性超时
+
   # 评估流程使用的 embedding (默认全空 = 复用顶层 settings.embedding)
   # FR-017: 评估流程所有 embedding 环节 MUST 用同一配置 (避免 train-eval skew)
   embedding:
