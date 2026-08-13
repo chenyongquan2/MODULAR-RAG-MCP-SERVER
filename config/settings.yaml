@@ -285,13 +285,20 @@ evaluation:
   # 默认留空 = 未启用,不影响任何既有用法;跑标注时留空会以退出码 2 快速失败。
   labeling_llm:
     provider: glm
-    model: ""                   # 必填,且标识须 ≠ judge_llm 的
-                                # (judge 当前是 "glm:minimax/minimax-m2.7")
+    # 标识 "glm:z-ai/glm-5.2-free" ≠ judge 的 "glm:minimax/minimax-m2.7" → 异源 ✅
+    # 选它的理由:异源成立 + 走公司免费额度(标注要发上千次判定调用,成本是
+    # 本变更最大的实际约束)。换模型后 relevance_threshold 必须重新校准。
+    model: z-ai/glm-5.2-free
     api_key: ${GLM_API_KEY}
     base_url: ${GLM_BASE_URL}
     temperature: 0.0            # 判定应尽量确定,便于复现
     request_timeout_sec: 60
     max_retries: 3              # 标注要发上千次调用,网关实测常态性超时
+    # ⚠️ 不要调小。此前硬编码 200,在真实语料上几乎全军覆没 —— 2026-08-13 实测
+    #    (z-ai/glm-5.2-free、真实 chunk):301 字符截断在 JSON 中间,367 与 430
+    #    字符直接返回**空响应**,于是每条都标 judge_failed。表现像「模型不会遵从
+    #    JSON 格式」,真实原因是没给它写完的余量。800 下全部完整且解析成功。
+    max_tokens: 800
 
   # 评估流程使用的 embedding (默认全空 = 复用顶层 settings.embedding)
   # FR-017: 评估流程所有 embedding 环节 MUST 用同一配置 (避免 train-eval skew)

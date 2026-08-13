@@ -273,6 +273,30 @@ class TestLabelingLLMSettings:
         """判定应尽量确定,便于复现。"""
         assert LabelingLLMSettings().temperature == 0.0
 
+    def test_max_tokens_is_generous_enough_for_real_chunks(self) -> None:
+        """**这条守的是一个实测踩过的坑**(2026-08-13, T-6.1)。
+
+        判定回复的 max_tokens 此前**硬编码 200**,在真实语料上几乎全军覆没:
+
+        | chunk 长度 | max_tokens=200 | max_tokens=800 |
+        |---|---|---|
+        | 301 字符 | 截断在 JSON 中间 | 完整,解析成功 |
+        | 367 字符 | **空响应** | 完整,解析成功 |
+        | 430 字符 | **空响应** | 完整,解析成功 |
+
+        预算不足时输出被截断成半个 JSON 或干脆为空,于是每条都标 judge_failed
+        —— 表现得像「模型不会遵从 JSON 格式」,真实原因是**没给它写完的余量**。
+        本项目真实 chunk 中位约 428 字符,所以 200 是绝对不够的。
+
+        这也是「硬编码可调参数」(违反宪法原则二)的又一个实例 —— 与本变更
+        正在修的 dense 锚定、以及重排变更修掉的 batch_size 硬编码同类。
+        """
+        assert LabelingLLMSettings().max_tokens >= 800
+
+    def test_max_tokens_is_configurable_not_hardcoded(self) -> None:
+        """必须能从配置改 —— 换判定模型后余量需求可能不同。"""
+        assert LabelingLLMSettings(max_tokens=1500).max_tokens == 1500
+
 
 class TestSeparateFromScreeningLLM:
     """刻意不复用 ``screening_llm`` —— 两者阈值标度不同,共用会互相干扰。"""

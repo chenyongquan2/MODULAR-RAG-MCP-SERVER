@@ -445,6 +445,21 @@ class LabelingLLMSettings:
         request_timeout_sec: 单次 LLM 调用超时(秒)
         max_retries: 单次调用的自动重试次数。网关实测存在常态性超时,
             标注要发上千次调用,没有重试会让整轮频繁中断
+        max_tokens: 单次判定回复的 token 上限。
+
+            **不要调小。** 此前这里硬编码 200,在真实语料上几乎全军覆没 ——
+            2026-08-13 实测(z-ai/glm-5.2-free、真实 chunk):
+
+            | chunk 长度 | max_tokens=200 | max_tokens=800 |
+            |---|---|---|
+            | 301 字符 | 截断在 JSON 中间 | 完整,解析成功 |
+            | 367 字符 | **空响应** | 完整,解析成功 |
+            | 430 字符 | **空响应** | 完整,解析成功 |
+
+            判定要返回 grade + 一句理由,而理由的长度随 chunk 复杂度增长;
+            预算不足时模型的输出会被截断成半个 JSON 或干脆为空,于是每条都
+            标 judge_failed —— 表现为「模型通但输出全不合格」,极易被误判成
+            模型不会遵从 JSON 格式。真实原因是**我们没给它写完的余量**。
     """
 
     provider: str = ""
@@ -456,6 +471,7 @@ class LabelingLLMSettings:
     temperature: float = 0.0
     request_timeout_sec: int = 60
     max_retries: int = 3
+    max_tokens: int = 800
 
     def is_enabled(self) -> bool:
         """provider 与 model 均非空才算启用。"""

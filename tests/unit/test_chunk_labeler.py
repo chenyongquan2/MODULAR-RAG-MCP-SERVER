@@ -382,6 +382,41 @@ class TestPromptContent:
         assert "similar wording" in prompt
         assert "different words" in prompt
 
+    def test_max_tokens_comes_from_config_not_hardcoded(self) -> None:
+        """max_tokens 必须读配置。
+
+        此前硬编码 200,真实语料上 367 字符的 chunk 就返回空响应 → 每条都标
+        judge_failed,表现得像「模型不会遵从 JSON 格式」。真实原因是没给它
+        写完的余量。见 LabelingLLMSettings.max_tokens 的 docstring。
+        """
+        labeler, llm = _labeler(['{"grade": 3}'])
+        labeler._settings.evaluation.labeling_llm.max_tokens = 1234  # noqa: SLF001
+
+        labeler.label_one("q", "gt", "c1", "text")
+
+        assert llm.calls[0]["max_tokens"] == 1234
+
+    def test_default_max_tokens_is_not_the_broken_200(self) -> None:
+        labeler, llm = _labeler(['{"grade": 3}'])
+
+        labeler.label_one("q", "gt", "c1", "text")
+
+        assert llm.calls[0]["max_tokens"] >= 800
+
+    def test_truncated_json_does_not_silently_become_irrelevant(self) -> None:
+        """截断的 JSON 要么解析出真实 grade,要么标 judge_failed。
+
+        实测的截断形态:'{"grade": 0, "reason": "The passage only introduces'
+        —— JSON 永远以 {"grade": N 开头,所以裸数字兜底取到的第一个 0-3 数字
+        就是真实 grade。这是可接受的;**不可接受的是把空响应当成 0 分**。
+        """
+        truncated = '{"grade": 2, "reason": "The passage partially cove'
+        grade, _ = _parse_verdict(truncated)
+        assert grade == 2
+
+        empty_grade, _ = _parse_verdict("")
+        assert empty_grade is None  # 空响应 → judge_failed，不是 0 分
+
     def test_chunk_truncated(self) -> None:
         labeler, llm = _labeler(['{"grade": 3}'])
         long_text = "x" * 5000

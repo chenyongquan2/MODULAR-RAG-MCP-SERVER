@@ -1,0 +1,218 @@
+[
+  {
+    "query": "在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是什么？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_2276_45b6d776",
+    "chunk_text": "Python\n\n| |\n| --- |\n| AdminAPI.FeederNext(    pos            # 配置的位置    ) |\n\n参数\n\npos\n\n[in]  配置的位置，从 0 开始。\n\nfeeder\n\n[out]  数据源配置的对象。必须先使用 [IMTAdminAPI::FeederCreate](imtadminapi_feedercreate.htm) 方法创建该数据源对象。\n\n返回值\n\n成功执行的标志是 [MT_RET_OK](retcodes_successful.htm) 响应代码。否则将返回错误代码。\n\n注意\n\n该方法将具有指定索引的源的配置数据复制到数据源对象。\n\n###### FeederGet\n\nFeederGet",
+    "llm_grade": 3,
+    "llm_reason": "The passage directly states that the method copies the configuration data of the source with the specified index to the data source object, matching the reference answer.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "账户组交易的作用是什么？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_6836_db7e3043",
+    "chunk_text": "交易盈利\n\n选定时段的详细交易报告。它由多个图表组成：根据交易量、根据盈利和亏损交易的分布、根据盈利、亏损、总数和其他指标。\n\n![“交易盈利”报告](deals_profit.png \"“交易盈利”报告\")\n\n过滤器\n\n可以过滤为报告请求的数据。在经理端请求报告之前，指定以下参数：\n\n* 组 — 包含账户的组，在该账户上必须创建报告。您可以指定一个或多个用逗号分隔的账户。\n* 时段 — 将生成报告的时段的开始和结束日期。\n* Lead campaign（潜在客户活动） — 吸引执行交易的客户的广告宣传活动的名称。\n* Lead source（潜在客户源） — 执行交易的客户来源的网站。\n\n报告中的图表\n\n该报告包括多个图表：\n\n* 交易量 — 总交易量、盈利交易量和亏损交易量的分布情况。\n* 盈利额 — 交易盈亏的分布情况。\n* 盈利交易数 — 盈亏交易数量的分布情况。\n* 盈利交易量平均值 — 盈亏交易的平均交易量分布。\n* 盈亏 — 交易的总盈利和总亏损之间的差额。\n* 盈亏累积 — 交易的总盈利和总亏损之间的累积差额。",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions groups and trading in the context of a profit report, but does not contain any information about the function of account group trading or the related APIs.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_545_f0bf80f7",
+    "chunk_text": "只能从主服务器上运行的插件添加或更新配置。对于所有其他插件，将返回响应代码 [MT_RET_ERR_NOTMAIN](retcodes_api.htm) 。\n\n添加前会检查记录的正确性。如果记录有误，则将返回错误代码 [MT_RET_ERR_PARAMS](retcodes_common.htm) 。\n\n###### GatewayDelete\n\nGatewayDelete",
+    "llm_grade": 3,
+    "llm_reason": "The passage directly states that configurations can only be added or updated from the main server and returns the specified error code for others.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "交易品种组在假期里允许客户进行哪些操作？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_11930_ff6bdf94",
+    "chunk_text": "IMTConHoliday::SymbolShift\n\n更改假期适用的 [交易品种](config_symbol.htm) 列表中的交易品种位置。\n\nC++\n\n| |\n| --- |\n| MTAPIRES  IMTConHoliday::SymbolShift(    const UINT  pos,       // 交易品种的位置    const int   shift      // 移动    ) |\n\nC++\n\n| |\n| --- |\n| MTRetCode  CIMTConHoliday.SymbolShift(    uint        pos,       // 交易品种的位置    int         shift      // 移动    ) |\n\n参数\n\npos\n\n[in]  列表中交易品种的位置，从 0 开始。\n\nshift\n\n[in]  从其当前位置移位。负值表示移动到列表的顶部，正值表示移动到列表的底部。\n\n返回值",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions holidays and trading symbols but only describes an API method for shifting symbol positions, not the client operations allowed during holidays.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_3552_6133dbf6",
+    "chunk_text": "注意\n\n该请求可以轻松安排结果交易的分页输出。通过在“总计”参数下进行设置，确定应在一页中显示的交易数量。然后找到每个页面的'offset'参数，第一页从0开始。\n\n该方法无法从事件处理程序（任何 IMT*Sink 类方法）中调用。\n\n###### DealAdd\n\nDealAdd\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [Manager API](managerapi.htm) / [管理员接口](imtadminapi.htm) / [交易数据库](imtadminapi_trading.htm) / [交易](imtadminapi_trading_deal.htm) / DealAdd | [Previous](imtadminapi_dealrequestpage.htm)  [Next](imtadminapi_dealaddbatch.htm) | | |\n\nIMTAdminAPI::DealAdd\n\n添加交易到服务器数据库。\n\nC++",
+    "llm_grade": 0,
+    "llm_reason": "The passage discusses IMTAdminAPI::DealAdd and pagination, which is completely irrelevant to the output parameters of MTAdminCreate.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_14363_2999a301",
+    "chunk_text": "参数\n\nname\n\n[in]  参数名称。\n\nparam\n\n[out]  报告参数的对象。'param'对象必须先使用 [IMTAdminAPI::ReportParamCreate](imtadminapi_reportparamcreate.htm) 方法来创建。\n\n返回值\n\n成功执行的指示是 [MT_RET_OK](retcodes_successful.htm) 响应代码。否则，将返回错误代码。\n\n注\n\n[IMTConParam::Name](imtconparam_name.htm) 值用作参数名称。\n\n##### InputTotal\n\nInputTotal",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions IMTAdminAPI and output parameters, but it describes a different function (ReportParamCreate) and does not mention MTAdminCreate or its output parameter.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是什么？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_11639_e2d04818",
+    "chunk_text": "#### IMTConFeeder\n\nMTConFeeder\n\n| | | | | |\n| --- | --- | --- | --- | --- |\n| | | | | | --- | --- | | [配置接口](reference_configurations.htm) / [数据源](config_datafeeds.htm) / IMTConFeeder | [Previous](config_datafeeds.htm)  [Next](imtconfeeder_enum.htm) | | |\n\nIMTConFeeder\n\nIMTConFeeder 接口包含用来配置数据源的方法。",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions the IMTConFeeder interface for configuring data sources but does not mention FeederGet or the specific data copying operation described in the answer.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "交易品种组在假期里允许客户进行哪些操作？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_14185_08ad4b5a",
+    "chunk_text": "| CONDITION_PROFIT | 2005 | 该参数允许根据客户的当前浮动利润使用规则。 |\n| CONDITION_DAILY_DEALS | 3000 | 该参数允许根据当前和前几天（包括周末和假期）客户的交易数目使用规则。 |\n| CONDITION_DAILY_DEALS_PERIOD | 3001 | 某日交易的频率。基于最后8笔交易计算（交易之间的平均时间）。 |\n| CONDITION_DAILY_PROFIT | 3002 | 当前和前几天（包括周末和假期）正被处理请求的客户的利润。 |\n| CONDITION_POSITION_VOLUME | 4000 | 已到达请求所针对的交易品种持仓的当前量。 |\n| CONDITION_POSITION_PROFIT | 4001 | 已到达请求所针对的交易品种持仓的当前利润。 |\n| CONDITION_POSITION_AGE | 4002 | 使用该参数，您可以指定从针对当前正被处理请求的交易品种开仓开始经过的秒计时间。该参数允许基于已持时间跟踪持仓。 |",
+    "llm_grade": 0,
+    "llm_reason": "该段落讨论了交易条件参数，并未提及假期期间允许客户进行哪些操作。",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3273_db43dde9",
+    "chunk_text": "CMTManagerAPIFactory::CreateAdmin\n\nCreate the administrator interface [IMTAdminAPI](imtadminapi.htm).\n\nC++\n\n| |\n| --- |\n| MTAPIRES  CMTManagerAPIFactory::CreateAdmin(    UINT           version,     // Version    IMTAdminAPI**  admin        // A pointer to the administrator interface    ) |\n\n.NET\n\n| |\n| --- |\n| CIMTAdminAPI  SMTManagerAPIFactory.CreateAdmin(    uint           version,     // Version    out MTRetCode  res          // Response code    ) |\n\nParameters\n\nversion",
+    "llm_grade": 2,
+    "llm_reason": "The passage shows the 'admin' parameter as a pointer to the administrator interface, but does not explicitly explain its role as an output parameter returning the created interface.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_25685_812f6292",
+    "chunk_text": "[in]  Position of a trade request in an array, starting with 0.\n\nReturn Value\n\nReturns a pointer to the detached object of the trade request.\n\nNote\n\nThis method removes the pointer to the object at the given position of the array and returns it. The size of the array is decreased by one, and the deleted object is not freed.\n\n###### Update\n\nUpdate",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions a trade request object but does not mention the OnTradeRequestUpdate method, the request parameter, or the IMTRequest type.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_12656_d87e6674",
+    "chunk_text": "参数\n\n登录名\n\n[in]  删除交易品种的[经理登录名](imtconmanager_login.htm)。如果是通过插件删除交易品种，则该参数指定为0。\n\ncfg\n\n[in]  指向[交易品种对象](imtconsymbol.htm)的指针。\n\n返回值\n\n在没有该事件的处理程序的情况下，返回[MT_RET_OK](retcodes_successful.htm)。\n\n如果事件处理程序返回的代码不同于[MT_RET_OK](retcodes_successful.htm)，那么将不会删除交易品种，且不会将挂钩传递给其他处理程序（包括其他插件）。\n\n注意\n\n挂钩的调用就在从配置库删除记录之前。该挂钩的主要目的是防止不需要的记录删除。\n\n此方法仅可在MetaTrader 5 Server API中有效。",
+    "llm_grade": 0,
+    "llm_reason": "The passage discusses symbol deletion parameters and does not mention OnTradeRequestUpdate or the request parameter.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_3237_36008d9c",
+    "chunk_text": "The MTAdminCreate exported function creates a new instance of the [IMTAdminAPI](imtadminapi.htm) interface and returns a pointer to it.\n\n| |\n| --- |\n| MTAPIRES  MTAdminCreate(    UINT           api_version    // API version    IMTAdminAPI**  admin          // A pointer to the pointer to the interface    ) |\n\nParameters\n\napi_version\n\n[out]  The current version of Manager API supported by the server is passed in this parameter.\n\nadmin",
+    "llm_grade": 3,
+    "llm_reason": "The passage states that MTAdminCreate creates a new instance of the IMTAdminAPI interface and returns a pointer to it, and shows the admin parameter as the pointer to the interface.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是什么？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_296_5dd47faa",
+    "chunk_text": "| 函数 | 用途 |\n| --- | --- |\n| [FeederCreate](imtserverapi_feedercreate.htm) | 创建数据源配置的对象。 |\n| [FeederModuleCreate](imtserverapi_feedermodulecreate.htm) | 创建数据源模块配置的对象。 |\n| [FeederParamCreate](imtserverapi_feederparamcreate.htm) | 创建数据源参数的对象。 |\n| [FeederTranslateCreate](imtserverapi_feedertranslatecreate.htm) | 创建对从数据源传输的信息进行转换的设置对象。 |\n| [FeederSubscribe](imtserverapi_feedersubscribe.htm) | 订阅与数据源配置相关的事件和挂钩。 |\n| [FeederUnsubscribe](imtserverapi_feederunsubscribe.htm) | 退订与数据源配置相关的事件和挂钩。 |",
+    "llm_grade": 1,
+    "llm_reason": "The passage lists other feeder-related functions but does not mention FeederGet or the copying of configuration data.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_1739_356068e3",
+    "chunk_text": "IMTTradeSink::OnTradeRequestUpdate\n\n交易请求的状态 [已更改的事件的](imtrequest.htm) 处理程序。\n\n| |\n| --- |\n| virtual void  IMTTradeSink::OnTradeRequestUpdate(    const IMTRequest*  request      // 指向请求对象的指针    ) |\n\n参数\n\nrequest\n\n[in]  指向 [交易请求的对象的指针](imtrequest.htm)。\n\n注意\n\n该方法通知交易请求的状态已在其处理期间更改。\n\n若要分析更改，请使用交易请求的 [IMTRequest::ResultRetcode](imtrequest_resultretcode.htm) 属性及其状态的其他属性 (IMTRequest::Result*)。\n\n#### OnTradeRequestDelete\n\nOnTradeRequestDelete",
+    "llm_grade": 3,
+    "llm_reason": "The passage explicitly states that the `request` parameter is a pointer to the trading request object (IMTRequest), directly answering the question.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "账户组交易的作用是什么？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_6844_ea9dff2c",
+    "chunk_text": "交易的周报告\n\n使用该报告评估您交易者的活动。它按周显示分组的已执行交易的信息。数据可以按组进行筛选。\n\n![“每周交易”报告](deals_weekly.png \"“每周交易”报告\")\n\n过滤器\n\n可以过滤为报告请求的数据。在经理端请求报告之前，指定以下参数：\n\n* 组 — 包含账户的组，在该账户上必须创建报告。您可以指定一个或多个用逗号分隔的账户。\n* 时段 — 将生成报告的时段的开始和结束日期。\n\n报告中的图表\n\n该报告包括多个分类图表：\n\n* 交易量 — 交易量的分布：总量图和按周的分布情况。\n* 盈利交易量 — 盈利交易量的分布情况。\n* 亏损交易量 — 亏损交易量的分布情况。\n* 盈利额 — 交易盈利的分布情况。\n* 亏损额 — 交易亏损的分布情况。\n* 盈利交易数 — 盈利交易数量的分布情况。\n* 亏损交易数 — 亏损交易数量的分布情况。\n* 盈利交易量平均值 — 盈利交易的平均交易量分布。\n* 亏损交易量平均值 — 亏损交易的平均交易量分布。\n* 盈亏 — 交易的总盈利和总亏损之间的差额。\n* 盈亏累积 — 交易的总盈利和总亏损之间的累积差额。",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions groups and trades in the context of a weekly report, but it does not contain any information about the function of account group trading or the specific APIs mentioned in the reference answer.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "交易品种组在假期里允许客户进行哪些操作？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_11938_4bc0fc92",
+    "chunk_text": "IMTConHoliday::SymbolNext\n\n根据索引 [从假期](config_symbol.htm) 适用的交易品种列表中获取交易品种。\n\nC++\n\n| |\n| --- |\n| LPCWSTR  IMTConHoliday::SymbolNext(    const UINT  pos      // 交易品种的位置    )  const |\n\n.NET (Gateway/Manager API)\n\n| |\n| --- |\n| string  CIMTConHoliday.SymbolNext(    uint        pos      // 交易品种的位置    ) |\n\n参数\n\npos\n\n[in]  列表中交易品种的位置，从 0 开始。\n\n返回值\n\n若成功，其将返回一个指向带有交易品种全名（包括到其的路径）的字符串的指针。否则，其将返回 NULL。\n\n注\n\n指向结果字符串的指针在对象 [IMTConHoliday](imtconholiday.htm) 的生命周期内是有效的。",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions holidays and trading symbols but does not contain any information about the operations allowed for clients during holidays.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_516_9086de68",
+    "chunk_text": "只能从主服务器上运行的插件添加或更新配置。对于所有其他插件，将返回响应代码 [MT_RET_ERR_NOTMAIN](retcodes_api.htm) 。\n\n添加前会检查记录的正确性。如果记录有误，则将返回错误代码 [MT_RET_ERR_PARAMS](retcodes_common.htm) 。\n\n###### HistorySyncDelete\n\nHistorySyncDelete",
+    "llm_grade": 3,
+    "llm_reason": "The passage directly confirms that configurations can only be added or updated from the main server and specifies the error code returned for others.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_388_7ccc34ae",
+    "chunk_text": "只能从主服务器上运行的插件添加或更新配置。对于所有其他插件，将返回响应代码 [MT_RET_ERR_NOTMAIN](retcodes_api.htm) 。\n\n添加前会检查记录的正确性。如果记录有误，则将返回错误代码 [MT_RET_ERR_PARAMS](retcodes_common.htm) 。\n\n###### FirewallDelete\n\nFirewallDelete",
+    "llm_grade": 3,
+    "llm_reason": "The passage directly states that configurations can only be added or updated from the main server and mentions the exact error code.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_439_b95c1861",
+    "chunk_text": "只能从主服务器上运行的插件添加或更新配置。对于所有其他插件，将返回响应代码 [MT_RET_ERR_NOTMAIN](retcodes_api.htm) 。\n\n添加前会检查记录的正确性。如果记录有误，则将返回错误代码 [MT_RET_ERR_PARAMS](retcodes_common.htm) 。\n\n###### SpreadDelete\n\nSpreadDelete",
+    "llm_grade": 3,
+    "llm_reason": "The passage directly states that configurations can only be added or updated from plugins running on the main server, and other plugins will receive the MT_RET_ERR_NOTMAIN error code.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "交易品种组在假期里允许客户进行哪些操作？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_103_5178e8db",
+    "chunk_text": "1. 客户或交易员通过客户端或经理端下订单。\n2. 服务器收到交易请求并验证其数字签名。\n3. 服务器将请求添加到初始请求队列中。\n4. 一个单独的流执行请求的初步验证。此阶段检查以下内容：\n\n* 1. 请求的整体有效性；\n2. 请求中指定的交易品种：\n+ 客户组是否允许交易品种交易；\n+ 请求时间是否在交易时间段内；\n+ 请求时间是否为假期；\n+ 请求时间是否在服务器运行时间内；\n+ 交易品种交易时间是否尚未过期；\n+ 请求是否因没有交易品种报价而尚未超时；\n+ 交易品种是否允许指定的成交类型；* 是否启用了请求已被接收所来自的账户；\n* 该账户是否允许交易；\n* 该账户是否未处于只读模式；\n* 是否有到历史服务器的连接；\n* 该阶段检查交易品种的价格并收到当前价格；\n* 检查请求参数：\n+ 交易量；\n+ 价格正常化；\n+ 停止水平的验证；\n+ 对订单数量的限制；\n+ 对订单和持仓总交易量的限制；* 检查是否有足够的预付款。",
+    "llm_grade": 1,
+    "llm_reason": "The passage mentions checking if the request time is a holiday during trade validation, but does not state what operations clients are allowed to perform during holidays.",
+    "llm_accepted": false,
+    "human_label": null
+  },
+  {
+    "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_25751_9e77f18d",
+    "chunk_text": "Parameters\n\nrequest\n\n[in]  A pointer to the object of the changed request.\n\nNote\n\nThis method is called by the API to notify that a trade request has been modified.\n\n###### OnRequestDelete\n\nOnRequestDelete",
+    "llm_grade": 2,
+    "llm_reason": "The passage states that the request parameter is a pointer to the object of the changed request, but it does not mention the specific type IMTRequest.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_English.chm_25748_a4b67de9",
+    "chunk_text": "Parameters\n\nrequest\n\n[in]  A pointer to the object of the added request.\n\nNote\n\nThis method is called by the API to notify that a new trade request has been added.\n\n###### OnRequestUpdate\n\nOnRequestUpdate",
+    "llm_grade": 2,
+    "llm_reason": "The passage mentions that the request parameter is a pointer to the object of the added request, but does not specify the IMTRequest type.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_467_1fc54d0d",
+    "chunk_text": "只能从主服务器上运行的插件添加或更新配置。对于所有其他插件，将返回响应代码 [MT_RET_ERR_NOTMAIN](retcodes_api.htm) 。\n\n添加前会检查记录的正确性。如果记录有误，则将返回错误代码 [MT_RET_ERR_PARAMS](retcodes_common.htm) 。\n\n###### GroupDelete\n\nGroupDelete",
+    "llm_grade": 3,
+    "llm_reason": "The passage directly states that configurations can only be added or updated from plugins running on the main server, and returns MT_RET_ERR_NOTMAIN for all others.",
+    "llm_accepted": true,
+    "human_label": null
+  },
+  {
+    "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
+    "chunk_id": "C:\\workspace\\MODULAR-RAG-MCP-SERVER\\ingest_source\\MetaTrader5SDK_Chinese.chm_720_3d5d63da",
+    "chunk_text": "只能从主服务器上运行的插件添加或更新配置。对于所有其他插件，将返回响应代码 [MT_RET_ERR_NOTMAIN](retcodes_api.htm)。\n\n添加记录之前会检查记录的正确性。如果记录有误，则将返回错误代码[MT_RET_ERR_PARAMS](retcodes_common.htm)。\n\n###### AutomationDelete\n\nAutomationDelete",
+    "llm_grade": 3,
+    "llm_reason": "The passage directly confirms that configurations can only be added or updated from the main server and specifies the exact error code returned otherwise.",
+    "llm_accepted": true,
+    "human_label": null
+  }
+]

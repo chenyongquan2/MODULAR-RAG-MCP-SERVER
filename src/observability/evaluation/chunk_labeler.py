@@ -334,9 +334,13 @@ class ChunkLabeler:
         )
 
         try:
+            # max_tokens 必须给足：此前硬编码 200，真实语料上几乎全军覆没
+            # （367 字符的 chunk 就返回空响应）。预算不足时输出被截断成半个
+            # JSON 或干脆为空，于是每条都标 judge_failed —— 表现为「模型不会
+            # 遵从 JSON 格式」，真实原因是没给它写完的余量。见配置项 docstring。
             response = self._llm.chat(
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=200,
+                max_tokens=self._settings.evaluation.labeling_llm.max_tokens,
                 temperature=self._settings.evaluation.labeling_llm.temperature,
             )
         except Exception as exc:  # noqa: BLE001 —— 单条失败不终止整轮

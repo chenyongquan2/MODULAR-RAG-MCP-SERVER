@@ -28,6 +28,24 @@ pytestmark = pytest.mark.unit
 SECRET_TOKENS = ("api_key", "token", "secret", "password", "credential")
 
 
+def _is_secret_typed(field_obj: dataclasses.Field) -> bool:
+    """密钥一定是字符串;数值字段不可能是密钥。
+
+    为什么需要这道过滤(2026-08-13 实测踩到):名字含 ``token`` 的字段并不都是
+    密钥 —— ``LabelingLLMSettings.max_tokens: int`` 就被 ``"token" in name``
+    的启发式误判成了密钥,要求它 ``repr=False``。那是荒谬的:把 max_tokens 从
+    repr 里藏起来毫无意义,只会让调试变难。
+
+    按类型过滤比维护一份名字白名单更有原则 —— 新增 ``max_tokens`` /
+    ``token_limit`` / ``n_tokens`` 之类的数值参数都不必再来改这个测试。
+
+    注意这**不削弱**检查:任何字符串类型且名字含敏感词的字段仍然被要求
+    ``repr=False``。
+    """
+    annotation = str(field_obj.type)
+    return "int" not in annotation and "float" not in annotation and "bool" not in annotation
+
+
 def _secret_fields() -> list[tuple[str, dataclasses.Field]]:
     """收集 src.core.settings 中所有配置类的敏感字段。"""
     found: list[tuple[str, dataclasses.Field]] = []
@@ -37,7 +55,7 @@ def _secret_fields() -> list[tuple[str, dataclasses.Field]]:
         if obj.__module__ != settings_module.__name__:
             continue  # 跳过 import 进来的外部 dataclass
         for f in dataclasses.fields(obj):
-            if any(tok in f.name.lower() for tok in SECRET_TOKENS):
+            if any(tok in f.name.lower() for tok in SECRET_TOKENS) and _is_secret_typed(f):
                 found.append((f"{name}.{f.name}", f))
     return found
 
