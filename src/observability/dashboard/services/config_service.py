@@ -116,12 +116,16 @@ class ConfigService:
         components.append(splitter_config)
 
         # Reranker 配置
+        # top_m / timeout_sec / batch_size 三项都影响重排的实际行为与延迟，
+        # dashboard 上要能一眼看全 —— 此前只暴露 top_m，而那时它还是个死配置。
         reranker_config = ComponentConfig(
             name="Reranker",
             provider=self._settings.rerank.backend,
             model=self._settings.rerank.model or "N/A",
             details={
                 "top_m": self._settings.rerank.top_m,
+                "timeout_sec": self._settings.rerank.timeout_sec,
+                "batch_size": self._settings.rerank.batch_size,
             },
         )
         components.append(reranker_config)

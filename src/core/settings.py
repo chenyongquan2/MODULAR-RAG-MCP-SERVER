@@ -165,11 +165,37 @@ class QuerySettings:
 
 @dataclass
 class RerankSettings:
-    """重排配置。"""
+    """重排配置。
+
+    重排(rerank)是混合检索的第二阶段:dense/sparse 两路召回并融合出候选后,
+    用更贵但更准的模型对候选做精细重新排序。与召回用的 bi-encoder 不同,
+    cross-encoder 把 query 与文档拼接后一起过 Transformer,精度更高但无法
+    预计算,所以只能对少量候选实时打分 —— 这正是 `top_m` 存在的理由。
+
+    Attributes:
+        backend: 重排后端。见 VALID_RERANK_BACKENDS。
+            - none: 不重排,直接用融合结果
+            - cross_encoder: 本地交叉编码器(sentence-transformers),零 token
+            - llm: 大模型逐条打分,每条候选一次独立调用,慢且贵
+        model: 模型标识。`backend != "none"` 时**必填** —— 刻意不设隐式默认值,
+            否则配置留空会静默用上一个可能对语料无效的模型(此前的兜底默认值
+            `cross-encoder/ms-marco-MiniLM-L-6-v2` 是纯英文模型,对中文语料
+            完全无效且不报错)。
+        top_m: 送入重排后端的候选数上限。超出部分按原名次追加在重排结果之后,
+            不参与重排但也不丢弃。这是 `llm` 后端唯一能约束调用次数与 token
+            消耗的旋钮,也是 `cross_encoder` 后端约束推理耗时的旋钮。
+        timeout_sec: 单次重排的总耗时上限(秒)。超时保留已评分部分的排序,
+            未评分部分保持原名次追加。cross-encoder 是同步 CPU 推理,没有
+            HTTP 客户端那种现成的超时参数,只能靠分批 + 批间计时实现。
+        batch_size: 分批推理的批大小。同时决定超时检查的粒度 —— 批越大,
+            超时判定越粗(最坏情况会超出 timeout_sec 一个批次的推理时间)。
+    """
 
     backend: str = "none"
     model: str = ""
     top_m: int = 30
+    timeout_sec: float = 30.0
+    batch_size: int = 8
 
 
 @dataclass
@@ -438,6 +464,12 @@ class ObservabilitySettings:
 # 允许的 transport 类型，集中定义以避免各处字符串字面量散落
 TransportType = Literal["stdio", "sse"]
 VALID_TRANSPORTS: frozenset[str] = frozenset({"stdio", "sse"})
+
+# 允许的重排后端，与 src/libs/reranker/reranker_factory.py 的注册表保持一致。
+# 集中定义在此是为了让启动期校验不必 import factory 就能挡掉拼错的后端名
+# （真正的「后端是否可用」探测在 RerankerFactory.probe_backend，见 T-2.2）。
+RerankBackendType = Literal["none", "cross_encoder", "llm"]
+VALID_RERANK_BACKENDS: frozenset[str] = frozenset({"none", "cross_encoder", "llm"})
 
 
 @dataclass
@@ -742,6 +774,98 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     return settings
 
 
+def _validate_rerank_settings(rerank: RerankSettings) -> None:
+    """校验重排配置(change activate-cross-encoder-rerank,宪法原则三:启动期快速失败)。
+
+    这里每一条都刻意在启动期硬失败,而不是运行期兜底 —— 共同点是**违反后
+    不会有任何报错**,用户以为重排在跑,实际拿到的是一次普通检索。这类静默
+    失败最难排查:分数变化可以归因于任何环节,只有启动期报错能把问题钉在
+    配置上。
+
+    注意本函数**不探测后端依赖是否可用**(那需要 import 具体库,会把库名
+    硬编码进 src/core/,违反宪法原则一 provider 无关性)。依赖探测由
+    `RerankerFactory.probe_backend` 承担,在 load_settings 里单独调用。
+
+    Args:
+        rerank: 待校验的重排配置。
+
+    Raises:
+        SettingsError: 任一参数非法时。
+    """
+    backend = rerank.backend
+    if backend not in VALID_RERANK_BACKENDS:
+        raise SettingsError(
+            f"Invalid rerank.backend: {backend!r}. "
+            f"Expected one of: {sorted(VALID_RERANK_BACKENDS)}"
+        )
+
+    # backend != none 时 model 必填。刻意不留隐式默认值 —— 一个「配置留空就
+    # 悄悄用纯英文模型」的兜底会让中文语料的重排完全无效且不报错。
+    if backend != "none" and not rerank.model.strip():
+        raise SettingsError(
+            f"rerank.model is required when rerank.backend is {backend!r}, "
+            "but it is empty. There is deliberately no implicit default: a "
+            "silently-defaulted model can be wrong for your corpus (e.g. an "
+            "English-only cross-encoder scores Chinese passages as noise "
+            "without any error). Recommended for cross_encoder: "
+            "'BAAI/bge-reranker-base' (bilingual zh/en, runs locally, no tokens)."
+        )
+
+    # top_m / batch_size:正整数。bool 要单独挡 —— isinstance(True, int) 为真,
+    # 不挡的话 YAML 写成 `top_m: true` 会被当作 1 静默通过。
+    for name, value in (("top_m", rerank.top_m), ("batch_size", rerank.batch_size)):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise SettingsError(
+                f"Invalid rerank.{name}: {value!r}. Expected a positive integer"
+            )
+
+    # timeout_sec:正数(允许小数)。<= 0 会让每次重排都立刻「超时」并退化为
+    # 原序返回 —— 又一种不报错的静默失效。
+    timeout = rerank.timeout_sec
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        raise SettingsError(
+            f"Invalid rerank.timeout_sec: {timeout!r}. Expected a positive number"
+        )
+    if timeout <= 0:
+        raise SettingsError(
+            f"Invalid rerank.timeout_sec: {timeout}. Expected a positive number "
+            "(a non-positive timeout makes every rerank expire immediately and "
+            "silently degrade to the original order)"
+        )
+
+
+def _probe_rerank_backend(rerank: RerankSettings) -> None:
+    """探测重排后端的运行依赖是否可用(T-2.2,宪法原则三)。
+
+    与 `_validate_rerank_settings` 分开是因为两者的知识边界不同:前者只看
+    配置值本身,不需要知道任何 provider 细节;本函数要判断「这个后端的依赖
+    装了没」,而那属于 provider 知识 —— 按宪法原则一,`src/core/` 不得 import
+    具体 provider 实现,所以实际探测委托给 `RerankerFactory.probe_backend`,
+    本函数只负责把它的 `ValueError` 转成本模块统一的 `SettingsError`。
+
+    `backend: none` 时直接跳过 —— 默认配置不该因为一次 import 就把 factory
+    及其下游(可能相当重的 torch 依赖链)拉进内存。
+
+    Args:
+        rerank: 已通过 `_validate_rerank_settings` 的重排配置。
+
+    Raises:
+        SettingsError: 后端依赖不可用时。消息里带可执行的安装命令。
+    """
+    if rerank.backend == "none":
+        return
+
+    # 局部 import:避免模块顶层依赖 libs 层,也避免 backend=none 时白白加载
+    from src.libs.reranker.reranker_factory import RerankerFactory
+
+    try:
+        RerankerFactory.probe_backend(rerank.backend)
+    except ValueError as e:
+        # 转成本模块统一的异常类型,让调用方只需处理一种配置异常。
+        # 这不是「吞掉异常后静默回退」—— 原因链用 from e 完整保留。
+        raise SettingsError(f"Invalid rerank.backend: {e}") from e
+
+
 def _validate_fusion_settings(retrieval: RetrievalSettings) -> None:
     """校验融合参数(spec feature-005 T002,宪法原则三:启动期快速失败)。
 
@@ -843,6 +967,10 @@ def validate_settings(settings: Settings) -> None:
             "Invalid vector_store.bm25_index_format_version: "
             f"{fmt_version!r}. Expected a positive integer"
         )
+
+    # 重排配置校验（change activate-cross-encoder-rerank T-2.1 / T-2.2）
+    _validate_rerank_settings(settings.rerank)
+    _probe_rerank_backend(settings.rerank)
 
     # 查询响应配置校验（spec feature-002 FR-004）
     if settings.query.max_images_per_response <= 0:

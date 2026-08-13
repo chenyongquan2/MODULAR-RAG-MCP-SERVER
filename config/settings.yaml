@@ -110,10 +110,42 @@ query:
   max_images_per_response: 10   # 单次响应附带图片数上限（正整数；超出时按命中 chunk 顺序取前 N 张）
 
 # 重排配置
+#
+# 重排是混合检索的第二阶段：dense/sparse 融合出候选后，用更贵但更准的模型
+# 对候选做精细重新排序。与召回用的 bi-encoder 不同，cross-encoder 把 query
+# 与文档拼接后一起过 Transformer，精度更高但无法预计算 —— 所以只能对少量
+# 候选实时打分，这正是 top_m 存在的理由。
+#
+# ⚠️ 默认关闭。开启前先 pip install -e ".[rerank]"（cross_encoder 后端需要），
+#    否则启动期会直接报错并给出安装命令（不会静默降级成不重排）。
 rerank:
   backend: none             # none | cross_encoder | llm
+  # backend != none 时必填，刻意没有隐式默认值 —— 此前的兜底默认值
+  # cross-encoder/ms-marco-MiniLM-L-6-v2 是纯英文模型，对中文语料完全无效
+  # 且不报错，属于「看起来可配、实际取默认值」那类静默失效。
+  #
+  # cross_encoder 推荐：BAAI/bge-reranker-base
+  #   中英双语 / 278M 参数 / 权重约 1.08 GB
+  #   **本地推理，零 token 消耗**（与 llm 后端的成本模型完全相反）
+  #   首次加载需能访问 HuggingFace 下载权重，国内设 HF_ENDPOINT=https://hf-mirror.com
+  #   落盘后完全离线可用
+  #
+  #   ⚠️ 延迟实测（AMD Zen 3 CPU、真实语料 chunk 中位 428 字符、batch_size=8）：
+  #      每候选 121-147 ms → 40 条候选约 5.2 秒、50 条约 7.3 秒。
+  #      重排会让查询延迟涨一个数量级，开启前先想清楚是否接受。
+  #      注意别拿短文本的微基准数字（约 25 ms/pair）做规划 —— cross-encoder
+  #      的开销随 token 数走，真实 chunk 比测试样本长得多。
+  #
+  # llm 后端：复用 llm.provider 的网关配置，**每条候选一次独立串行调用**，
+  #   慢且贵（top_m=50 时单次查询约 5-8 万输入 token）。仅作对照用。
   model: ""
-  top_m: 50
+  top_m: 50                 # 送入重排的候选上限；超出部分按原名次追加在结果之后，
+                            # 不参与重排但也不丢弃。这是 llm 后端唯一能约束调用
+                            # 次数与 token 消耗的旋钮
+  timeout_sec: 30.0         # 单次重排总耗时上限（秒）。超时保留已评分部分的排序，
+                            # 未评分部分保持原名次追加 —— 不抛异常、不丢候选
+  batch_size: 8             # 分批推理的批大小，同时决定超时检查的粒度。
+                            # 批越大超时判定越粗（最坏会超出 timeout_sec 一个批次）
 
 # 摄取管道配置
 ingestion:

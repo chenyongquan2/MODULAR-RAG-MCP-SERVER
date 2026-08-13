@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from src.core.settings import Settings
+from src.core.settings import RerankSettings, Settings
 from src.libs.reranker.base_reranker import BaseReranker
 from src.libs.reranker.cross_encoder_reranker import CrossEncoderReranker
 from src.libs.reranker.reranker_factory import RerankerFactory
@@ -33,11 +33,19 @@ from src.libs.reranker.reranker_factory import RerankerFactory
 
 @pytest.fixture
 def mock_settings():
-    """Create mock settings for Cross-Encoder reranker."""
+    """Create mock settings for Cross-Encoder reranker.
+
+    ``rerank`` 用真实的 ``RerankSettings`` dataclass 而非裸 ``Mock()``:
+    ``CrossEncoderReranker`` 现在真的会读 ``batch_size``(此前硬编码 32,属
+    宪法原则二禁止的硬编码可调参数),裸 Mock 会让它返回一个 Mock 对象。
+    用真实 dataclass 还能保证本测试无法与真实配置结构漂移。
+    """
     settings = Mock(spec=Settings)
-    settings.rerank = Mock()
-    settings.rerank.backend = "cross_encoder"
-    settings.rerank.model = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    settings.rerank = RerankSettings(
+        backend="cross_encoder",
+        model="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        batch_size=32,  # 保持本文件既有断言的期望值
+    )
     return settings
 
 
@@ -171,12 +179,23 @@ def test_model_loading_caches_instance(mock_settings):
 
 
 def test_model_loading_raises_import_error_if_library_missing(mock_settings):
-    """Test that ImportError is raised if sentence-transformers is not installed."""
+    """Test that ImportError is raised if sentence-transformers is not installed.
+
+    注意 import 必须被**主动模拟成失败**（把 sys.modules 里对应项设为 None,
+    Python 会对它抛 ImportError）。本测试早先没有这一步,靠的是环境里真的
+    没装 sentence-transformers —— 那意味着依赖一旦装上,它就不再测「库缺失」,
+    而是去真连 HuggingFace 下载模型（退避重试数分钟后抛网络错误）。
+
+    这个分支仍然是**可达**的:启动期的 RerankerFactory.probe_backend 用
+    find_spec 只证明模块找得到、不执行模块,装坏了的依赖（例如 Windows 上
+    torch 的 DLL 加载失败）会通过探测但在真正 import 时炸。
+    """
     reranker = CrossEncoderReranker(settings=mock_settings)
 
-    # Directly test the property which will fail to import
-    with pytest.raises(ImportError, match="sentence-transformers is required"):
-        _ = reranker.model
+    # sys.modules[name] = None 是标准的「模拟该模块不可导入」手法
+    with patch.dict("sys.modules", {"sentence_transformers": None}):
+        with pytest.raises(ImportError, match="sentence-transformers is required"):
+            _ = reranker.model
 
 
 def test_model_loading_raises_runtime_error_on_failure(mock_settings):

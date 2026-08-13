@@ -65,6 +65,49 @@ class TestConfigService:
         }
         assert component_names == expected_names
 
+    def test_get_all_components_reranker_config(self, fake_settings: type) -> None:
+        """Reranker 组件必须暴露全部影响行为与延迟的参数。
+
+        change activate-cross-encoder-rerank (T-2.3):此前只暴露 ``top_m``,
+        而那时 ``top_m`` 还是个**从未被消费的死配置** —— dashboard 上显示着
+        一个不起作用的数字。现在三项都真的生效,都要看得见。
+        """
+        # Arrange
+        settings = fake_settings()
+        config_service = ConfigService(settings)
+
+        # Act
+        components = config_service.get_all_components()
+        reranker = next((c for c in components if c.name == "Reranker"), None)
+
+        # Assert
+        assert reranker is not None
+        assert reranker.provider == "cross_encoder"
+        assert reranker.model == "test-reranker"
+        assert reranker.details == {
+            "top_m": 30,
+            "timeout_sec": 12.5,
+            "batch_size": 4,
+        }
+
+    def test_reranker_config_shows_na_when_model_empty(
+        self, fake_settings: type
+    ) -> None:
+        """``backend: none`` 时 model 为空,显示 N/A 而非空字符串。"""
+        # Arrange
+        settings = fake_settings()
+        settings.rerank = RerankSettings(backend="none", model="")
+        config_service = ConfigService(settings)
+
+        # Act
+        components = config_service.get_all_components()
+        reranker = next((c for c in components if c.name == "Reranker"), None)
+
+        # Assert
+        assert reranker is not None
+        assert reranker.provider == "none"
+        assert reranker.model == "N/A"
+
     def test_get_all_components_llm_config(self, fake_settings: type) -> None:
         """测试 LLM 组件配置正确。"""
         # Arrange
@@ -262,6 +305,8 @@ def fake_settings() -> type:
                 backend="cross_encoder",
                 model="test-reranker",
                 top_m=30,
+                timeout_sec=12.5,
+                batch_size=4,
             )
         )
         retrieval: Any = field(

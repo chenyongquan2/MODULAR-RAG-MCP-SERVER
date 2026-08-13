@@ -55,6 +55,21 @@ dev = [
 docs = [
     "markdown>=3.5",
 ]
+# ─── 重排（rerank）能力 ───
+# Cross-Encoder 重排是检索链路的第二阶段：对融合后的候选做精细重新排序。
+# 与 dense/sparse 检索用的 bi-encoder 不同，cross-encoder 把 query 与文档
+# 拼接后一起过 Transformer，精度更高但无法预计算，只能对少量候选实时打分。
+#
+# 为什么是 optional extra 而不是核心依赖：sentence-transformers 会拖 torch
+# （CPU 版通常 200MB+）。重排默认关闭（settings.yaml 的 rerank.backend: none），
+# 不该让一个默认不启用的能力向所有安装收税。
+#
+# 启用方式：pip install -e ".[rerank]"
+# 注意：本地推理，零 token 消耗；首次加载模型需能访问 HuggingFace 下载权重
+#       （国内设 HF_ENDPOINT=https://hf-mirror.com），落盘后完全离线可用。
+rerank = [
+    "sentence-transformers>=2.2.0",
+]
 
 # 使用 src 布局，将 src 作为顶级包
 # 这样 "from src.xxx" 导入在 editable install 后可以正常工作
