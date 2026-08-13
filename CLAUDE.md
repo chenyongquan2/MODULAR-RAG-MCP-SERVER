@@ -278,6 +278,14 @@ The dashboard is fully dynamic - component names displayed are read from trace l
   - `rerank.timeout_sec` / `batch_size` 为新增。超时靠**分批 + 批间计时**实现 —— cross-encoder 是同步 CPU 推理,`signal.alarm` 在 Windows 无效、线程 join 无法中断 torch。代价是超时粒度 = 一批的推理时间
   - **延迟实测**(AMD Zen 3、真实 chunk 中位 428 字符、`batch_size=8`):每候选 **121-147 ms** → 40 条候选约 **5.2 秒**。别拿短文本微基准(约 25 ms/pair)做规划,cross-encoder 开销随 token 数走
 - **⚠️ 金标无法公正评判重排**(本项目当前最重要的评估局限):`expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 回填的 —— 标准答案本身就是「embedding 认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此**四项 custom 指标全是 dense-anchored 的**,`MRR` / `nDCG` 对重排**并不比** `recall` / `hit_rate` 更中立(上一条关于 MRR/nDCG 更可信的说法只适用于 dense-vs-sparse 的路径比较)。实测:英文 42 条 MRR 0.4914 → 0.3668、中文 6 条 0.5833 → 0.4167,**而集成测试里同一模型每次都能把故意放在末位的相关段落提到首位**。模型在做正确的事,指标却在跌 —— 在换掉金标构造方式之前,本项目**没有可用于评判重排的离线指标**。详见 [openspec/changes/activate-cross-encoder-rerank/acceptance.md](openspec/changes/activate-cross-encoder-rerank/acceptance.md) § 五
+- **金标有两代,`expected_chunk_ids` 的构造方式不同,分数不可跨代比较**(change `retriever-agnostic-golden-labels` 起):
+  - **第一代**(`version: v1.0`,报告里 `labeling_method: dense-top-k`):`scripts/backfill_chunk_ids.py` 把 `ground_truth` 编码后查 **纯 dense top-5** 回填。标准答案就是「embedding 认为最像答案的那几条」—— 这就是上一条说的那个评估局限的来源。**该脚本刻意保留**(第一代金标的可复现来源),但不要再用它产出新金标
+  - **第二代**(`version: v2.0`,`labeling_method: pooled-llm-judged`):`scripts/label_golden_chunks.py` 用 **query**(不是答案)从 dense / sparse / rerank 三路各取 top-N 取并集,再让 LLM 判 0-3 分级相关度。中文 6 条实测:与纯 dense top-K 的 Jaccard 仅 **0.328**,被接受的 72 条里 **22 条(31%)是纯 dense 结构上看不到的**
+  - **跨代 delta 会被报告显式标注 `delta_comparable: false`** —— 别把「标注口径变了」读成「检索质量变了」。换代次后必须重标基线
+  - `evaluation.labeling_llm` **必须与 `judge_llm` 异源**(合成 `ground_truth` 的就是 judge),判据同 `screening_llm`:完整标识串相等即同源。**同源不可用 `--allow-same-source` 豁免**,该参数只豁免「无法确认」
+  - ⚠️ **两代金标都没有机器可读的合成端标识**(建于 2026-04-28,早于 Feature-003 的 `_review_metadata`),所以异源检测返回 `UNVERIFIABLE`,当前只能靠 `--allow-same-source` 显式承担风险
+  - ⚠️ **LLM 判定不等于人工级 ground truth**。它去掉了检索器锚定,但引入了判定模型自身的偏好。`--export-sample` / `--import-sample` 的人工抽检是唯一校准手段 —— **跳过它就只是把一种未验证的偏差换成另一种**
+  - `labeling_llm.max_tokens` **不要调小**。此前硬编码 200,真实语料上 367 字符的 chunk 就返回**空响应**,导致每条都标 `judge_failed` —— 表现得像「模型不遵从 JSON 格式」,真实原因是没给它写完的余量。默认 800
 - **`scripts/evaluate.py` 与 `scripts/query.py` 都不写 query trace** —— 只有 MCP server 路径写 `logs/traces.jsonl`。想量某个阶段的真实耗时得写专门的基准脚本,别指望从 trace 里捞
 - **跑 Python 脚本调试时务必加 `-u`** —— stdout 在管道下是全缓冲的,不加会看到空输出并误判成「进程卡死」。本项目的日志走 stderr、进度条走 stdout,两者混在一起时尤其容易误判
 - **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately. 自 feature-002 起，查询命中含图 chunk 时，`query_knowledge_hub` 工具会通过 `MultimodalAssembler` 同时返回文本与图片（MCP `ImageContent`，base64），两种模式（`use_llm=true/false`）策略一致。返图数量上限由 `query.max_images_per_response` 配置（默认 10）
@@ -304,7 +312,8 @@ Supports pluggable evaluators (Ragas, custom metrics). Evaluations run against g
 - `scripts/synthesize_testset.py --collection <c> --lang {zh,en}` — RAGAS TestsetGenerator 合成候选(US2)
 - `scripts/refine_testset.py --input <candidate>` — interactive y/e/d/s/q 精修
 - `scripts/refine_testset.py --input <candidate> --auto-mode` — **异源 LLM 预筛 + borderline 路由**(Feature-003),只对存疑用例点人 + 收尾抽样自检
-- `scripts/backfill_chunk_ids.py --input <golden> --collection <c>` — 语义匹配回填 expected_chunk_ids
+- `scripts/backfill_chunk_ids.py --input <golden> --collection <c>` — **第一代**回填(纯 dense top-5;保留作历史可复现,新金标不要用)
+- `scripts/label_golden_chunks.py --input <golden> --output <v2> --collection <c>` — **第二代**标注(多路池化 + LLM 分级判定)。`--dry-run` 只池化不判定(零成本);`--export-sample N` / `--import-sample <f>` 做人工抽检
 
 ### 金标精修自动化(Feature-003)
 

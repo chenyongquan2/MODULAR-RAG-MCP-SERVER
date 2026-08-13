@@ -435,6 +435,8 @@ python scripts/start_dashboard.py
 >
 > 中文侧 6 条不足以支撑任何结论(重排 A/B 的中文数字就因此只能当噪声看)。
 >
+> **2026-08-13 更新**：金标构造方式已换代。第二代用 `scripts/label_golden_chunks.py`（多路池化 + LLM 分级判定），中文 6 条实测与纯 dense top-K 的 Jaccard 仅 **0.328**、31% 的标签是纯 dense 结构上看不到的。**但人工抽检（判定可信度的唯一校准手段）尚未完成**，在那之前第二代标签不该当作 ground truth。详见 [重排/标注验收记录](../openspec/changes/retriever-agnostic-golden-labels/acceptance.md)。
+>
 > **更根本的问题**:`expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 机器回填的,不是人工标注的答案边界。这让所有召回类指标结构性偏向 dense —— 对重排而言四项 custom 指标**全部**失去中立性。详见 [重排验收记录](../openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/acceptance.md) § 五。
 - [x] Step 4:生成 logs/eval_zh_baseline.json、logs/eval_en_baseline.json 的**机制就位**(commit `0482f81` EvalRunner 自动 archive 到 `logs/evaluation_reports/<run_id>.json`;Step 1-3 完成后自动产出真实金标基线)
 - [x] Step 5:Dashboard 标记基线(commit `bd5fabc` US3:`BaselineManager` + Streamlit "🎯 Feature-001 基线 + 回归" tab 实现)

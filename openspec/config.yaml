@@ -122,6 +122,30 @@ context: |
   - **调试脚本务必加 `python -u`** —— stdout 在管道下是全缓冲的,不加会看到空
     输出并误判成「进程卡死」。本项目日志走 stderr、进度条走 stdout,混在一起时
     尤其容易误判。本次为此误杀过两个正常运行的评估进程。
+  - **金标有两代,分数不可跨代比较**(2026-08-13,change retriever-agnostic-golden-labels):
+    第一代 `version: v1.0` / `labeling_method: dense-top-k`(纯 dense top-5 回填);
+    第二代 `v2.0` / `pooled-llm-judged`(多路池化 + LLM 分级判定)。跨代 delta 会被
+    报告标 `delta_comparable: false`,别把「标注口径变了」读成「检索质量变了」。
+    中文 6 条实测:新旧标签 Jaccard 仅 0.328,31% 的标签是纯 dense 看不到的。
+    `evaluation.labeling_llm` 必须与 `judge_llm` 异源,同源不可用
+    `--allow-same-source` 豁免(该参数只豁免「无法确认」)。
+    **LLM 判定不等于人工级 ground truth** —— 它换掉了检索器锚定但引入判定模型
+    的偏好,人工抽检是唯一校准手段,跳过就只是把一种未验证偏差换成另一种。
+  - **给 LLM 判定类任务留足 `max_tokens`**(2026-08-13 踩过):硬编码 200 时,
+    真实语料上 367 字符的 chunk 就返回**空响应**,于是每条都标判定失败 ——
+    表现得像「模型不遵从 JSON 格式」(本项目对 GLM 系模型正有这个先验),真实
+    原因是没给它写完的余量。判定要返回结论 + 理由,理由长度随输入复杂度增长。
+    **不看原始输出就会得出「换个模型」的错误结论。**
+  - **「解析失败」必须与「判定为否」严格区分**。兜底成 0/false 会让解析 bug
+    伪装成「语料里没有相关内容」,产出一份看起来正常、实际全空的金标。本项目
+    两处都这么做:`ChunkVerdict.grade` 保持 None、`ScreeningVerdict` 标
+    borderline。首轮标注 234 次判定几乎全失败,正是靠这个设计一眼看出来的。
+  - **重排路无法扩大候选池**。它重排的是 dense∪sparse 的并集,构造上不可能引入
+    新 chunk,只能重新标记已在池中的 —— 所以「仅重排贡献」恒为空,别把它当作
+    池化生效的判据(实测确认为 0)。
+  - **敏感字段检测器按名字匹配会误判**:`"token" in name` 把 `max_tokens: int`
+    当成密钥。新增含 token/secret/key 字样的**数值**参数时,检测器已按类型过滤
+    (密钥一定是字符串),不必再改测试。
   - **`evaluation.backends` 当前是 `[custom, ragas]`**,所以每轮评估都会跑答案生成
     (`ResponseBuilder` → `llm.model`)+ Judge LLM。做纯检索类 A/B 时临时降为
     `[custom]` 并加 `--no-generate-answers`,能把耗时从小时级降到分钟级、成本降到近零。
