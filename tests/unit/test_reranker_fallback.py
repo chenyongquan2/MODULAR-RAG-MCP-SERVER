@@ -4,13 +4,22 @@ import pytest
 from unittest.mock import Mock, MagicMock
 
 from src.core.query_engine.reranker import Reranker
+from src.core.settings import RerankSettings
 from src.core.types import RetrievalResult
 
 
 class MockSettings:
-    """Mock settings for testing."""
-    rerank = Mock()
-    rerank.backend = "none"
+    """Mock settings for testing.
+
+    ``rerank`` 用真实的 ``RerankSettings`` dataclass 而非 ``Mock()``:Core 层
+    的 ``Reranker`` 现在真的会读 ``top_m`` / ``timeout_sec`` / ``batch_size``
+    (此前 ``top_m`` 是个从未被消费的死配置),裸 Mock 会让这些字段返回 Mock
+    对象。用真实 dataclass 还有个额外好处 —— 测试再也无法与真实配置结构
+    漂移,而「测试与真实装配脱节」正是本变更要修的那类问题。
+
+    本次只替换这个 stub 的构造方式,**不改任何断言**。
+    """
+    rerank = RerankSettings(backend="none")
 
 
 class TestReranker:

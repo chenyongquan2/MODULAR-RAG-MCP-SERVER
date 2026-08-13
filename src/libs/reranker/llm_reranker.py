@@ -260,6 +260,48 @@ Relevance score (0-10):"""
                 return None
         return None
 
+    def supports_batch_scoring(self) -> bool:
+        """LLM 后端支持分批打分。
+
+        对本后端来说超时兜底的价值最大:每条候选一次**独立串行**的网关调用,
+        40 条候选就是 40 次往返 —— 一旦网关变慢,整条查询会被拖死。分批让
+        Core 层能在批的间隙止损,已打分的部分照样生效。
+        """
+        return True
+
+    def score_batch(
+        self,
+        query: str,
+        candidates: List[Dict[str, Any]],
+    ) -> List[float]:
+        """为一批候选打分(每条一次 LLM 调用)。
+
+        解析失败的候选沿用其重排前的分数 —— 与 ``rerank()`` 的行为一致,
+        避免一条解析失败就把该候选打到末位。
+
+        Args:
+            query: 查询文本。
+            candidates: 本批候选,每条需含 ``text``,可含 ``score``。
+
+        Returns:
+            与 ``candidates`` 等长、顺序一一对应的分数(已归一化到 [0, 1])。
+        """
+        scores: List[float] = []
+        for candidate in candidates:
+            prompt = self.prompt_template.format(
+                query=query, passage=candidate.get("text", "")[:2000]
+            )
+            response = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=10,
+                temperature=0.0,
+            )
+            parsed = self._parse_score(response)
+            scores.append(
+                parsed if parsed is not None else float(candidate.get("score", 0.0))
+            )
+        return scores
+
     def get_backend_name(self) -> str:
         """Return the backend identifier.
 

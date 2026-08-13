@@ -111,6 +111,54 @@ class BaseReranker(ABC):
             f"{self.__class__.__name__} must implement get_backend_name() method"
         )
 
+    # ── 分批打分（可选能力，用于超时兜底）────────────────────────────────
+    #
+    # 为什么需要这个接口（change activate-cross-encoder-rerank T-3.2）：
+    #
+    # cross-encoder 是**同步 CPU 推理**，没有 HTTP 客户端那种现成的超时参数
+    # 可传。而 Python 里能中断一段正在跑的同步计算的手段都不可用：
+    #   - signal.alarm  → Windows 不支持，且非主线程无效
+    #   - 工作线程 + join(timeout) → 超时后线程仍在跑，无法中断 torch 推理，
+    #     只会泄漏线程并继续吃 CPU
+    #
+    # 唯一可行的办法是**把工作切成小批，在批的间隙检查已耗时**。所以后端要
+    # 暴露「给我这一批，返回这一批的分数」的能力，由 Core 层控制节奏与停止。
+    #
+    # 声明为 optional 而非 abstractmethod：`NoneReranker` 这类不打分的后端
+    # 没有实现它的意义，且已有的第三方后端不该因为新增接口而全部失效。
+    # Core 层用 `supports_batch_scoring()` 探测，不支持则退回整体调用。
+
+    def supports_batch_scoring(self) -> bool:
+        """本后端是否支持分批打分（从而支持超时兜底）。
+
+        Returns:
+            默认 False。支持分批的后端需同时重写本方法与 ``score_batch``。
+        """
+        return False
+
+    def score_batch(
+        self,
+        query: str,
+        candidates: List[Dict[str, Any]],
+    ) -> List[float]:
+        """为一批候选打分，不排序。
+
+        Args:
+            query: 查询文本。
+            candidates: 本批候选（已由 Core 层切好）。
+
+        Returns:
+            与 ``candidates`` 等长、顺序一一对应的分数列表。分数越大越相关，
+            **不要求归一化** —— 归一化会让跨批分数不可比，而分批的全部意义
+            就在于各批分数要能放在一起排序。
+
+        Raises:
+            NotImplementedError: 后端未实现分批打分。
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support batch scoring"
+        )
+
 
 class NoneReranker(BaseReranker):
     """Passthrough reranker that preserves the original candidate order.
