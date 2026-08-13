@@ -320,13 +320,20 @@ CoreReranker.__init__            → logger.warning(...) + 退回 NoneReranker
 | 依赖缺失 / 初始化失败 | **没有** rerank stage |
 | 运行时打分失败 | 有 rerank stage，metadata 带 `rerank_fallback: True`（`reranker.py:342`） |
 
-### 6.4 已知隐患：timeout 是死代码
+### 6.4 已知隐患：没有任何超时兜底
 
-- `CrossEncoderReranker.__init__` 存了 `self.timeout`，但 `_score_pairs()` 里**没有任何超时检查**
-- `CoreReranker.config.timeout`（默认 30.0）也**从未被使用**
-- `RerankSettings` 甚至没有 `timeout` 字段，`getattr` 永远取默认值
+> **2026-08-13 更正**：本节原先写的是「timeout 是死代码」，并列出 `CrossEncoderReranker.__init__` 存了 `self.timeout`、`_score_pairs()` 里没有超时检查、`CoreReranker.config.timeout` 默认 30.0 从未被使用。**这三条都是错的** —— 对着代码 grep，`src/libs/reranker/` 与 `src/core/query_engine/reranker.py` 里一个 `timeout` 字样都没有，文中提到的那些成员（`self.timeout` / `_score_pairs()` / `config.timeout`）**全都不存在**。真实情况不是「配了但不生效」，而是**从未实现**。这个区别很重要：前者是接线问题，后者要从零设计机制。
 
-**后果：选重模型时没有超时兜底，慢查询会一直阻塞。** 若上本地重排，建议一并补上。
+原始问题依然成立且更严重：**重排完全没有超时兜底，慢查询会一直阻塞整条 MCP 调用。**
+
+已在 change `activate-cross-encoder-rerank` 修复。实现要点（`src/core/query_engine/reranker.py`）：
+
+- 新增 `rerank.timeout_sec` 与 `rerank.batch_size` 配置项，启动期校验为正数
+- **不能靠 `signal.alarm`**（Windows 不支持、非主线程无效），**也不能靠工作线程 + `join(timeout)`**（超时后线程仍在跑，无法中断 torch 推理，只会泄漏线程并继续吃 CPU）
+- 唯一可行的是**把候选切成小批、在批的间隙检查 `time.monotonic()`**。超时则停止后续批次，已打分部分按分数排序、未打分部分保持原名次追加 —— 不抛异常、不丢候选
+- 固有代价：超时粒度 = 一批的推理时间。`batch_size` 就是精度与吞吐之间的旋钮（默认 8，40 条候选约 1 秒一批）
+
+**注意默认 `timeout_sec: 30.0` 对本机是很松的闸门** —— 按 §7.2 的实测，50 条候选也才 7.3 秒。它挡的是网关/CPU 异常抖动，不是常态。
 
 ### 6.5 值得肯定的设计
 
@@ -388,14 +395,29 @@ model = CrossEncoder(model_name)     # cross_encoder_reranker.py:117 — 零 kwa
 
 #### B 组：多语言开源 Reranker
 
-| 模型 | 骨干/参数 | 语言 | max_len | 许可 | **本项目能直接加载?** | CPU 10 候选【推算】 |
+| 模型 | 骨干/参数 | 语言 | max_len | 许可 | **本项目能直接加载?** | CPU 10 候选 |
 |---|---|---|---|---|---|---|
-| **`BAAI/bge-reranker-base`** | XLM-R base / ~278M | 中英 | 512 | Apache-2.0 | ✅ 标准 seq-cls | ~2–4 s |
+| **`BAAI/bge-reranker-base`** | XLM-R base / ~278M | 中英 | 512 | Apache-2.0 | ✅ **已实测可加载** | **1.21 s【实测】** |
 | `BAAI/bge-reranker-large` | XLM-R large / ~560M | 中英 | 512 | Apache-2.0 | ✅ | ~6–12 s |
 | `BAAI/bge-reranker-v2-m3` | BGE-M3 / ~568M | 多语言 | **8192** | Apache-2.0 | ✅ | ~8–15 s |
 | `jinaai/jina-reranker-v2-base-multilingual` | ~278M | 多语言 | 长 | ⚠️ **CC-BY-NC-4.0 禁商用** | ❌ 需 `trust_remote_code=True` | ~2–4 s |
 | `BAAI/bge-reranker-v2-gemma` | Gemma-2B | 多语言 | — | Gemma 许可 | ❌ 需 `FlagEmbedding` 库 | 不可用 |
 | `BAAI/bge-reranker-v2-minicpm-layerwise` | MiniCPM | 多语言 | — | — | ❌ 需 `FlagEmbedding` | 不可用 |
+
+> **2026-08-13 实测校正**（change `activate-cross-encoder-rerank` T-1.1 / T-6.2）：`bge-reranker-base` 一行未标实测的都仍是【推算】，但基准行已换成真数。测量环境：AMD Zen 3 CPU（Family 25 Model 116）、Python 3.12、`batch_size=8`、**真实语料 chunk（中位 428 字符）**。
+>
+> | 候选数 | 中位耗时 | 每候选 |
+> |---|---|---|
+> | 10 | **1.21 s** | 121 ms |
+> | 20 | **2.51 s** | 125 ms |
+> | 40（生产实际：`top_k_dense` 20 + `top_k_sparse` 20） | **5.21 s** | 130 ms |
+> | 50（`top_m` 上限） | **7.33 s** | 147 ms |
+>
+> 权重体积 **1081.8 MB**；首次下载经 `hf-mirror.com` 耗时 **493 s**（一次性）；进程内首次加载（权重已缓存）约 **11–22 s**，含 `import sentence_transformers` 的 **44.5 s** 冷启动。
+>
+> **原估计 `~2–4 s`（10 候选）偏悲观约 2–3 倍** —— 本文开头的「可能偏差 2–3 倍」这个自我警告，量级说对了、方向说反了。
+>
+> ⚠️ **不要拿短文本的微基准做规划**。同一模型在几十字符的测试样本上是 **25 ms/pair**，在真实 428 字符 chunk 上是 **121–147 ms/pair**，差 5 倍 —— cross-encoder 的开销随 token 数走，而不是随候选条数走。
 | `Qwen/Qwen3-Reranker-0.6B` | Qwen3 / 0.6B | 多语言强 | 32K | Apache-2.0 | ⚠️ 需较新 ST 版本，**须先验证** | ~10–20 s |
 
 > 许可与版本兼容性请以 HF 模型页为准（本文知识有截止日期）。
@@ -472,10 +494,12 @@ RAG 质量验收方案里，**用不确定的组件做基线，测出的 hit_rat
 
 | | 实际延迟 |
 |---|---|
-| 本地 `bge-reranker-base`（CPU 8 核） | ~2–4 s【推算】 |
+| 本地 `bge-reranker-base`（AMD Zen 3 CPU） | **1.21 s / 10 候选，5.21 s / 40 候选【实测】** |
 | Azure gpt-4o 重排 | ~1–3 s（网络往返 + 生成） |
 
-线上略快但未拉开差距。**若有 GPU，本地降到 ~50 ms 直接碾压**——这条只是"当前平手"，不是固有短板。
+10 候选时线上线下确实平手（1.2 s vs 1–3 s）。**但 40 候选时本地明显吃亏**（5.2 s）—— 这才是生产实际的候选量。
+
+> **2026-08-13 修正**：本节原写「本地 ~2–4 s【推算】…线上略快但未拉开差距」。实测后结论要分档看：小候选量平手，**大候选量本地是劣势**。至于「若有 GPU 降到 ~50 ms」仍是【推算】，本机无 GPU，未验证。
 
 ### 8.3 四条路线完整对比（按本机真实环境）
 
@@ -568,31 +592,46 @@ $env:HF_ENDPOINT = "https://hf-mirror.com"
 
 ### 10.1 三句话总结
 
+> **2026-08-13**：第 2 句已不再成立 —— change `activate-cross-encoder-rerank` 让这条路径真实跑通了（依赖已声明为 optional extra、真实模型已加载并实测、集成测试覆盖装配层）。但**默认仍关闭**，因为 A/B 显示在本项目金标上是负增益。详见 §10.2 与 §10.3。
+
 1. 本项目的 cross-encoder 是 **sentence-transformers 本地实现**，与 Cohere 无关；Cohere 只是 `DEV_SPEC.md` 里未落地的愿景
-2. **代码能力完备，运行能力为零**——依赖未声明未安装、配置未开启、真实模型从未加载过
+2. ~~**代码能力完备，运行能力为零**——依赖未声明未安装、配置未开启、真实模型从未加载过~~ → **已修复**，现为「运行能力就绪、默认关闭、增益待商榷」
 3. 推荐**本地 `BAAI/bge-reranker-base`**，理由是**确定性**（评测需要可复现基线）+ **零边际成本**（评测高频调用）+ **学习纵深**；"数据不出网/离线可用"在本架构里是无效论据
 
 ### 10.2 待办清单
 
-| # | 事项 | 优先级 | 说明 |
+> **2026-08-13 状态更新**：本清单 10 条已由 change `activate-cross-encoder-rerank` 处理完 8 条。验收记录见 [openspec/changes/activate-cross-encoder-rerank/acceptance.md](../../openspec/changes/activate-cross-encoder-rerank/acceptance.md)。
+
+| # | 事项 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | `pip install sentence-transformers` | 高 | 已验证无冲突，新增 4 包约 9 MB |
-| 2 | **写进 `pyproject.toml`** | 高 | §6.2 第 9 层是根因，光装不声明等于没修 |
-| 3 | `settings.yaml` 换 `model: "BAAI/bge-reranker-base"` | 高 | 当前英文模型对一半语料无效 |
-| 4 | 开 `enabled: true` + `provider: "cross_encoder"` | 高 | |
-| 5 | 跑真实 MT5 查询，确认 trace 出现 rerank stage | 高 | 判别静默降级的可靠信号（§6.3） |
-| 6 | **实测延迟**，替换本文所有【推算】数字 | 高 | 五分钟的事，可能偏差 2–3 倍 |
-| 7 | 补 cross-encoder **集成测试** | 中 | 现有测试全 mock，对装配层无感（§6.2 第 8 层） |
-| 8 | 补 **timeout 实际生效**逻辑 | 中 | 目前是死代码（§6.4），慢查询无兜底 |
-| 9 | 跑 `none` / `cross_encoder` / `llm` 三组 A/B | 中 | 用自己的语料测增益，公开 benchmark 不可迁移 |
-| 10 | 视情况把 `fusion_top_k` / `top_k*2` 调小 | 低 | 延迟旋钮，线性收益 |
+| 1 | `pip install sentence-transformers` | ✅ 完成 | **原估计「新增 4 包约 9 MB」完全正确**（`sentence-transformers` / `scikit-learn` / `joblib` / `threadpoolctl`）。`torch` 早已由核心依赖 `docling` 经 `docling-ibm-models` 拉入，不是重排引入的 |
+| 2 | **写进 `pyproject.toml`** | ✅ 完成 | 作为 optional extra：`pip install -e ".[rerank]"`。默认关闭的能力不该向所有安装收税 |
+| 3 | `settings.yaml` 换 `model: "BAAI/bge-reranker-base"` | ✅ 完成 | 并**删掉了隐式兜底默认值** —— `backend != none` 时 `model` 必填，启动期校验。原先「配置留空就悄悄用纯英文模型」正是那类静默失效 |
+| 4 | 开 `backend: "cross_encoder"` | ⏸️ **刻意未开** | 交付后默认仍是 `none`。A/B 结果是负增益（见 #9），开启的收益未被证明 |
+| 5 | 跑真实查询，确认 trace 出现 rerank stage | ✅ 完成 | 固化成集成测试 `tests/integration/test_cross_encoder_rerank_real_model.py`，断言 trace 中 `fallback: false` + 真实模型名。另新增 `enabled` / `timed_out` 字段，三态可区分 |
+| 6 | **实测延迟**，替换本文【推算】数字 | ✅ 完成 | 见 §7.2 的实测表。「五分钟的事」这句低估了 —— 首次下载权重就花了 493 s |
+| 7 | 补 cross-encoder **集成测试** | ✅ 完成 | 15 个用例，真实加载模型。顺带发现一个更糟的情况：`test_model_loading_raises_import_error_if_library_missing` **压根没模拟库缺失**，靠依赖真的没装才通过，装上后反而去真连 HuggingFace |
+| 8 | 补 **timeout 实际生效**逻辑 | ✅ 完成 | 但前提判断是错的 —— 不是「死代码」而是**从未存在**，见 §6.4 的更正 |
+| 9 | 跑 `none` / `cross_encoder` / `llm` 三组 A/B | ⚠️ 部分完成 | `none` vs `cross_encoder` 已跑（中英各一轮，**结论为负增益**）。`llm` 组未跑 —— 每查询约 40 次串行网关调用，成本与本变更目标不成比例 |
+| 10 | 视情况把 `fusion_top_k` / `top_k*2` 调小 | 🔜 待定 | `rerank.top_m` 现在**真的生效了**（此前是死配置，从未被消费），成了这个旋钮的落点 |
 
 ### 10.3 尚未验证、不要当结论的事项
 
-- ⚠️ 本文**所有 CPU 延迟数字均为【推算】**，按参数量与层数估算，**可能偏差 2–3 倍**
-- ⚠️ `Qwen3-Reranker` 与本项目 `CrossEncoder(model_name)` 的兼容性**未验证**
+**已在 2026-08-13 转为实测的（不再是推测）**：
+
+- ✅ `bge-reranker-base` 的 CPU 延迟：**1.21 s / 10 候选，5.21 s / 40 候选**（AMD Zen 3，真实语料 chunk）。原估计 `~2–4 s` 偏悲观 2–3 倍
+- ✅ `bge-reranker-base` 与 `CrossEncoder(model_name)` 的兼容性：**可直接加载**，中/英/跨语言三组相关性判据全部正确排序
+- ✅ 重排在「RRF 已融合双路召回」链路上的实际增益：**在本项目金标上是负的** —— 英文 42 条 MRR 0.4914 → 0.3668，中文 6 条 MRR 0.5833 → 0.4167。但**这个结论有严重的评估工具偏差**，见下
+
+**仍然不要当结论的事项**：
+
+- ⚠️ **上面那个「负增益」不能直接读成「重排没用」**。金标的 `expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense 检索 top-5** 回填的 —— 也就是说，标准答案本身就是「embedding 模型认为最相关的那几条」。而重排的全部工作就是**不同意第一阶段的排序**。任何有效的重排器在这套金标上都会因为「敢于改变名次」而被扣分。这是评估装置的结构性偏差，不是重排的性质
+- ⚠️ 与此矛盾的证据：集成测试里，把相关段落故意放在末位（原始分数最低），重排**每次都能把它提到首位**（中英文都成立）。**模型明显在做正确的事，指标却在下降** —— 这个矛盾本身就是最重要的发现
+- ⚠️ 其他模型（`bge-reranker-large` / `v2-m3` / MS MARCO 系列）的 CPU 延迟**仍是【推算】**，未实测
+- ⚠️ `Qwen3-Reranker` 与 `CrossEncoder(model_name)` 的兼容性**仍未验证**
+- ⚠️ 「若有 GPU 降到 ~50 ms」**仍是【推算】**，本机无 GPU
 - ⚠️ 各模型许可条款以 HF 模型页为准，本文知识有截止日期
-- ⚠️ 重排在"RRF 已融合双路召回"链路上的**实际增益未知**——只有本项目自己的语料能回答
+- ⚠️ **跨语言 pair 的分数被显著压低**（实测）：中文 query 对中文正确答案得 0.9998，对语义等价的英文答案只得 0.2973。本项目语料是同一份 MT5 文档的中英双版本，所以中文 query 命中英文 chunk 时会被重排压下去。这可能是中文金标负增益更大的一个原因，但样本只有 6 条，不足以定论
 
 ---
 

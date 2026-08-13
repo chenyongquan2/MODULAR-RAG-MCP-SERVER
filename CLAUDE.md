@@ -23,6 +23,7 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e .           # Editable install
 pip install -e ".[dev]"    # With dev dependencies
+pip install -e ".[rerank]" # Cross-Encoder 重排（可选，本地推理零 token，默认关闭）
 ```
 
 ### Testing
@@ -66,7 +67,7 @@ All configuration is in `config/settings.yaml`. Change any provider by modifying
 | `llm.provider` | glm, azure, openai, ollama, deepseek |
 | `embedding.provider` | bge, openai, azure, ollama, glm |
 | `splitter.strategy` | recursive, semantic, fixed |
-| `rerank.backend` | none, cross_encoder, llm |
+| `rerank.backend` | none（默认）, cross_encoder（需 `.[rerank]` extra）, llm |
 | `evaluation.backends` | ragas, custom |
 
 No code changes needed - factories auto-load the new implementation on restart.
@@ -270,6 +271,15 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 - **`custom__recall` 与 `ragas__context_recall` 量的不是一回事**:前者是「检索到的 chunk id 与回填脚本挑的那 5 个的重合比例」,后者是「检索到的上下文实际支撑答案的比例」。实测同一批结果分别是 0.30 与 0.83 —— 金标的 `expected_chunk_ids` 是 `backfill_chunk_ids.py` 机器按 top-5 回填的,非人工标注的答案边界,解读 `custom__recall` / `custom__ndcg` 时必须计入这个折扣
 - **融合权重是配置项且语料相关**(Feature-005 起):`retrieval.fusion_weights` 控制 dense / sparse 两路在 RRF 中的相对分量,`retrieval.rrf_k` 控制平滑参数(此前硬编码 60)。**只有相对比例有意义** —— `{dense:1, sparse:0.5}` 与 `{dense:2, sparse:1}` 排序完全相同。当前值 `sparse=0.1` 由英文金标校准得出,**换语料必须重新校准**:`python scripts/calibrate_fusion_weights.py --build-cache --lang en` 然后 `--sweep --lang en`。完整曲线见 [specs/005-weighted-fusion/acceptance.md](specs/005-weighted-fusion/acceptance.md)
 - **金标的 recall / hit_rate 不是混合检索的中立裁判**:`backfill_chunk_ids.py:85` 直接调 `vector_store.query()` 回填期望 chunk_id —— **纯 dense 检索,无 BM25、无融合**。因此这两项结构性地偏向 dense:任何 sparse 贡献挤掉一条 dense 命中就只能拉低它们。比较混合与单路时,`MRR` / `nDCG` 比 `recall` / `hit_rate` 可信。Feature-005 实测:英文金标上 `sparse` 任何正权重都会让 hit_rate 从 69.0% 掉到 66.7%(1 条 case),而 MRR 从 0.4365 升到最高 0.5395
+- **重排是可选能力,默认关闭**(change `activate-cross-encoder-rerank` 起):`cross_encoder` 后端需 `pip install -e ".[rerank]"`(增量仅约 9 MB 4 个包 —— `torch` 早已由核心依赖 `docling` 拉入,不是重排引入的)。**本地推理,零 token**。推荐 `BAAI/bge-reranker-base`(中英双语,权重 1.08 GB,首次下载需 `HF_ENDPOINT=https://hf-mirror.com`)。`settings.yaml` **默认仍是 `backend: none`** —— A/B 显示负增益,见下条
+  - `backend != none` 时 `model` **必填**,启动期校验。刻意不留隐式默认值(此前的兜底是纯英文 `ms-marco`,对中文语料无效且不报错)
+  - 依赖没装却配了 `cross_encoder` → `load_settings()` 直接抛 `SettingsError` 并给出安装命令,**不静默降级**。探测在 `RerankerFactory.probe_backend`(不在 settings 里,否则库名会硬编码进 `src/core/`)
+  - `rerank.top_m` **此前是死配置**(全仓只有定义和 dashboard 展示,从未截断过候选),现已生效:超出部分按原名次追加,不参与重排但不丢弃
+  - `rerank.timeout_sec` / `batch_size` 为新增。超时靠**分批 + 批间计时**实现 —— cross-encoder 是同步 CPU 推理,`signal.alarm` 在 Windows 无效、线程 join 无法中断 torch。代价是超时粒度 = 一批的推理时间
+  - **延迟实测**(AMD Zen 3、真实 chunk 中位 428 字符、`batch_size=8`):每候选 **121-147 ms** → 40 条候选约 **5.2 秒**。别拿短文本微基准(约 25 ms/pair)做规划,cross-encoder 开销随 token 数走
+- **⚠️ 金标无法公正评判重排**(本项目当前最重要的评估局限):`expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 回填的 —— 标准答案本身就是「embedding 认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此**四项 custom 指标全是 dense-anchored 的**,`MRR` / `nDCG` 对重排**并不比** `recall` / `hit_rate` 更中立(上一条关于 MRR/nDCG 更可信的说法只适用于 dense-vs-sparse 的路径比较)。实测:英文 42 条 MRR 0.4914 → 0.3668、中文 6 条 0.5833 → 0.4167,**而集成测试里同一模型每次都能把故意放在末位的相关段落提到首位**。模型在做正确的事,指标却在跌 —— 在换掉金标构造方式之前,本项目**没有可用于评判重排的离线指标**。详见 [openspec/changes/activate-cross-encoder-rerank/acceptance.md](openspec/changes/activate-cross-encoder-rerank/acceptance.md) § 五
+- **`scripts/evaluate.py` 与 `scripts/query.py` 都不写 query trace** —— 只有 MCP server 路径写 `logs/traces.jsonl`。想量某个阶段的真实耗时得写专门的基准脚本,别指望从 trace 里捞
+- **跑 Python 脚本调试时务必加 `-u`** —— stdout 在管道下是全缓冲的,不加会看到空输出并误判成「进程卡死」。本项目的日志走 stderr、进度条走 stdout,两者混在一起时尤其容易误判
 - **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately. 自 feature-002 起，查询命中含图 chunk 时，`query_knowledge_hub` 工具会通过 `MultimodalAssembler` 同时返回文本与图片（MCP `ImageContent`，base64），两种模式（`use_llm=true/false`）策略一致。返图数量上限由 `query.max_images_per_response` 配置（默认 10）
 
 ## Evaluation System

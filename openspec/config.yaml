@@ -91,6 +91,41 @@ context: |
     名义 glm 但模型经兼容端点路由到 minimax)。
   - **所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的 protobuf 是 5.29.3,
     `import chromadb` 会失败;`.venv` 里是 3.20.3。
+  - **金标无法公正评判重排**(2026-08-13,change activate-cross-encoder-rerank):
+    `expected_chunk_ids` 是纯 dense top-5 回填的,标准答案本身就是「embedding
+    认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此
+    对重排而言**四项 custom 指标全是 dense-anchored**,`MRR`/`nDCG` 并不比
+    `recall`/`hit_rate` 更中立(上面那条「看 MRR/nDCG」只适用于 dense-vs-sparse
+    的路径比较)。实测:英文 42 条 MRR 0.4914→0.3668,而集成测试里同一模型每次
+    都能把故意放在末位的相关段落提到首位。**在换掉金标构造方式之前,不要用现有
+    离线指标去判断任何「敢改变名次」的改进。**
+  - **重排默认关闭**:`cross_encoder` 需 `pip install -e ".[rerank]"`(增量约 9MB;
+    `torch` 早已由核心依赖 `docling` 拉入)。`backend != none` 时 `model` 必填、
+    依赖缺失启动期抛 `SettingsError`。延迟实测:每候选 121-147 ms → 40 条约 5.2 秒。
+  - **`src/core/settings.py` 的校验一律抛 `SettingsError`,不是 `ValueError`** ——
+    这是该模块既有的统一约定(`_validate_fusion_settings` / `_validate_evaluation_settings`
+    皆然)。libs 层按 CLAUDE.md 的 convention 抛 `ValueError`,由 settings 层转换。
+    写 design 时别想当然写 `ValueError`。
+  - **`find_spec` 只证明模块找得到,不执行模块** —— 别据此断言某个 `ImportError`
+    分支「不可达」。装坏了的依赖(Windows 上 torch DLL 加载失败)会通过探测、
+    在真正 import 时才炸。启动期探测与运行期 ImportError 降级是**互补两层**。
+  - **依赖装上后会改变原本被 `ImportError` 短路的代码路径**。本次装
+    `sentence-transformers` 让一个「一直通过」的测试暴露出它**压根没模拟库缺失**
+    ——之所以通过只是因为依赖真的没装,装上后它反而去真连 HuggingFace 下载模型,
+    让全量单测从 85s 涨到 428s。**新增可选依赖后必须跑一次全量测试**,别只跑相关文件。
+  - **鸭子类型后端上探测新方法要用 `is True` 严格判断**。测试里常用 `Mock()`,
+    而 `Mock()` 的任何方法调用都返回**真值** Mock —— 普通真值判断会把它误判成
+    「支持该能力」,接着在下游炸成降级。本次就此让 6 个既有用例全红过一次。
+  - **`scripts/evaluate.py` 与 `scripts/query.py` 都不写 query trace** ——
+    只有 MCP server 路径写 `logs/traces.jsonl`。要量某阶段的真实耗时得写专门的
+    基准脚本,别指望从 trace 里捞。
+  - **调试脚本务必加 `python -u`** —— stdout 在管道下是全缓冲的,不加会看到空
+    输出并误判成「进程卡死」。本项目日志走 stderr、进度条走 stdout,混在一起时
+    尤其容易误判。本次为此误杀过两个正常运行的评估进程。
+  - **`evaluation.backends` 当前是 `[custom, ragas]`**,所以每轮评估都会跑答案生成
+    (`ResponseBuilder` → `llm.model`)+ Judge LLM。做纯检索类 A/B 时临时降为
+    `[custom]` 并加 `--no-generate-answers`,能把耗时从小时级降到分钟级、成本降到近零。
+    grep 配置时记得带足上下文行,`backends` 是多行列表。
 
   ## 历史资产(只读,不要在里面新增)
   - `specs/001-005/` + `.specify/` —— 2026-04~08 用 GitHub Spec-Kit 做的 5 个
