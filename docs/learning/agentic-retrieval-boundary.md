@@ -318,6 +318,8 @@ Chroma    : C:\workspace\...\ingest_source\MetaTrader5SDK_English.chm_1925_a0973
 
 这个发现指向一个结论：**提升混合检索的下一步不在融合权重，而在关键词路径的质量本身（查询改写）或金标的构造方式（人工标注答案边界）。** 完整曲线与取舍见 [Feature-005 验收记录](../../specs/005-weighted-fusion/acceptance.md)。
 
+> **2026-08-13 补充**：上面这两个方向里，**「金标的构造方式」已被第二次、且更强地验证为瓶颈**。重排（cross-encoder）落地后的 A/B 显示英文金标 MRR 0.4914 → 0.3668，而同一个模型在集成测试里每次都能把故意放在末位的相关段落提到首位。原因是 `expected_chunk_ids` 由纯 dense top-5 回填，标准答案本身就是「embedding 认为最相关的那几条」，而重排的全部工作就是不同意第一阶段的排序 —— 于是**四项 custom 指标对重排全都是 dense-anchored 的**，连 `MRR`/`nDCG` 也不中立（本文其他地方说 MRR/nDCG 更可信，那只适用于 dense-vs-sparse 的路径比较）。详见 [重排验收记录](../../openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/acceptance.md) § 五。
+
 **二、CJK 在整条 sparse 链路上被丢弃（查询端 + 索引端都是）**【代码】【已修复】
 
 查询端 `query_processor.py:145`：
@@ -557,21 +559,28 @@ async def search(query, top_k=3, category=None) -> list[dict]:
 
 ## 待办清单
 
-**Feature-004（已定 scope，见 §8.2）**
+> **2026-08-13 状态更新**：本清单写于 Feature-004 规划期，多数项已完成。下面按现状重标。
 
-- [ ] T1 collection 物理隔离 + 迁移脚本 + `--collection` 语义修正 + 金标 `source_corpus_collection` 修正
-- [ ] T2 跑 Step 0，拿多跳缺口数据（gate：决定规划器做不做）
-- [ ] T3 CJK bigram，tokenizer 抽两端共享模块
-- [ ] T4 从 Chroma 反向重建 BM25 + 格式瘦身 + 重标基线（旧基线标注为「纯 dense 参照」）
-- [ ] 10 条 temp 残留 chunk 清理（**删除前确认**）
+**Feature-004（已完成并冻结于 [specs/004-retrieval-infra-fix/](../../specs/004-retrieval-infra-fix/)）**
+
+- [x] T1 collection 物理隔离 + 迁移脚本 + `--collection` 语义修正 + 金标 `source_corpus_collection` 修正
+- [x] T2 跑 Step 0，拿多跳缺口数据（gate：决定规划器做不做）
+- [x] T3 CJK bigram，tokenizer 抽两端共享模块 —— 落地为 `src/core/text/tokenizer.py`，由 `tests/unit/test_tokenizer.py::TestBothEndsAgree` 守住两端一致
+- [x] T4 从 Chroma 反向重建 BM25 + 格式瘦身 + 重标基线 —— `scripts/rebuild_bm25_index.py`，索引格式 v2
+- [x] 10 条 temp 残留 chunk 清理 —— 2026-08-10 用户确认后删除，向量库与索引均 10 → 0
 
 **后续**
 
-- [ ] 扩展 `fusion.py` 支持带权重 RRF（§6.3 缺陷一）——Query Rewriting 的前置
-- [ ] 写 P95 延迟统计脚本（§6.3 缺陷三）
-- [ ] 划清 Query Rewriting 与 Query Planning 的实现边界，避免重复实现（§2 末）**——尚未决策**
-- [ ] Step 0 的判据：多大差距算「缺口真实」**——待数据到手再定**
-- [ ] 修正简历三处口径（§9）；另需重新审视「混合检索」相关表述（§6.3 缺陷零）
-- [ ] Feature-003 遗留 T018（人工耗时实测）
+- [x] 扩展 `fusion.py` 支持带权重 RRF（§6.3 缺陷一）—— Feature-005 完成，`retrieval.fusion_weights` + `retrieval.rrf_k` 均为配置项，校准脚本 `scripts/calibrate_fusion_weights.py`
+- [ ] 写 P95 延迟统计脚本（§6.3 缺陷三）**—— 仍未做**。而且比原以为的更麻烦：**`scripts/evaluate.py` 与 `scripts/query.py` 都不写 query trace**，只有 MCP server 路径写 `logs/traces.jsonl`。想统计延迟分布，得先给这两个脚本接上 trace，或者写独立基准脚本（2026-08-13 量重排延迟时就是被这一点逼着写了临时脚本）
+- [ ] 划清 Query Rewriting 与 Query Planning 的实现边界（§2 末）**—— 仍未决策**
+- [x] Step 0 的判据 —— 数据已到手，Feature-004 据此决定了 scope
+- [ ] 修正简历三处口径（§9）；另需重新审视「混合检索」相关表述（§6.3 缺陷零）**—— 仍未做**
+- [x] Feature-003 遗留 T018（人工耗时实测）—— 已按现状收尾，见 [specs/003-testset-refine-automation/acceptance-record.md](../../specs/003-testset-refine-automation/acceptance-record.md)
+- [x] ~~修正 CLAUDE.md 的「The MCP server runs on stdio transport」~~ —— 已改，现明确写出 stdio + SSE 双 transport 由 `mcp_server.transport` 切换
 
-**同时需修正 CLAUDE.md**：「The MCP server runs on stdio transport」已过时，SSE 早已实现（§6.2）
+**新增（2026-08-13，重排落地后）**
+
+- [ ] **金标 `expected_chunk_ids` 改为人工标注答案边界** —— §319 已把它列为两个方向之一，重排的 A/B 是对它的**第二次、且更强的一次撞击**：`expected_chunk_ids` 是纯 dense top-5 回填的，所以四项 custom 指标对重排**全都**是 dense-anchored，`MRR`/`nDCG` 也不中立。集成测试证明模型在做正确的事（把末位的相关段落提到首位），指标却在跌。**不解决它，任何「敢改变名次」的改进都无法被离线评估**
+- [ ] **中文金标从 6 条扩到 ≥ 40 条** —— 现在任何中文侧结论都不成立
+- [ ] 跨语言压分的缓解 —— 实测中文 query 对中文答案得 0.9998、对语义等价的英文答案只得 0.2973。本项目语料是同一份 MT5 文档的中英双版本，这个偏差是真实存在的

@@ -420,9 +420,22 @@ python scripts/start_dashboard.py
 > **2026-04-25/26 状态更新**:本方案已通过 SDD(GitHub Spec-Kit)接管,见 [specs/001-rag-acceptance/](../specs/001-rag-acceptance/)(spec/plan/research/data-model/contracts/quickstart/tasks 全套)。本文档保留作为方案设计参考;实际执行进度以 spec 目录下的 `tasks.md` checkbox 为准(通过 11 个 commit `3a076d7`..`bd5fabc` 跨 spec/clarify/plan/tasks/implement 5 阶段交付,代码 100% 完成)。
 
 - [x] Step 0:RAGAS backend 开启 + GLM judge 接入 + 烟雾测试通过(commit `b78b4be` T018 真实 GLM 跑通,8 项指标全产出)
-- [ ] Step 1:合成 raw_testset_zh.json / raw_testset_en.json(代码就位 → `commit 34b6983` T019-T020;**待 user 跑** `scripts/synthesize_testset.py --collection mt5_docs_chinese --lang zh`,前置:先 ingest MT5 中文到独立 collection)
-- [ ] Step 2:人工精修产出 reviewed_testset_*.json(代码就位 → `commit 34b6983` T021;**待 user 跑** `scripts/refine_testset.py`,interactive y/e/d/s/q)
-- [ ] Step 3:回填 chunk_ids 产出 golden_test_set_{zh,en}.json(代码就位 → `commit 34b6983` T022;**待 user 跑** `scripts/backfill_chunk_ids.py`)
+- [x] Step 1:合成 raw_testset_zh.json / raw_testset_en.json(代码 `commit 34b6983` T019-T020;**已跑**)
+- [x] Step 2:人工精修产出 reviewed_testset_*.json(代码 `commit 34b6983` T021;**已跑**。Feature-003 后新增 `--auto-mode` 异源 LLM 预筛路径)
+- [x] Step 3:回填 chunk_ids 产出 golden_test_set_{zh,en}.json(代码 `commit 34b6983` T022;**已跑**,产物 2026-08-09 落盘于 `tests/fixtures/`)
+
+> **2026-08-13 状态更正**:Step 1/2/3 此前一直标着「代码就位、待 user 跑」,实际早已跑完 —— `tests/fixtures/golden_test_set_{zh,en}.json` 2026-08-09 就已产出,并被 Feature-005 的融合权重校准与 2026-08-13 的重排 A/B 用作评估基准。
+>
+> **但两处规模不达标,是当前的真实阻塞项**:
+>
+> | 金标 | 实际条数 | SC-002 要求 |
+> |---|---|---|
+> | `golden_test_set_en.json` | 42 | ≥ 40 ✅ |
+> | `golden_test_set_zh.json` | **6** | ≥ 40 ❌ |
+>
+> 中文侧 6 条不足以支撑任何结论(重排 A/B 的中文数字就因此只能当噪声看)。
+>
+> **更根本的问题**:`expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 机器回填的,不是人工标注的答案边界。这让所有召回类指标结构性偏向 dense —— 对重排而言四项 custom 指标**全部**失去中立性。详见 [重排验收记录](../openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/acceptance.md) § 五。
 - [x] Step 4:生成 logs/eval_zh_baseline.json、logs/eval_en_baseline.json 的**机制就位**(commit `0482f81` EvalRunner 自动 archive 到 `logs/evaluation_reports/<run_id>.json`;Step 1-3 完成后自动产出真实金标基线)
 - [x] Step 5:Dashboard 标记基线(commit `bd5fabc` US3:`BaselineManager` + Streamlit "🎯 Feature-001 基线 + 回归" tab 实现)
 - [ ] Step 6(可选):RGB 小样本对照 — 标 spec § Assumptions "Step 6 横向对照不在 MVP",留作独立 feature

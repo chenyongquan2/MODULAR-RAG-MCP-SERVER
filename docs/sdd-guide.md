@@ -78,8 +78,10 @@
          ↓
 并存过渡期（DEV_SPEC 作高层技术设计，Spec-Kit 管具体 feature）
          ↓
-（未来）auto-coder 退役，完全由 speckit-implement 接管
+Spec-Kit 退役（2026-08-12），改用 OpenSpec
 ```
+
+> **2026-08-13 更正**：本图原先最后一格写的是「（未来）auto-coder 退役，完全由 `speckit-implement` 接管」。**这个预测没有实现，且方向相反** —— 退役的是 Spec-Kit 本身（2026-08-12），`auto-coder` skill 反而保留了下来，用于处理尚未迁移的 legacy 任务。现行流程是 OpenSpec 的 `/opsx:propose → /opsx:apply → /opsx:archive`。
 
 ---
 
