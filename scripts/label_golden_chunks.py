@@ -200,14 +200,19 @@ def check_preconditions(
 # ---------------------------------------------------------------------------
 
 
-def load_prior_verdicts(path: Path) -> Dict[int, Dict[str, ChunkVerdict]]:
+def load_prior_verdicts(path: Path) -> Dict[str, Dict[str, ChunkVerdict]]:
     """从已有产出里读回每个 case 已判定过的候选。
 
     续跑靠产出文件自身,不引入独立断点文件 —— 多一个文件就多一处可能与产出
     不一致的状态。
 
+    **按 query 文本做键,不按位置索引。** 原因:无解的 case 会被移出产出的
+    ``test_cases``(否则 evaluate.py 的非空校验会阻断整轮评估),于是产出与输入
+    的条数不再一致 —— 按索引匹配会把缓存的判定套到**错误的 case** 上,而且
+    不会有任何报错,只是标签悄悄错位。
+
     Returns:
-        ``{case_index: {chunk_id: ChunkVerdict}}``。文件不存在或格式不符时返回空。
+        ``{query: {chunk_id: ChunkVerdict}}``。文件不存在或格式不符时返回空。
     """
     if not path.exists():
         return {}
@@ -217,14 +222,33 @@ def load_prior_verdicts(path: Path) -> Dict[int, Dict[str, ChunkVerdict]]:
         logger.warning("cannot read prior output %s for resume: %s", path, exc)
         return {}
 
-    out: Dict[int, Dict[str, ChunkVerdict]] = {}
-    for idx, case in enumerate(data.get("test_cases") or []):
+    out: Dict[str, Dict[str, ChunkVerdict]] = {}
+    sources = list(data.get("test_cases") or [])
+    # 被移出的无解 case 也要读回,否则它们每次续跑都会被重新判定一遍
+    for entry in (data.get("_labeling_metadata") or {}).get("unanswerable_cases") or []:
+        if isinstance(entry, dict) and entry.get("_chunk_labels"):
+            sources.append(entry)
+    for case in sources:
+        key = case.get("query") or ""
+        if not key:
+            continue
         labels = case.get("_chunk_labels") or []
         per_case: Dict[str, ChunkVerdict] = {}
         for entry in labels:
             cid = entry.get("chunk_id")
             if not cid:
                 continue
+            # 判定失败的候选**不缓存** —— 让续跑重试它们。
+            #
+            # 「解析失败」不是一个持久的结论,而是一次瞬时故障(输出被截断、
+            # 模型偶发不遵从格式)。若把它当已完成缓存起来,一次抖动就会永久
+            # 污染那条标签,而且越续跑越固化 —— 英文那轮 625 次判定里有 62 条
+            # (9.9%)是失败的,全缓存下来等于放弃这 9.9% 的标签。
+            #
+            # 代价是续跑会重花这部分调用,但那正是我们想要的:失败的该重试。
+            if entry.get("judge_failed"):
+                continue
+
             grade = entry.get("grade")
             per_case[str(cid)] = ChunkVerdict(
                 chunk_id=str(cid),
@@ -233,7 +257,7 @@ def load_prior_verdicts(path: Path) -> Dict[int, Dict[str, ChunkVerdict]]:
                 judge_failed=bool(entry.get("judge_failed")),
             )
         if per_case:
-            out[idx] = per_case
+            out.setdefault(key, {}).update(per_case)
     if out:
         total = sum(len(v) for v in out.values())
         logger.info("resume: found %d already-judged candidates in %s", total, path)
@@ -477,7 +501,7 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
                 ground_truth,
                 pool.candidates,
                 budget=budget_left,
-                already_judged=prior.get(idx),
+                already_judged=prior.get(query),
             )
             budget_left -= run.judged_count
             skipped_total += run.skipped_count
@@ -534,6 +558,50 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
         interrupted = True
         print("\nInterrupted — writing partial results.", file=sys.stderr)
 
+    # ── 无解 case 的处理 ─────────────────────────────────────────────
+    #
+    # 「池子里没有任何候选达到相关度门槛」是**合法结果**,不是缺陷:query 本身
+    # 可能过于含糊(实测有一条是 "After AG fetches cfg, what does AT do?" ——
+    # AG / AT / cfg 全是未定义缩写),或语料里确实没有对应内容。
+    #
+    # 但 evaluate.py 的前置校验要求每条 case 的 expected_chunk_ids 非空,一条
+    # 空的就会**阻断整轮评估**。所以这里把它们移出产出的 test_cases,并在
+    # 元数据里逐条记录 —— 移出而非静默丢弃:哪几条无解、为什么,都要留痕,
+    # 否则「42 条变 41 条」会变成一个无从追查的差异。
+    unanswerable: List[Dict[str, Any]] = []
+    if not args.dry_run:
+        kept: List[Dict[str, Any]] = []
+        for idx, case in enumerate(cases):
+            labels = case.get("_chunk_labels") or []
+            if labels and not (case.get("expected_chunk_ids") or []):
+                grades = [e.get("grade") for e in labels if e.get("grade") is not None]
+                unanswerable.append(
+                    {
+                        "case_index": idx,
+                        "query": case.get("query", ""),
+                        "pool_size": len(labels),
+                        "max_grade": max(grades) if grades else None,
+                        "reason": (
+                            "no pooled candidate reached relevance_threshold="
+                            f"{labeling_cfg.relevance_threshold}"
+                        ),
+                        # 判定结果一并留下：否则每次续跑都会把这条重判一遍
+                        "_chunk_labels": labels,
+                    }
+                )
+            else:
+                kept.append(case)
+        if unanswerable:
+            golden["test_cases"] = kept
+            warnings.append(
+                f"{len(unanswerable)} case(s) had no candidate above the relevance "
+                "threshold and were moved out of test_cases (see "
+                "_labeling_metadata.unanswerable_cases). A query with no supporting "
+                "evidence in the corpus is a legitimate outcome, but evaluate.py "
+                "rejects empty expected_chunk_ids, so keeping them would block the "
+                "whole evaluation."
+            )
+
     if model_unavailable:
         warnings.append(
             "labelling stopped early: the judging model became unavailable "
@@ -577,6 +645,7 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
             "relevance_threshold": labeling_cfg.relevance_threshold,
             "max_judgements": labeling_cfg.max_judgements,
         },
+        "unanswerable_cases": unanswerable,
         "warnings": warnings,
         "interrupted": interrupted,
         "model_unavailable": model_unavailable,

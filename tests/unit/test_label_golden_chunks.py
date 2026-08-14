@@ -145,12 +145,13 @@ class TestResume:
                 {
                     "test_cases": [
                         {
+                            "query": "q1",
                             "_chunk_labels": [
                                 {"chunk_id": "a", "grade": 3, "reason": "yes"},
                                 {"chunk_id": "b", "grade": 0, "reason": "no"},
-                            ]
+                            ],
                         },
-                        {"_chunk_labels": [{"chunk_id": "c", "grade": 2}]},
+                        {"query": "q2", "_chunk_labels": [{"chunk_id": "c", "grade": 2}]},
                     ]
                 }
             ),
@@ -159,36 +160,66 @@ class TestResume:
 
         prior = load_prior_verdicts(out)
 
-        assert set(prior.keys()) == {0, 1}
-        assert prior[0]["a"].grade == 3
-        assert prior[0]["a"].reason == "yes"
-        assert prior[1]["c"].grade == 2
+        assert set(prior.keys()) == {"q1", "q2"}
+        assert prior["q1"]["a"].grade == 3
+        assert prior["q1"]["a"].reason == "yes"
+        assert prior["q2"]["c"].grade == 2
 
-    def test_judge_failed_preserved_on_resume(self) -> None:
-        """判定失败的候选读回时仍标 judge_failed,不会变成「不相关」。"""
-        import tempfile
+    def test_judge_failed_is_NOT_cached_so_resume_retries_it(
+        self, tmp_path: Path
+    ) -> None:
+        """判定失败的候选**不缓存**,让续跑重试它。
 
-        with tempfile.TemporaryDirectory() as d:
-            out = Path(d) / "v2.json"
-            out.write_text(
-                json.dumps(
-                    {
-                        "test_cases": [
-                            {
-                                "_chunk_labels": [
-                                    {"chunk_id": "x", "grade": None, "judge_failed": True}
-                                ]
-                            }
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+        「解析失败」不是持久结论,而是一次瞬时故障(输出被截断、模型偶发不遵从
+        格式)。若当已完成缓存起来,一次抖动就永久污染那条标签,且越续跑越固化。
+        英文那轮 625 次判定里有 62 条(9.9%)失败 —— 全缓存等于放弃这 9.9%。
+        """
+        out = tmp_path / "v2.json"
+        out.write_text(
+            json.dumps(
+                {
+                    "test_cases": [
+                        {
+                            "query": "q1",
+                            "_chunk_labels": [
+                                {"chunk_id": "ok", "grade": 3, "reason": "yes"},
+                                {"chunk_id": "bad", "grade": None, "judge_failed": True},
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
 
-            prior = load_prior_verdicts(out)
+        prior = load_prior_verdicts(out)
 
-            assert prior[0]["x"].judge_failed is True
-            assert prior[0]["x"].grade is None
+        assert "ok" in prior["q1"], "成功的判定必须缓存,否则续跑白花钱"
+        assert "bad" not in prior["q1"], "失败的判定不该缓存,续跑要重试它"
+
+    def test_case_with_only_failures_is_not_treated_as_done(
+        self, tmp_path: Path
+    ) -> None:
+        """整条 case 全部判定失败时,不该被当成「已完成」跳过。"""
+        out = tmp_path / "v2.json"
+        out.write_text(
+            json.dumps(
+                {
+                    "test_cases": [
+                        {
+                            "query": "q1",
+                            "_chunk_labels": [
+                                {"chunk_id": "a", "grade": None, "judge_failed": True},
+                                {"chunk_id": "b", "grade": None, "judge_failed": True},
+                            ],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        assert load_prior_verdicts(out) == {}
 
     def test_corrupt_prior_output_does_not_crash(self, tmp_path: Path) -> None:
         out = tmp_path / "v2.json"
@@ -199,7 +230,7 @@ class TestResume:
     def test_entries_without_chunk_id_skipped(self, tmp_path: Path) -> None:
         out = tmp_path / "v2.json"
         out.write_text(
-            json.dumps({"test_cases": [{"_chunk_labels": [{"grade": 3}]}]}),
+            json.dumps({"test_cases": [{"query": "q1", "_chunk_labels": [{"grade": 3}]}]}),
             encoding="utf-8",
         )
 
@@ -227,6 +258,54 @@ def _labelled_golden(n_accepted: int, n_rejected: int) -> Dict[str, Any]:
             {"query": "q", "expected_chunk_ids": accepted, "_chunk_labels": labels}
         ]
     }
+
+
+class TestResumeKeyedByQuery:
+    """续跑缓存必须按 query 做键,不能按位置索引。
+
+    无解的 case 会被移出产出的 test_cases(否则 evaluate.py 的非空校验会阻断
+    整轮评估),于是产出与输入条数不再一致 —— 按索引匹配会把缓存判定套到
+    **错误的 case** 上,而且不会有任何报错,只是标签悄悄错位。
+    """
+
+    def test_dropped_case_does_not_shift_others(self, tmp_path: Path) -> None:
+        out = tmp_path / "v2.json"
+        out.write_text(
+            json.dumps(
+                {
+                    # 产出里只剩 2 条（第 2 条无解被移出），输入原本 3 条
+                    "test_cases": [
+                        {"query": "qA", "_chunk_labels": [{"chunk_id": "a", "grade": 3}]},
+                        {"query": "qC", "_chunk_labels": [{"chunk_id": "c", "grade": 3}]},
+                    ],
+                    "_labeling_metadata": {
+                        "unanswerable_cases": [
+                            {
+                                "query": "qB",
+                                "_chunk_labels": [{"chunk_id": "b", "grade": 1}],
+                            }
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        prior = load_prior_verdicts(out)
+
+        assert prior["qA"]["a"].grade == 3
+        assert prior["qC"]["c"].grade == 3
+        # 无解 case 的判定也要读回，否则每次续跑都重判它
+        assert prior["qB"]["b"].grade == 1
+
+    def test_case_without_query_skipped(self, tmp_path: Path) -> None:
+        out = tmp_path / "v2.json"
+        out.write_text(
+            json.dumps({"test_cases": [{"_chunk_labels": [{"chunk_id": "x", "grade": 3}]}]}),
+            encoding="utf-8",
+        )
+
+        assert load_prior_verdicts(out) == {}
 
 
 class TestExportSample:

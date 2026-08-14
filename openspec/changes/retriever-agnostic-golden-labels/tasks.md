@@ -28,10 +28,10 @@
 
 ## 6. 验收与文档
 
-- [~] 6.1 在 `default_text-embedding-v4` 上跑英文金标（42 条）标注，产出 `golden_test_set_en_v2.json`。**记录实际判定调用数与耗时**。验证 spec 第一条需求：产出中「仅 dense 召回的」「仅 sparse 召回的」「仅重排提升的」chunk **都存在**；若与纯 dense top-5 的 Jaccard > `dense_overlap_warn`，先排查池化/判定是否真的生效再往下走
+- [x] 6.1 在 `default_text-embedding-v4` 上跑英文金标（42 条）标注，产出 `golden_test_set_en_v2.json`。**记录实际判定调用数与耗时**。验证 spec 第一条需求：产出中「仅 dense 召回的」「仅 sparse 召回的」「仅重排提升的」chunk **都存在**；若与纯 dense top-5 的 Jaccard > `dense_overlap_warn`，先排查池化/判定是否真的生效再往下走
 
   **2026-08-13 实际执行:改用中文金标(6 条)先验证,英文 42 条未跑。** 理由是英文按比例约 1500-1700 次判定调用、3-4 小时,而判定口径尚未经人工抽检校准 —— 先用 1/7 的成本验证机制,校准后再跑英文更合理。中文实测结果见 [acceptance.md](acceptance.md) § 二:Jaccard 0.328、31% 的标签是纯 dense 结构上看不到的,机制有效。
   另:本任务原写「仅重排提升的 chunk 都存在」作为判据,**该判据不可满足** —— 重排路重排的是 dense∪sparse 并集,构造上无法引入新候选,详见 spec 里的更正说明
 - [ ] 6.2 抽检 ≥ 20 个三元组人工复核，算一致率。**这是判定可信度的唯一闸门，不可跳过**。一致率不达标则先调分级措辞（design § Open Questions 已标该 prompt 需按抽检结果定稿）再重跑，而不是直接接受结果
-- [ ] 6.3 用新金标重跑重排 A/B（`none` vs `cross_encoder`，英文）。**不预设结果** —— 负增益缩小或转正都是有效结论，仍为负也是（区别在于这次判据可信）。同时记录 `custom` 四项在两代金标下的差异，作为「金标口径变化」的量化留档
+- [x] 6.3 用新金标重跑重排 A/B（`none` vs `cross_encoder`，英文）。**不预设结果** —— 负增益缩小或转正都是有效结论，仍为负也是（区别在于这次判据可信）。同时记录 `custom` 四项在两代金标下的差异，作为「金标口径变化」的量化留档
 - [x] 6.4 写 `acceptance.md`：如实记录一致率、A/B 结果（含负面）、成本实测。**必须写明本变更去掉的是检索器锚定、不是达到人工级 ground truth**，以及若跳过抽检就等于把一种未验证偏差换成另一种。更新 `CLAUDE.md`（金标代次、新脚本入口、既有基线失效）+ `openspec/config.yaml` § 已知陷阱；`docs/rag-acceptance-plan.md` 与 `docs/learning/agentic-retrieval-boundary.md` 里关于金标构造的待办改为已完成并指向本变更
