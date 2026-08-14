@@ -6,7 +6,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage directly states that the method copies the configuration data of the source with the specified index to the data source object, matching the reference answer.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "账户组交易的作用是什么？",
@@ -15,7 +16,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions groups and trading in the context of a profit report, but does not contain any information about the function of account group trading or the related APIs.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
@@ -24,7 +26,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage directly states that configurations can only be added or updated from the main server and returns the specified error code for others.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "交易品种组在假期里允许客户进行哪些操作？",
@@ -33,7 +36,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions holidays and trading symbols but only describes an API method for shifting symbol positions, not the client operations allowed during holidays.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
@@ -42,7 +46,8 @@
     "llm_grade": 0,
     "llm_reason": "The passage discusses IMTAdminAPI::DealAdd and pagination, which is completely irrelevant to the output parameters of MTAdminCreate.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
@@ -51,7 +56,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions IMTAdminAPI and output parameters, but it describes a different function (ReportParamCreate) and does not mention MTAdminCreate or its output parameter.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是什么？",
@@ -60,7 +66,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions the IMTConFeeder interface for configuring data sources but does not mention FeederGet or the specific data copying operation described in the answer.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "交易品种组在假期里允许客户进行哪些操作？",
@@ -69,7 +76,8 @@
     "llm_grade": 0,
     "llm_reason": "该段落讨论了交易条件参数，并未提及假期期间允许客户进行哪些操作。",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
@@ -78,7 +86,8 @@
     "llm_grade": 2,
     "llm_reason": "The passage shows the 'admin' parameter as a pointer to the administrator interface, but does not explicitly explain its role as an output parameter returning the created interface.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
@@ -87,7 +96,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions a trade request object but does not mention the OnTradeRequestUpdate method, the request parameter, or the IMTRequest type.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
@@ -96,7 +106,8 @@
     "llm_grade": 0,
     "llm_reason": "The passage discusses symbol deletion parameters and does not mention OnTradeRequestUpdate or the request parameter.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "IMTAdminAPI 接口在 MTAdminCreate 中的输出参数起什么作用？",
@@ -105,7 +116,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage states that MTAdminCreate creates a new instance of the IMTAdminAPI interface and returns a pointer to it, and shows the admin parameter as the pointer to the interface.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是什么？",
@@ -114,7 +126,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage lists other feeder-related functions but does not mention FeederGet or the copying of configuration data.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
@@ -123,7 +136,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage explicitly states that the `request` parameter is a pointer to the trading request object (IMTRequest), directly answering the question.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "账户组交易的作用是什么？",
@@ -132,7 +146,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions groups and trades in the context of a weekly report, but it does not contain any information about the function of account group trading or the specific APIs mentioned in the reference answer.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "交易品种组在假期里允许客户进行哪些操作？",
@@ -141,7 +156,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions holidays and trading symbols but does not contain any information about the operations allowed for clients during holidays.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": false,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
@@ -150,7 +166,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage directly confirms that configurations can only be added or updated from the main server and specifies the error code returned for others.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
@@ -159,7 +176,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage directly states that configurations can only be added or updated from the main server and mentions the exact error code.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
@@ -168,7 +186,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage directly states that configurations can only be added or updated from plugins running on the main server, and other plugins will receive the MT_RET_ERR_NOTMAIN error code.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "交易品种组在假期里允许客户进行哪些操作？",
@@ -177,7 +196,8 @@
     "llm_grade": 1,
     "llm_reason": "The passage mentions checking if the request time is a holiday during trade validation, but does not state what operations clients are allowed to perform during holidays.",
     "llm_accepted": false,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
@@ -186,7 +206,8 @@
     "llm_grade": 2,
     "llm_reason": "The passage states that the request parameter is a pointer to the object of the changed request, but it does not mention the specific type IMTRequest.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "在 OnTradeRequestUpdate 方法中，request 参数指向的是什么对象？",
@@ -195,7 +216,8 @@
     "llm_grade": 2,
     "llm_reason": "The passage mentions that the request parameter is a pointer to the object of the added request, but does not specify the IMTRequest type.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
@@ -204,7 +226,8 @@
     "llm_grade": 3,
     "llm_reason": "The passage directly states that configurations can only be added or updated from plugins running on the main server, and returns MT_RET_ERR_NOTMAIN for all others.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   },
   {
     "query": "只能在主服务器上运行的应用程序才能添加或更新配置吗？",
@@ -213,6 +236,7 @@
     "llm_grade": 3,
     "llm_reason": "The passage directly confirms that configurations can only be added or updated from the main server and specifies the exact error code returned otherwise.",
     "llm_accepted": true,
-    "human_label": null
+    "human_label": true,
+    "reviewer": "claude-opus-5 (cross-model judge, NOT human review)"
   }
 ]

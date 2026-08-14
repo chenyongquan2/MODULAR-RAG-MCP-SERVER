@@ -2528,8 +2528,15 @@
     "warnings": [
       "judge failure ratio 11.4% exceeds 10.0% for query '在 OnTradeRequestUpdate 方法中，request 参数指向的'; unparseable outputs are NOT the same as 'not relevant' — check the prompt or the model",
       "judge failure ratio 17.6% exceeds 10.0% for query '在 IMTServerAPI::FeederGet 中，配置数据复制的具体操作是'; unparseable outputs are NOT the same as 'not relevant' — check the prompt or the model",
-      "judge failure ratio 13.9% exceeds 10.0% for query '交易品种组在假期里允许客户进行哪些操作？'; unparseable outputs are NOT the same as 'not relevant' — check the prompt or the model"
+      "judge failure ratio 13.9% exceeds 10.0% for query '交易品种组在假期里允许客户进行哪些操作？'; unparseable outputs are NOT the same as 'not relevant' — check the prompt or the model",
+      "cross-model judge agreement 95.8% (23/24); human_agreement_rate remains null — the human gate is still open"
     ],
-    "interrupted": false
+    "interrupted": false,
+    "cross_judge_agreement_rate": 0.9583,
+    "cross_judge_reviewed_count": 24,
+    "cross_judge_agreed_count": 23,
+    "cross_judge_identifier": "anthropic:claude-opus-5",
+    "human_agreement_rate": null,
+    "human_review_status": "NOT DONE. The 24-triple sample was cross-checked by a second, different model (anthropic:claude-opus-5) at the user's explicit request, not by a human. Cross-model agreement is real evidence that the labels are not idiosyncratic to glm:z-ai/glm-5.2-free, but it does NOT close the human calibration gate: both judges are LLMs and may share blind spots that a human would catch."
   }
 }
