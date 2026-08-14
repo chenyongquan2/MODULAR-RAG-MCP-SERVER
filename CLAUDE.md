@@ -284,7 +284,8 @@ The dashboard is fully dynamic - component names displayed are read from trace l
   - **跨代 delta 会被报告显式标注 `delta_comparable: false`** —— 别把「标注口径变了」读成「检索质量变了」。换代次后必须重标基线
   - `evaluation.labeling_llm` **必须与 `judge_llm` 异源**(合成 `ground_truth` 的就是 judge),判据同 `screening_llm`:完整标识串相等即同源。**同源不可用 `--allow-same-source` 豁免**,该参数只豁免「无法确认」
   - ⚠️ **两代金标都没有机器可读的合成端标识**(建于 2026-04-28,早于 Feature-003 的 `_review_metadata`),所以异源检测返回 `UNVERIFIABLE`,当前只能靠 `--allow-same-source` 显式承担风险
-  - ⚠️ **LLM 判定不等于人工级 ground truth**。它去掉了检索器锚定,但引入了判定模型自身的偏好。`--export-sample` / `--import-sample` 的人工抽检是唯一校准手段 —— **跳过它就只是把一种未验证的偏差换成另一种**
+  - ⚠️ **LLM 判定不等于人工级 ground truth**。它去掉了检索器锚定,但引入了判定模型自身的偏好。`--export-sample` / `--import-sample` 的人工抽检是校准手段
+  - ⚠️ **v2 金标的校准是「跨模型」而非「人工」**(2026-08-14):24 条三元组由 `anthropic:claude-opus-5` 盲评,与 `glm:z-ai/glm-5.2-free` 一致率 **95.8%(23/24)**,唯一分歧那条复盘为原判定更正确。元数据里记的是 `cross_judge_agreement_rate`,**`human_agreement_rate` 是 `null`** —— 两个判定方都是 LLM,**可能共享人类会发现的盲点**。若将来重排结论(或任何依赖 v2 金标的结论)被质疑,**第一件该做的事就是补真人抽检**:审阅表在 `tests/fixtures/labeling_review_zh.md`,可直接对照两方分歧
   - `labeling_llm.max_tokens` **不要调小**。此前硬编码 200,真实语料上 367 字符的 chunk 就返回**空响应**,导致每条都标 `judge_failed` —— 表现得像「模型不遵从 JSON 格式」,真实原因是没给它写完的余量。默认 800
 - **`scripts/evaluate.py` 与 `scripts/query.py` 都不写 query trace** —— 只有 MCP server 路径写 `logs/traces.jsonl`。想量某个阶段的真实耗时得写专门的基准脚本,别指望从 trace 里捞
 - **跑 Python 脚本调试时务必加 `-u`** —— stdout 在管道下是全缓冲的,不加会看到空输出并误判成「进程卡死」。本项目的日志走 stderr、进度条走 stdout,两者混在一起时尤其容易误判
