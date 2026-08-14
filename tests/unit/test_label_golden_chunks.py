@@ -19,6 +19,7 @@ change: retriever-agnostic-golden-labels (T-4.1 / T-4.2 / T-4.3)
 
 from __future__ import annotations
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any, Dict, List
@@ -339,6 +340,69 @@ class TestComputeAgreement:
 
 
 # ── 产出约定 ─────────────────────────────────────────────────────────────
+
+
+class TestPartialResultsSurviveModelOutage:
+    """**这组是一次真实事故的回归测试**(2026-08-13)。
+
+    英文标注跑到第 20 个 case 时网关挂掉(Connection error),脚本按设计抛
+    LabelingUnavailableError 并以退出码 3 拒绝产出空金标 —— 那部分是对的。
+    但当时的 `except` 分支**直接 return,没写出已完成的部分**,于是前 19 个
+    case 约 630 次判定、2.5 小时的工作全部丢失。而续跑恰恰依赖产出文件存在:
+    「模型不可用」这条快速失败路径把 spec 要求的「可续跑」直接架空了。
+
+    快速失败要防的是「产出一份全是不相关的空金标」,不是「丢掉已经算好的
+    结果」—— 两者不冲突。
+
+    当时的单测只验了「异常被抛出」,没验 CLI 在那条路径上的写盘行为:
+    测了库,没测集成。本组补这个缺口。
+    """
+
+    def test_model_unavailable_path_writes_before_exiting(self) -> None:
+        """`except LabelingUnavailableError` 不得直接 return。"""
+        import scripts.label_golden_chunks as cli
+
+        source = inspect.getsource(cli.main)
+        handler_start = source.index("except LabelingUnavailableError")
+        handler_end = source.index("except KeyboardInterrupt")
+        handler = source[handler_start:handler_end]
+
+        # 只看真正的 return **语句**（行首缩进后紧跟 return），不看注释里
+        # 提到的 "return" 这个词 —— 那段注释正是在解释为什么不能 return。
+        return_statements = [
+            line for line in handler.splitlines()
+            if line.strip().startswith("return")
+        ]
+        assert not return_statements, (
+            f"模型不可用时直接 return 会丢掉已完成的判定（实测丢了 2.5 小时的"
+            f"工作）—— 必须落到统一的写出路径，再按退出码优先级返回 3。"
+            f"发现的 return 语句: {return_statements}"
+        )
+        assert "model_unavailable = True" in handler
+
+    def test_model_unavailable_marks_version_partial(self) -> None:
+        """产出必须标 partial,不能让调用方误以为跑完了。"""
+        import scripts.label_golden_chunks as cli
+
+        source = inspect.getsource(cli.main)
+        assert "interrupted or skipped_total or model_unavailable" in source
+
+    def test_model_unavailable_still_exits_three(self) -> None:
+        """写出部分结果**不降低**退出码 —— 它仍是需要人去修网关的信号。"""
+        import scripts.label_golden_chunks as cli
+
+        source = inspect.getsource(cli.main)
+        idx_write = source.index("output_path.write_text")
+        idx_exit = source.index("if model_unavailable:\n        return EXIT_MODEL_UNAVAILABLE")
+        assert idx_write < idx_exit, "必须先写盘再返回退出码 3"
+
+    def test_metadata_records_model_unavailable(self) -> None:
+        """元数据要能区分「正常完成」「被中断」「模型挂了」三种收尾。"""
+        import scripts.label_golden_chunks as cli
+
+        source = inspect.getsource(cli.main)
+        assert '"model_unavailable": model_unavailable,' in source
+        assert '"interrupted": interrupted,' in source
 
 
 class TestOutputConventions:

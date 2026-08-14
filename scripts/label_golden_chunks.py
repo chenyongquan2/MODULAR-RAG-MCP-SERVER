@@ -437,6 +437,7 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
     labeling_cfg = settings.evaluation.labeling
     budget_left = labeling_cfg.max_judgements
     interrupted = False
+    model_unavailable = False
 
     route_totals: Dict[str, int] = {}
     pool_sizes: List[int] = []
@@ -511,11 +512,34 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
                 warnings.append(f"case[{idx}] {overlap_warning}")
 
     except LabelingUnavailableError as exc:
+        # **必须先写出已完成的部分再退出。**
+        #
+        # 这里曾经直接 return,结果 2026-08-13 英文那轮跑到第 20 个 case 时网关
+        # 挂掉(Connection error),前 19 个 case 约 630 次判定、2.5 小时的工作
+        # **全部丢失** —— 而续跑恰恰依赖产出文件存在。于是「模型不可用」这条
+        # 快速失败路径把 spec 要求的「可续跑」直接架空了。
+        #
+        # 快速失败要防的是「产出一份全是不相关的空金标」,不是「丢掉已经算好的
+        # 结果」。两者不冲突:写出部分结果 + 标 partial + 退出码 3,既留痕又不
+        # 让调用方误以为跑完了。
+        model_unavailable = True
         print(f"Error: {exc}", file=sys.stderr)
-        return EXIT_MODEL_UNAVAILABLE
+        print(
+            "Writing partial results so the completed cases are not lost — "
+            "re-run the same command to resume from here once the gateway "
+            "recovers.",
+            file=sys.stderr,
+        )
     except KeyboardInterrupt:
         interrupted = True
         print("\nInterrupted — writing partial results.", file=sys.stderr)
+
+    if model_unavailable:
+        warnings.append(
+            "labelling stopped early: the judging model became unavailable "
+            "(all calls for one case failed at the transport layer). This output "
+            "is PARTIAL — re-run the same command to resume."
+        )
 
     mean_jaccard = sum(jaccards) / len(jaccards) if jaccards else 0.0
     if skipped_total:
@@ -525,7 +549,11 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
             "is NOT a complete labelling — re-run to continue from here."
         )
 
-    golden["version"] = GOLDEN_VERSION_PARTIAL if (interrupted or skipped_total) else GOLDEN_VERSION_V2
+    golden["version"] = (
+        GOLDEN_VERSION_PARTIAL
+        if (interrupted or skipped_total or model_unavailable)
+        else GOLDEN_VERSION_V2
+    )
     golden["_labeling_method"] = LABELING_METHOD
     golden["_labeling_metadata"] = {
         "route_contributions": route_totals,
@@ -551,6 +579,7 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
         },
         "warnings": warnings,
         "interrupted": interrupted,
+        "model_unavailable": model_unavailable,
     }
 
     if args.dry_run:
@@ -572,6 +601,10 @@ def main() -> int:  # noqa: C901 —— CLI 编排，分支多但线性
     for w in warnings:
         print(f"  WARNING: {w}", file=sys.stderr)
 
+    # 退出码优先级：模型不可用(3) > 中断(130) > 正常(0)。
+    # 前者是需要人去修网关的信号，比「被中断」更需要引起注意。
+    if model_unavailable:
+        return EXIT_MODEL_UNAVAILABLE
     return EXIT_INTERRUPTED if interrupted else EXIT_OK
 
 
