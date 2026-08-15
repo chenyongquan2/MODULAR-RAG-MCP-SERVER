@@ -22,9 +22,16 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from src.observability.evaluation.language_check import (
+    LanguageCheck,
+    check_language,
+    supported_languages,
+)
 from src.observability.logger import get_logger
 
 if TYPE_CHECKING:
@@ -41,6 +48,111 @@ DEFAULT_DISTRIBUTION: dict[str, float] = {
     "reasoning": 0.3,
     "multi_context": 0.2,
 }
+
+
+
+# 目标语言代码 → RAGAS 的语言标识。**集中定义**，不散落在调用点（T-2.3）。
+# 新增语种时同时在 language_check._LANGUAGE_RANGES 登记字符集规则。
+RAGAS_LANGUAGE_BY_CODE: dict[str, str] = {
+    "zh": "chinese",
+}
+
+# 无需 adapt 的语言：RAGAS 内置 prompt 本就是英文。
+_NO_ADAPT_LANGUAGES: frozenset[str] = frozenset({"en"})
+
+# 旁挂的缓存元数据文件名。刻意不塞进 RAGAS 自己的 json —— 那是上游格式，
+# 往里加私货会在 RAGAS 升级时炸。
+ADAPT_METADATA_FILENAME = "_adapt_metadata.json"
+
+
+def _adapt_prompt_files(lang_cache: "Path") -> list["Path"]:
+    """缓存目录里 RAGAS 写出的 prompt 文件（排除我们旁挂的元数据）。"""
+    return [
+        f for f in sorted(lang_cache.glob("*.json"))
+        if f.name != ADAPT_METADATA_FILENAME
+    ]
+
+
+def _validate_adapt_output(
+    lang_cache: "Path", lang: str, settings: "Settings"
+) -> dict[str, LanguageCheck]:
+    """校验 adapt 产物**确实是目标语言**（T-2.1，本变更的核心）。
+
+    为什么必须校验产物而不是只捕获异常:2026-08-14 实测,
+    ``adapt(language=chinese)`` **不抛任何异常**地返回了未翻译的英文提示词
+    —— 五个「中文」文件的 CJK 字符数全部为 0。只捕获异常的 fail-fast 对这种
+    形态完全无效。**「没报错」不等于「做对了」。**
+
+    Args:
+        lang_cache: 该语言的缓存目录。
+        lang: 目标语言代码。
+        settings: 读 ``evaluation.synthesis.adapt_language_ratio_min``。
+
+    Returns:
+        ``{文件名: 校验结果}``。目录不存在或没有 prompt 文件时返回空字典 ——
+        调用方须把「空」也当作失败（没有产物可以证明翻译成功）。
+    """
+    threshold = settings.evaluation.synthesis.adapt_language_ratio_min
+    out: dict[str, LanguageCheck] = {}
+    if not lang_cache.exists():
+        return out
+    for f in _adapt_prompt_files(lang_cache):
+        out[f.name] = check_language(
+            f.read_text(encoding="utf-8"), lang, threshold
+        )
+    return out
+
+
+def _write_adapt_metadata(
+    lang_cache: "Path",
+    lang: str,
+    checks: dict[str, LanguageCheck],
+    settings: "Settings",
+) -> None:
+    """把校验结果与产出模型写进旁挂元数据（T-2.2）。
+
+    没有这份元数据，事后无法判断一份缓存是好是坏 —— 实测中那份被污染的缓存
+    让后续每次合成都读到英文提示词，而且没有任何迹象表明问题出在缓存上。
+    """
+    from datetime import datetime, timezone
+
+    judge = settings.evaluation.judge_llm
+    payload = {
+        "language": lang,
+        "produced_by": f"{judge.provider}:{judge.model}",
+        "threshold": settings.evaluation.synthesis.adapt_language_ratio_min,
+        "validated": all(c.passed for c in checks.values()) and bool(checks),
+        "file_ratios": {n: round(c.ratio, 4) for n, c in checks.items()},
+        "written_at": datetime.now(timezone.utc).isoformat(),
+    }
+    lang_cache.mkdir(parents=True, exist_ok=True)
+    (lang_cache / ADAPT_METADATA_FILENAME).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def _cached_adapt_is_usable(
+    lang_cache: "Path", lang: str, settings: "Settings"
+) -> bool:
+    """判断磁盘缓存能否直接使用（T-2.2）。
+
+    **缺元数据即不可用** —— 那是来源不明的旧缓存，可能正是那份「假装已翻译」
+    的产物。宁可多跑一次 adapt，也不能让坏缓存继续毒化后续每一次合成。
+    """
+    meta_path = lang_cache / ADAPT_METADATA_FILENAME
+    if not meta_path.exists():
+        return False
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not meta.get("validated"):
+        return False
+    if meta.get("language") != lang:
+        return False
+    if not _adapt_prompt_files(lang_cache):
+        return False
+    return True
 
 
 class TestsetSynthesizer:
@@ -66,12 +178,18 @@ class TestsetSynthesizer:
         distribution: Optional[dict[str, float]] = None,
         chunk_sample_size: Optional[int] = None,
         source_filter: Optional[str] = None,
+        force_adapt: bool = False,
     ) -> dict[str, Any]:
         """合成候选测试集。
 
         Args:
             collection: 项目 vector store 中的 collection 名(中文/英文 MT5)。
             lang: ``"zh"`` 或 ``"en"``,写入 candidate 的顶层 language 字段。
+                未在 ``RAGAS_LANGUAGE_BY_CODE`` 或 ``_NO_ADAPT_LANGUAGES`` 中
+                登记的语言会**明确报错**,不会静默按英文 prompt 合成。
+            force_adapt: 忽略磁盘上的既有 adapt 缓存,强制重新翻译。用于换了
+                合成端模型、或怀疑缓存有问题时 —— 缺元数据的旧缓存本就不会
+                被使用,本参数是在「元数据显示通过」时也要重来的逃生口。
             target_count: 目标合成数(默认 100;精修后通常缩到 ≥ 40)。
             distribution: 难度分布,key ∈ {simple, reasoning, multi_context},
                 value 求和应 ≈ 1.0。默认 50/30/20。
@@ -128,51 +246,100 @@ class TestsetSynthesizer:
         #      (绕过 LLM 输出稳定性问题)
         #   2. 重试 3 次:每次都从头 init evolution 后再 adapt(避免脏状态污染)
         # en 是 RAGAS 默认 prompt 语言,无需 adapt。
-        lang_to_ragas: dict[str, str] = {
-            "zh": "chinese",
-            # 未来扩语种在此扩,如 "ja": "japanese"
-        }
-        ragas_lang = lang_to_ragas.get(lang.lower())
-        if ragas_lang is not None:
-            from pathlib import Path
-            cache_dir = Path("./logs/ragas_adapt_cache").resolve()
-            cache_dir.mkdir(parents=True, exist_ok=True)
-
-            logger.info(
-                "Adapting RAGAS evolution prompts to language=%s (lang=%s, "
-                "cache=%s)",
-                ragas_lang, lang, cache_dir,
+        ragas_lang = RAGAS_LANGUAGE_BY_CODE.get(lang.lower())
+        if lang.lower() not in _NO_ADAPT_LANGUAGES and ragas_lang is None:
+            # 未支持的语言必须明确报错，**不能静默按 RAGAS 默认的英文 prompt 合成**
+            # —— 那正是第一代产出 33 条英文问题的形态（T-2.3）。
+            raise ValueError(
+                f"unsupported target language for synthesis: {lang!r}. "
+                f"Supported: {sorted(set(RAGAS_LANGUAGE_BY_CODE) | _NO_ADAPT_LANGUAGES)}. "
+                "Falling back to the default (English) prompts would silently "
+                "produce questions in the wrong language — that is exactly the "
+                "failure this check exists to prevent."
             )
 
-            # 重试最多 2 次(adapt 单次需 ~5 min,过多重试浪费时间):
-            # adapt 失败常因 Judge LLM 输出非 JSON,换 model 比 retry 更有效
-            adapt_succeeded = False
-            last_exc: Optional[Exception] = None
-            for attempt in range(1, 3):
-                try:
-                    self._generator.adapt(
-                        language=ragas_lang,
-                        evolutions=list(ragas_distributions.keys()),
-                        cache_dir=str(cache_dir),
-                    )
-                    adapt_succeeded = True
-                    if attempt > 1:
-                        logger.info("RAGAS adapt succeeded on attempt %d", attempt)
-                    break
-                except Exception as exc:
-                    last_exc = exc
+        if ragas_lang is not None:
+            from pathlib import Path
+            cache_dir = Path(
+                self._settings.evaluation.synthesis.adapt_cache_dir
+            ).resolve()
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            lang_cache = cache_dir / ragas_lang
+
+            # 缓存必须先过校验才能用（T-2.2）。缺元数据 = 来源不明的旧缓存，
+            # 它可能正是那份「假装已翻译」的产物 —— 实测存在过。
+            if not force_adapt and _cached_adapt_is_usable(
+                lang_cache, lang, self._settings
+            ):
+                logger.info("reusing validated adapt cache: %s", lang_cache)
+            else:
+                if lang_cache.exists():
                     logger.warning(
-                        "RAGAS adapt(language=%s) attempt %d/3 failed: %s",
-                        ragas_lang, attempt, str(exc)[:200],
+                        "discarding unusable adapt cache at %s "
+                        "(missing/failed validation metadata, or force rebuild)",
+                        lang_cache,
                     )
-            if not adapt_succeeded:
-                # 2 次都失败 → 抛错,让用户介入(不静默 fallback 到英文,避免
-                # 浪费 1-2h 跑出全英文结果)
-                raise RuntimeError(
-                    f"RAGAS adapt(language={ragas_lang}) failed after 2 attempts. "
-                    f"Last error: {last_exc}. "
-                    "Suggestion: try a different Judge LLM (settings.evaluation."
-                    "judge_llm.model), or pre-warm cache by running adapt manually."
+                    import shutil
+                    shutil.rmtree(lang_cache, ignore_errors=True)
+
+                logger.info(
+                    "Adapting RAGAS evolution prompts to language=%s (lang=%s, "
+                    "cache=%s)",
+                    ragas_lang, lang, cache_dir,
+                )
+
+                adapt_succeeded = False
+                last_exc: Optional[Exception] = None
+                for attempt in range(1, 3):
+                    try:
+                        self._generator.adapt(
+                            language=ragas_lang,
+                            evolutions=list(ragas_distributions.keys()),
+                            cache_dir=str(cache_dir),
+                        )
+                        adapt_succeeded = True
+                        if attempt > 1:
+                            logger.info("RAGAS adapt succeeded on attempt %d", attempt)
+                        break
+                    except Exception as exc:
+                        last_exc = exc
+                        logger.warning(
+                            "RAGAS adapt(language=%s) attempt %d/3 failed: %s",
+                            ragas_lang, attempt, str(exc)[:200],
+                        )
+                if not adapt_succeeded:
+                    # 情形 A：调用本身炸了（网络 / 模型故障）。重试或换网络。
+                    raise RuntimeError(
+                        f"RAGAS adapt(language={ragas_lang}) RAISED after 2 attempts. "
+                        f"Last error: {last_exc}. This is a CALL failure (network or "
+                        "model outage), not a translation-quality problem — retry, or "
+                        "check the gateway. Distinct from the "
+                        "'produced untranslated output' failure below."
+                    )
+
+                # 情形 B：调用成功，但产物没被翻译。**这才是实测发生过的形态** ——
+                # adapt 不抛异常地返回英文，只捕获异常的 fail-fast 完全无效。
+                checks = _validate_adapt_output(lang_cache, lang, self._settings)
+                failed = {n: c for n, c in checks.items() if not c.passed}
+                if failed or not checks:
+                    import shutil
+                    shutil.rmtree(lang_cache, ignore_errors=True)
+                    detail = "; ".join(f"{n}: {c.describe()}" for n, c in checks.items())
+                    raise RuntimeError(
+                        f"RAGAS adapt(language={ragas_lang}) COMPLETED WITHOUT ERROR "
+                        f"but produced output that is not in the target language. "
+                        f"{detail or 'no prompt files were written at all'}. "
+                        "The bad cache has been deleted so it cannot poison later "
+                        "runs. This is NOT a transient failure — retrying the same "
+                        "model will reproduce it. Change "
+                        "evaluation.judge_llm.model to one that can translate the "
+                        "prompts, then re-run."
+                    )
+
+                _write_adapt_metadata(lang_cache, lang, checks, self._settings)
+                logger.info(
+                    "adapt output validated: %s",
+                    ", ".join(f"{n}={c.ratio:.1%}" for n, c in checks.items()),
                 )
 
         try:

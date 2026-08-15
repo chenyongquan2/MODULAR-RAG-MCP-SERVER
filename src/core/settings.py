@@ -546,6 +546,10 @@ class SynthesisSettings:
             ⚠️ 实测未翻译时恒为 **0.0%**;翻译后的提示词仍含大量 JSON schema
             与英文字段名,所以这个值应远低于「纯中文」的水平。0.05 是初值,
             需按首轮实测校准 —— 与本项目其他阈值同性质。
+        adapt_cache_dir: 适配产物的缓存根目录。此前硬编码在 synthesize() 里
+            —— 属宪法原则二禁止的硬编码可调参数,而且让单测不得不读写仓库里的
+            真实缓存目录(实测因此出现过测试互相污染:前一个用例留下的缓存让
+            后一个用例的 adapt 压根没被调用)。
         question_language_mismatch_warn: 合成候选中「问题语种与目标语言不一致」
             的比例上限,超过即告警。第一代实测是 **70%(33/47)**,那是适配未生效
             的典型信号。
@@ -553,6 +557,7 @@ class SynthesisSettings:
 
     adapt_language_ratio_min: float = 0.05
     question_language_mismatch_warn: float = 0.20
+    adapt_cache_dir: str = "./logs/ragas_adapt_cache"
 
 
 @dataclass

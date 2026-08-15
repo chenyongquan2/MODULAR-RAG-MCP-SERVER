@@ -91,7 +91,7 @@ context: |
     名义 glm 但模型经兼容端点路由到 minimax)。
   - **所有脚本与测试必须在 `.venv` 下运行**。全局 Python 的 protobuf 是 5.29.3,
     `import chromadb` 会失败;`.venv` 里是 3.20.3。
-  - **金标无法公正评判重排**(2026-08-13,change activate-cross-encoder-rerank):
+  - **`dense-top-k` 金标无法公正评判重排**(2026-08-13,change activate-cross-encoder-rerank):
     `expected_chunk_ids` 是纯 dense top-5 回填的,标准答案本身就是「embedding
     认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此
     对重排而言**四项 custom 指标全是 dense-anchored**,`MRR`/`nDCG` 并不比
@@ -122,16 +122,26 @@ context: |
   - **调试脚本务必加 `python -u`** —— stdout 在管道下是全缓冲的,不加会看到空
     输出并误判成「进程卡死」。本项目日志走 stderr、进度条走 stdout,混在一起时
     尤其容易误判。本次为此误杀过两个正常运行的评估进程。
-  - **金标有两代,分数不可跨代比较**(2026-08-13,change retriever-agnostic-golden-labels):
-    第一代 `version: v1.0` / `labeling_method: dense-top-k`(纯 dense top-5 回填);
-    第二代 `v2.0` / `pooled-llm-judged`(多路池化 + LLM 分级判定)。跨代 delta 会被
-    报告标 `delta_comparable: false`,别把「标注口径变了」读成「检索质量变了」。
+  - **金标有两代标注方式,分数不可跨代比较**(2026-08-13,change retriever-agnostic-golden-labels)
+    —— **完整解释见 `docs/learning/golden-test-set-explained.md`**(词源、两种答案、
+    逐词拆解、制作流程、两代偏向)。
+    **一律用标注方式名称呼,不要用「v1/v2」**:项目里文件名后缀(`..._zh_v3.json`)、
+    JSON 的 `version` 字段、`_labeling_method` 三者会打架,**只有 `_labeling_method`
+    是代码判据**(`eval_runner.py:88`,缺失即视为第一代)。实例:`golden_test_set_zh_v3.json`
+    文件名带 v3、`version` 是 `v1.0`、标注方式仍是第一代 —— 三者不一致但全对。
+    - **`dense-top-k`**(第一代):`backfill_chunk_ids.py` 拿 `ground_truth`(**答案**)
+      编码查纯 dense top-5。期望片段 = 某一路检索器的输出,即**检索器锚定**。
+    - **`pooled-llm-judged`**(第二代):`label_golden_chunks.py` 拿 `query`(**问题**)
+      从 dense/sparse/rerank 三路池化取并集,LLM 判 0-3 分级相关度。这是 TREC pooling
+      的做法,只是把人工评审员换成 LLM。
+    跨代 delta 会被报告标 `delta_comparable: false`,别把「标注口径变了」读成
+    「检索质量变了」。
     中文 6 条实测:新旧标签 Jaccard 仅 0.328,31% 的标签是纯 dense 看不到的。
     `evaluation.labeling_llm` 必须与 `judge_llm` 异源,同源不可用
     `--allow-same-source` 豁免(该参数只豁免「无法确认」)。
     **LLM 判定不等于人工级 ground truth** —— 它换掉了检索器锚定但引入判定模型
     的偏好,人工抽检是唯一校准手段,跳过就只是把一种未验证偏差换成另一种。
-  - **v2 金标的校准是跨模型而非人工**(2026-08-14):24 条三元组由 claude-opus-5
+  - **`pooled-llm-judged` 金标的校准是跨模型而非人工**(2026-08-14):24 条三元组由 claude-opus-5
     盲评,与 glm:z-ai/glm-5.2-free 一致率 95.8%(23/24)。元数据记
     `cross_judge_agreement_rate`,`human_agreement_rate` 保持 null —— 两个判定方
     都是 LLM,可能共享人类会发现的盲点。**重排 A/B 的翻转结论(MRR -0.12 → +0.08)
@@ -157,6 +167,39 @@ context: |
     (`ResponseBuilder` → `llm.model`)+ Judge LLM。做纯检索类 A/B 时临时降为
     `[custom]` 并加 `--no-generate-answers`,能把耗时从小时级降到分钟级、成本降到近零。
     grep 配置时记得带足上下文行,`backends` 是多行列表。
+  - **`Fusion.fuse()` 的权重按「完整路径名」查表,查不到静默回落 1.0**
+    (2026-08-15,查询改写 feature 的前置约束)。`fuse()` 收的是
+    `Mapping[str, Sequence[RetrievalResult]]` —— **任意命名多路,不是固定两路**,
+    所以 Multi-Query 那类「N 个改写 query × 2 路」可以零改动复用融合层。但
+    `weight_for()` 是 `self._weights.get(route, DEFAULT_ROUTE_WEIGHT)`,而
+    `DEFAULT_ROUTE_WEIGHT = 1.0`、配置里的键名是 `sparse`。一旦把路径命名成
+    `sparse_q0`,查不到就拿 1.0 而不是校准出的 0.1,**Feature-005 的权重被悄悄
+    作废、sparse 回到等权,而系统照常运行不报错**。新增路径时权重必须按**路径族**
+    查找(从 `sparse_q0` 剥出 `sparse`),并配单测固定。同 `top_m` 死配置、
+    `--collection` 死参数一类的静默失效。
+  - **`dense-top-k` 金标结构性*奖励* HyDE,与它惩罚重排是同一根因的镜像**(2026-08-15)。
+    `backfill_chunk_ids.py` 的 `_backfill_one` 是「把 **ground_truth(真答案)**
+    编码后取 dense top-5」,而 HyDE 是「把 **LLM 编的假答案**编码后取 dense top-k」
+    —— **两者是同一个机制**,只差 oracle 答案 vs 猜测答案。所以 HyDE 越成功就越
+    逼近 v1 金标的构造方式本身,分数会虚高。**用 v1 评 HyDE 得到的任何正增益都
+    不可信**,必须用 `pooled-llm-judged`(按 query 而非答案池化)。
+    普适结论:**`dense-top-k` 金标不是中立裁判,而是「dense 检索 + oracle 答案」这一
+    特定机制的化身 —— 靠近它的改动被奖励,偏离它的被惩罚。**
+  - **查询改写的增益主要在 sparse 单路,融合后的 8 项指标会把它稀释掉**
+    (2026-08-15)。dense 的 embedding 天然对同义/措辞鲁棒,所以「换个说法」类
+    策略(同义词扩展、Multi-Query)对它边际递减;BM25 是字面匹配,对措辞极度敏感,
+    才是这类策略的真正受益方。而现有指标量的都是融合后结果,sparse 那点改善会被
+    `weight=0.1` 压到看不见。**做查询改写 A/B 前必须先补分路径指标**(单独量
+    sparse 路的 recall/MRR),否则会得出「改写没用」的错误结论。另注:改写提升
+    sparse 信噪比后,`0.1` 这个值必然过时 —— **改写与融合权重必须联合校准**。
+  - **选型结论:不迁移到 LlamaIndex,但保留局部引入的口子**(2026-08-15)。
+    别在 delta 规格里提「换成框架实现」。判据:它能替换的约 36% 源码恰好是**维护
+    成本最低**的部分(provider 包装,写完就不动),不能替换的恰好是**成本最高**的
+    部分(评估体系、追踪链路、配置驱动的工厂层);且工厂层不会消失(它是代码组装式,
+    不是配置驱动),依赖树与已钉死的 `chromadb<1.5` / `protobuf<4` / `ragas==0.1.21`
+    有冲突风险。若确需其能力,按 `[rerank]` 的先例做成 optional extra + 注册成某
+    一层的新 provider。完整分析与翻转条件见
+    `docs/learning/tech-selection-llamaindex.md`。
 
   ## 历史资产(只读,不要在里面新增)
   - `specs/001-005/` + `.specify/` —— 2026-04~08 用 GitHub Spec-Kit 做的 5 个

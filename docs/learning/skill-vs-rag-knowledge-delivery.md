@@ -3,7 +3,7 @@
 > **记录日期**：2026-08-10
 > **关联代码**：`src/core/text/tokenizer.py`、`src/ingestion/embedding/sparse_encoder.py`、`scripts/rebuild_bm25_index.py`
 > **关联外部产物**：`~/.claude/skills/mt4-api-docs/`、`~/.claude/skills/mt5-api-docs/`（两个 MetaTrader 文档查询 skill）
-> **起因**：既然两个 MT 文档 skill 已经能让 AI 查到 MT4/MT5 的参考资料，本 RAG 项目是否就多余了？为回答这个问题，把两个 skill 的产物完整拆解了一遍，顺带反推出它们的制作流程、AI 参与度，并下钻到 SQLite FTS5 的机制
+> **起因**：既然两个 MT 文档 skill 已经能让 AI 查到 MT4/MT5 的参考资料，本 RAG 项目是否就多余了？为回答这个问题，把两个 skill 的产物完整拆解了一遍，顺带反推出它们的制作流程、AI 参与度，下钻到 SQLite FTS5 的机制，并回答了「为何两个 skill 形式完全不同、却没人统一」
 
 ## 置信度标注约定
 
@@ -29,10 +29,11 @@
 5. [下钻：SQLite FTS5 到底是什么](#5-下钻sqlite-fts5-到底是什么)
 6. [skill 的物理构成与隐性依赖](#6-skill-的物理构成与隐性依赖)
 7. [实测发现的两个缺陷](#7-实测发现的两个缺陷)
-8. [四条主线结论](#8-四条主线结论)
-9. [对本项目的启示](#9-对本项目的启示)
-10. [附录 A：复现命令](#附录-a复现命令)
-11. [附录 B：术语表](#附录-b术语表)
+8. [为何两个 skill 形式不同，且没有统一](#8-为何两个-skill-形式不同且没有统一)
+9. [五条主线结论](#9-五条主线结论)
+10. [对本项目的启示](#10-对本项目的启示)
+11. [附录 A：复现命令](#附录-a复现命令)
+12. [附录 B：术语表](#附录-b术语表)
 
 ---
 
@@ -367,7 +368,21 @@ python -c "import sqlite3;c=sqlite3.connect('mt4docs.db');print(c.execute(\"SELE
 | `references/core/index.md` | 483 | 72 | **411** |
 | `SKILL.md` 路由表 | 99 | 99 | 0 |
 
-`index.md` 顶部 Quick Reference 表里的 `data/server_connect.md`、`data/symbol_settings_common.md`、`data/automation.md` 全是死链。原因清楚：**第 3 步 AI 合并之后，第 1 步脚本生成的索引没有重跑**。241 KB 的 `core/` 目前是死重量，而 SKILL.md 的 Option B 恰恰写着「主题不明确时去扫 `core/index.md`」——把兜底路径指向了一堆死链。
+`index.md` 顶部 Quick Reference 表里的 `data/server_connect.md`、`data/symbol_settings_common.md`、`data/automation.md` 全是死链。241 KB 的 `core/` 目前是死重量，而 SKILL.md 的 Option B 恰恰写着「主题不明确时去扫 `core/index.md`」——把兜底路径指向了一堆死链。
+
+**成因由文件 mtime 直接坐实**【实测】。把 `data/` 下两组文件的修改时间分开看，整条流水线被还原出来：
+
+| 时刻 | 发生了什么 |
+|---|---|
+| 04-13 **00:19** | 脚本阶段完成：71 个 1:1 文件 + `id_lookup.json` + `file_index.json` 同一分钟落盘 |
+| 04-13 **00:23** | 生成 `index.md` 和 `core/index.md` |
+| — | **间隔 16 小时** |
+| 04-13 **16:46–17:05** | AI 合并：52 个文件在 19 分钟内产出 |
+| 04-13 **17:08** | 写 SKILL.md 的 126 行路由表 |
+
+`core/*.json` 和两份 index 从 00:23 之后**再没被碰过**。
+
+所以这不是「设计失误」，而是：**AI 合并是第二天下午临时追加的一道工序，加完只更新了 SKILL.md，没有回头重跑凌晨那批索引。** 增量工序污染上游产物的典型形态——新工序的作者只关心自己这一步的输出，不知道（或忘了）上游还有派生物需要同步。
 
 另外，唯一准确的 SKILL.md 路由表只覆盖 123 个文件中的 99 个，**24 个文件没有任何入口**，包括 `admin_plugins.md`、`admin_accounts.md`、`admin_groups.md`。问「MT5 插件怎么配置」，AI 按路由表找不到。
 
@@ -377,7 +392,59 @@ python -c "import sqlite3;c=sqlite3.connect('mt4docs.db');print(c.execute(\"SELE
 
 ---
 
-## 8. 四条主线结论
+## 8. 为何两个 skill 形式不同，且没有统一
+
+同样是「把 MT 文档给 AI 参考」，一个做成 SQLite FTS5 数据库，一个做成手写路由表 + 整页 Markdown。为什么？为什么没人统一？拆成四层来看。
+
+### 8.1 大部分是被语料结构逼出来的——而且这部分是对的
+
+| | MT4 Manager API | MT5 Administrator 手册 |
+|---|---|---|
+| 语料本质 | **记录集**：197 个函数，每个都有相同字段槽位 | **叙述文**：482 页异构散文 + 配置说明 + 操作步骤 |
+| 能否抽 schema | 能——`signature` / `parameters` / `return_value` 人人都有 | 不能——每页结构都不一样，没有共同字段 |
+| 查询模式 | 「`TradeTransaction` 怎么用」→ **精确查找一条记录** | 「组权限怎么配」→ **需要整段上下文** |
+| 答案单位 | 一条记录（几百字节） | 一节或一整页（几 KB） |
+
+**有 schema 就上表，没 schema 只能整页留着**——这一步没什么可选的。MT4 那 197 个函数天然是一张表，不用 FTS5 反而浪费；MT5 的散文抽不出字段，硬切成表只会丢信息。
+
+### 8.2 但有一部分纯粹是演进，不是设计
+
+三条旁证都指向「这两个不是同一次设计的产物」【实测】：
+
+| 证据 | MT4 | MT5 |
+|---|---|---|
+| 产物 mtime | 2026-05-14 | 2026-04-13（**早一个月**） |
+| frontmatter `name` | `mt4-api-docs` | `mt5-document`（目录名 `mt5-api-docs` 是后来手动改的，改了目录没改 frontmatter） |
+| 打包环境 | 无 `__MACOSX/` | 有 `__MACOSX/`（macOS 上打的 zip） |
+
+**MT5 是更早、更朴素的方案；MT4 是一个月后更工程化的做法。** 这是时间顺序的产物，不是并行权衡的结果。分析他人产物时要能区分这两者——把演进痕迹当成深思熟虑的设计去解读，会得出过度合理化的结论。
+
+### 8.3 那 MT5 能不能也上 FTS5？能，但收益不在检索质量上
+
+技术上完全可以：对合并后的 123 个文件建全文索引，约一小时工作量。但要看清收益落在哪【推断】：
+
+- **检索质量提升有限**。MT5 的问题是语义的——「怎么禁止客户反向开仓」在文档里写作「hedging 模式与 netting 模式」，关键词匹配不上。FTS5 解决不了这个，路由表借 LLM 的语义能力反而更管用。
+- **答案单位没变**。FTS5 只能告诉你哪个文件命中，仍然要整文件读进上下文——结果和路由表一样，只是路由方式不同。
+
+**真正的收益在维护侧，而这恰恰是它坏掉的地方**：
+
+> 如果 MT5 当初上了 FTS5，§ 7.1 那 429 条断链根本不会发生——索引是从内容自动派生的，AI 合并完重跑一次 INSERT 就同步了，「忘了更新」这个可能性在结构上被消除。
+
+这是本文最有说服力的一个反事实：**手写索引的成本不在写的那一次，在每一次内容变更之后。**
+
+反过来 MT4 改用路由表会更差：197 个函数写成路由表就是 197 行（比 MT5 的 126 行还长），而函数名查找本来就是精确匹配场景。MT4 选 FTS5 是对的。
+
+### 8.4 没统一的根因：制度层面根本没有约束
+
+Claude Code 的 skill 规范只要求两样东西：一个 `SKILL.md`，里面有 `name` 和 `description` 的 frontmatter。`references/` 下放什么、怎么组织、检索层怎么实现——**完全自由**。没有 schema 校验，没有 lint，没有「检索接口必须长这样」的抽象基类。
+
+这是**有意的设计取舍**【推断】：skill 的核心卖点是「写个 Markdown 就能扩展 AI 的能力」，门槛必须低。加一层强制的检索层规范，门槛就没了。
+
+代价即是所见：每个 skill 自己发明一套检索层，质量参差，坏了没有任何机制会发现。MT5 那 429 条断链从 2026-04-13 存在至今（本文写于 2026-08-10，约 4 个月），零告警。
+
+---
+
+## 9. 五条主线结论
 
 ### ① 检索范式的分界线是「索引能否塞进上下文」
 
@@ -410,9 +477,31 @@ FTS5 不切分汉字，本项目旧代码直接丢弃汉字。表现不同，后
 
 顺带还给本项目提供一个真实 A/B 对照组——同一批问题走两条路径，用现成的金标集量，而不是靠感觉争论。
 
+### ⑤ skill 用「约定」代替「工程」，本项目用「工程」代替「约定」
+
+这是 § 8.4 引出的、贯穿全文的那条对立【推断】：
+
+| | skill 生态 | 本项目 |
+|---|---|---|
+| 接口约束 | 无 | `base_<component>.py` 抽象基类 + `@abstractmethod` |
+| 组件替换 | 每个 skill 重新发明 | factory + registry，改 `settings.yaml` 零代码 |
+| 一致性保障 | 无 | 启动时 fail-fast 校验 + 单元测试 |
+| 上手门槛 | 写个 Markdown | 装环境、配 key、建索引 |
+
+**约定的成本是零，但约定不会自己执行。** MT5 的作者「约定」了合并后要更新索引，然后忘了，没有任何东西拦住他——§ 7.1 的 mtime 时间线把这一刻记录得很清楚。
+
+工程的成本是前期抽象层设计 + 长期维护，收益是**约束由机器执行**。本项目的 `tests/unit/test_tokenizer.py::TestBothEndsAgree` 就是把「两端切分口径必须一致」这个约定变成了工程。
+
+所以两个 skill 不统一、而本项目所有组件都统一，不是谁做得好谁做得差，是**两条曲线在不同规模区间各自最优**：
+
+- 语料 2 MB、单一消费方、改动频率低 → 约定够用，工程是浪费
+- 语料上 GB、多消费方、持续演进 → 约定必然失守，工程是唯一出路
+
+MT5 skill 那 429 条断链，就是第一条曲线开始往下掉的地方。
+
 ---
 
-## 9. 对本项目的启示
+## 10. 对本项目的启示
 
 | 启示 | 可操作项 |
 |---|---|
@@ -420,6 +509,8 @@ FTS5 不切分汉字，本项目旧代码直接丢弃汉字。表现不同，后
 | FTS5 索引**随 INSERT 自动更新**，本项目需手动 rebuild | 若做轻量版分支，FTS5 天然消除「索引与查询端漂移」（两端共用 `_config` 表里的分词器配置） |
 | skill 的隐性依赖不报错 | 本项目的 fail-fast 校验（`src/core/settings.py` 启动时验证）是对的方向，值得保持 |
 | 「用规则复现数据」可判定是否机器生成 | 分析他人产物时的通用手法，见 § 4.1 |
+| **派生物必须能从源自动重建**，否则「忘了更新」迟早发生 | MT5 断链的根因（§ 8.3）。检查本项目每一处派生产物是否都有重建脚本：BM25 索引有 `rebuild_bm25_index.py` ✅、金标 `expected_chunk_ids` 有 `backfill_chunk_ids.py` ✅ |
+| mtime 可用于还原他人流水线的工序顺序 | 见 § 7.1；分析无文档产物时的实用手法 |
 
 ### 待办候选（未执行）
 
@@ -451,6 +542,14 @@ sqlite3 -header -column "$DB" \
 
 # CSS 选择器抓多了的证据
 sqlite3 "$DB" "SELECT signature FROM function_fts WHERE title LIKE '%TradeTransaction%';"
+
+# 流水线工序顺序还原（§ 7.1 / § 8.2 的时间线证据）
+cd ~/.claude/skills
+stat -c '%y  %n' mt4-api-docs/SKILL.md mt4-api-docs/references/mt4docs.db
+stat -c '%y  %n' mt5-api-docs/SKILL.md mt5-api-docs/references/index.md \
+                 mt5-api-docs/references/core/id_lookup.json
+ls -d mt*/__MACOSX 2>&1            # 打包环境痕迹：只有 MT5 有
+head -2 mt4-api-docs/SKILL.md mt5-api-docs/SKILL.md | grep name:   # frontmatter 命名不一致
 
 # FTS5 默认分词器对中文的行为
 python - <<'EOF'

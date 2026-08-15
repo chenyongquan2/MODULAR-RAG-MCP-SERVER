@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from pathlib import Path
+
 import pytest
 
 from src.core.settings import (
@@ -82,7 +84,15 @@ class TestCandidateSchema:
     def test_synthesize_with_mocked_ragas_returns_full_schema(self) -> None:
         """mock RAGAS + chromadb,验证 candidate JSON 顶层字段齐全。"""
         # mock fetch_chunks 直接返回非空 list,跳过 chromadb
-        synth = TestsetSynthesizer(settings=_make_settings())
+        import tempfile
+        _s = _make_settings()
+        # 缓存指向临时目录：测试不得读写仓库里的真实 adapt 缓存，
+        # 否则用例之间会互相污染（前一个留下的已校验缓存会让后一个
+        # 的 adapt 根本不被调用）。
+        _s.evaluation.synthesis.adapt_cache_dir = tempfile.mkdtemp(
+            prefix="ragas_adapt_schema_"
+        )
+        synth = TestsetSynthesizer(settings=_s)
         synth._fetch_chunks = MagicMock(  # type: ignore[method-assign]
             return_value=[
                 {"id": "c1", "text": "Hello world", "metadata": {"source": "doc1.md"}},
@@ -112,6 +122,19 @@ class TestCandidateSchema:
         synth._ensure_generator = MagicMock()  # type: ignore[method-assign]
         synth._generator = MagicMock()
         synth._generator.generate_with_langchain_docs.return_value = fake_testset
+
+        # adapt 成功时必须**真的写出译文文件** —— change expand-chinese-golden-set
+        # 起，adapt 之后会校验产物确实是目标语言（实测过 adapt 不抛异常却返回
+        # 未翻译英文的情形）。裸 MagicMock 什么都不写，会被正确判为「没有产物」。
+        def _adapt_write(*args: object, **kwargs: object) -> None:
+            cache_dir = Path(str(kwargs.get("cache_dir") or "./logs/ragas_adapt_cache"))
+            lang_dir = cache_dir / str(kwargs.get("language") or "chinese")
+            lang_dir.mkdir(parents=True, exist_ok=True)
+            (lang_dir / "answer_formulate.json").write_text(
+                '{"instruction": "使用给定上下文中的信息回答问题。"}', encoding="utf-8"
+            )
+
+        synth._generator.adapt = MagicMock(side_effect=_adapt_write)
 
         with patch(
             "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
@@ -250,7 +273,14 @@ class TestRagasAdapt:
             adapt_side_effects: 给 _generator.adapt 的 side_effect 列表。
                 None 元素 = 成功(无返回);Exception 子类 = 抛错。
         """
-        synth = TestsetSynthesizer(settings=_make_settings())
+        settings = _make_settings()
+        # 缓存指向临时目录：测试不得读写仓库里的真实 adapt 缓存，否则用例之间
+        # 会互相污染（前一个留下的已校验缓存会让后一个的 adapt 根本不被调用）。
+        import tempfile
+        settings.evaluation.synthesis.adapt_cache_dir = tempfile.mkdtemp(
+            prefix="ragas_adapt_test_"
+        )
+        synth = TestsetSynthesizer(settings=settings)
 
         # 跳过 chromadb 拉 chunks
         synth._fetch_chunks = MagicMock(  # type: ignore[method-assign]
@@ -262,7 +292,25 @@ class TestRagasAdapt:
         # mock generator + adapt + generate
         synth._ensure_generator = MagicMock()  # type: ignore[method-assign]
         gen = MagicMock()
-        gen.adapt = MagicMock(side_effect=adapt_side_effects)
+
+        # adapt 成功时必须**真的写出译文文件** —— change
+        # expand-chinese-golden-set 起，adapt 之后会校验产物确实是目标语言
+        # （实测过 adapt 不抛异常却返回未翻译英文的情形）。裸 MagicMock 什么
+        # 都不写，会被新校验正确地判为「没有产物 = 失败」。
+        def _adapt_writing_translated(*args: object, **kwargs: object) -> None:
+            effect = effects.pop(0) if effects else None
+            if isinstance(effect, Exception):
+                raise effect
+            cache_dir = Path(str(kwargs.get("cache_dir") or "./logs/ragas_adapt_cache"))
+            lang_dir = cache_dir / str(kwargs.get("language") or "chinese")
+            lang_dir.mkdir(parents=True, exist_ok=True)
+            (lang_dir / "answer_formulate.json").write_text(
+                '{"instruction": "使用给定上下文中的信息回答问题，存在答案输出 1。"}',
+                encoding="utf-8",
+            )
+
+        effects = list(adapt_side_effects)
+        gen.adapt = MagicMock(side_effect=_adapt_writing_translated)
 
         # generate 返回 1 条空 case 让 synthesize 走完
         fake_testset = MagicMock()
@@ -347,14 +395,23 @@ class TestRagasAdapt:
             "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
             return_value="openai:test",
         ):
-            with pytest.raises(RuntimeError, match="adapt.*failed after 2 attempts"):
+            with pytest.raises(RuntimeError, match="adapt.*RAISED after 2 attempts"):
                 synth.synthesize(collection="x", lang="zh", target_count=1)
 
         # 验证抛错前确实尝试了 2 次
         assert synth._generator.adapt.call_count == 2
 
-    def test_adapt_unknown_lang_skipped(self) -> None:
-        """非 zh/en 的 lang(假设未来扩展)默认跳过 adapt 直到映射添加。"""
+    def test_adapt_unknown_lang_now_raises(self) -> None:
+        """未支持的语言必须**明确报错**，不再静默跳过 adapt。
+
+        **这条断言与本变更前相反,是刻意的**(change expand-chinese-golden-set
+        T-2.3)。原行为是「没登记的语言就跳过 adapt」—— 后果是 RAGAS 用默认的
+        英文 prompt 合成,产出全是英文问题却一声不吭。第一代中文金标 47 条候选
+        里 33 条(70%)因语种不符被丢,正是这个形态。
+
+        静默按默认语言合成 = 拿到一份看起来正常、语种全错的候选集,而且要等到
+        人工精修阶段才会发现。
+        """
         synth = self._setup_synth_with_mocked_pipeline(adapt_side_effects=[None])
         with patch(
             "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
@@ -363,7 +420,8 @@ class TestRagasAdapt:
             "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
             return_value="openai:test",
         ):
-            # lang='ja' 当前没在 lang_to_ragas 映射,不 adapt 也不抛
-            synth.synthesize(collection="x", lang="ja", target_count=1)
+            with pytest.raises(ValueError, match="unsupported target language"):
+                synth.synthesize(collection="x", lang="ja", target_count=1)
 
+        # 报错发生在 adapt 之前，所以它一次都不该被调用
         assert synth._generator.adapt.call_count == 0
