@@ -527,6 +527,35 @@ class LabelingSettings:
 
 
 @dataclass
+class SynthesisSettings:
+    """金标候选合成配置 (change expand-chinese-golden-set)。
+
+    本节只有一个目的:让「合成出的是另一种语言」这种失效**无法静默发生**。
+
+    背景 —— 2026-08-14 实测:RAGAS 的 `adapt(language=chinese)` 在**不抛任何
+    异常**的情况下返回了未翻译的英文提示词,并被写进磁盘缓存永久固化。
+    `logs/ragas_adapt_cache/chinese/` 下五个「中文」文件的 CJK 字符数全部为 0。
+    后果是第一代中文金标 47 条候选里 33 条(70%)因语种不符被丢,只活下来 6 条。
+    现有的 fail-fast 只捕获异常,对这种形态完全无效 —— **「没报错」不等于
+    「做对了」**。
+
+    Attributes:
+        adapt_language_ratio_min: 适配产物中目标语言字符的占比下限。低于此值
+            判定为「未翻译」,**失败且不写缓存**。
+
+            ⚠️ 实测未翻译时恒为 **0.0%**;翻译后的提示词仍含大量 JSON schema
+            与英文字段名,所以这个值应远低于「纯中文」的水平。0.05 是初值,
+            需按首轮实测校准 —— 与本项目其他阈值同性质。
+        question_language_mismatch_warn: 合成候选中「问题语种与目标语言不一致」
+            的比例上限,超过即告警。第一代实测是 **70%(33/47)**,那是适配未生效
+            的典型信号。
+    """
+
+    adapt_language_ratio_min: float = 0.05
+    question_language_mismatch_warn: float = 0.20
+
+
+@dataclass
 class EvaluationSettings:
     """评估配置(Feature-001 后扩展)。
 
@@ -557,6 +586,7 @@ class EvaluationSettings:
     screening_llm: ScreeningLLMSettings = field(default_factory=ScreeningLLMSettings)
     labeling_llm: LabelingLLMSettings = field(default_factory=LabelingLLMSettings)
     labeling: LabelingSettings = field(default_factory=LabelingSettings)
+    synthesis: SynthesisSettings = field(default_factory=SynthesisSettings)
     embedding: EvaluationEmbeddingSettings = field(default_factory=EvaluationEmbeddingSettings)
     acceptance_thresholds: AcceptanceThresholds = field(default_factory=AcceptanceThresholds)
     by_tag_dimensions: list[str] = field(default_factory=lambda: ["content_type", "difficulty"])
@@ -826,6 +856,7 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     screening_llm_raw = evaluation_raw.get("screening_llm") or {}
     labeling_llm_raw = evaluation_raw.get("labeling_llm") or {}
     labeling_raw = evaluation_raw.get("labeling") or {}
+    synthesis_raw = evaluation_raw.get("synthesis") or {}
     eval_embedding_raw = evaluation_raw.get("embedding") or {}
     acceptance_thresholds_raw = evaluation_raw.get("acceptance_thresholds") or {}
     # 顶层 EvaluationSettings 字段(去掉嵌套子段,后续显式注入)
@@ -836,6 +867,7 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
             "screening_llm",
             "labeling_llm",
             "labeling",
+            "synthesis",
             "embedding",
             "acceptance_thresholds",
         }
@@ -854,6 +886,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     )
     evaluation_settings.labeling = _build_sub_settings(
         labeling_raw, LabelingSettings, "evaluation.labeling"
+    )
+    evaluation_settings.synthesis = _build_sub_settings(
+        synthesis_raw, SynthesisSettings, "evaluation.synthesis"
     )
     evaluation_settings.embedding = _build_sub_settings(
         eval_embedding_raw, EvaluationEmbeddingSettings, "evaluation.embedding"
@@ -1100,6 +1135,9 @@ def validate_settings(settings: Settings) -> None:
     _validate_rerank_settings(settings.rerank)
     _probe_rerank_backend(settings.rerank)
 
+    # 合成配置校验（change expand-chinese-golden-set T-1.2）
+    _validate_synthesis_settings(settings.evaluation.synthesis)
+
     # 查询响应配置校验（spec feature-002 FR-004）
     if settings.query.max_images_per_response <= 0:
         raise SettingsError(
@@ -1142,6 +1180,34 @@ _REQUIRED_THRESHOLD_KEYS: frozenset[str] = frozenset({
     "custom__recall",
     "custom__ndcg",
 })
+
+
+def _validate_synthesis_settings(synthesis: SynthesisSettings) -> None:
+    """校验合成配置(change expand-chinese-golden-set,宪法原则三)。
+
+    两项都是比例。取值非法会让语言校验失去意义 —— 而语言校验正是本变更用来
+    堵住「适配静默不生效」的唯一手段,它自己失效就等于什么都没做。
+
+    Args:
+        synthesis: 待校验的合成配置。
+
+    Raises:
+        SettingsError: 任一参数非法时。
+    """
+    for name, value in (
+        ("adapt_language_ratio_min", synthesis.adapt_language_ratio_min),
+        ("question_language_mismatch_warn", synthesis.question_language_mismatch_warn),
+    ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise SettingsError(
+                f"Invalid evaluation.synthesis.{name}: {value!r}. "
+                "Expected a number in [0.0, 1.0]"
+            )
+        if not 0.0 <= value <= 1.0:
+            raise SettingsError(
+                f"Invalid evaluation.synthesis.{name}: {value}. "
+                "Expected a ratio in [0.0, 1.0]"
+            )
 
 
 def _validate_labeling_settings(labeling: LabelingSettings) -> None:

@@ -273,6 +273,24 @@ evaluation:
     # ⚠️ 0.80 是初始猜测,需跑一轮看分布再校准(同 screening_llm 的阈值)
     human_agreement_warn: 0.80
 
+  # ─── 金标候选合成 (change expand-chinese-golden-set) ───
+  #
+  # ⚠️ 本节只有一个目的:让「合成出的是另一种语言」这种失效**无法静默发生**。
+  #
+  #    2026-08-14 实测:RAGAS 的 adapt(language=chinese) 在**不抛任何异常**的
+  #    情况下返回了未翻译的英文提示词,并被写进磁盘缓存永久固化 ——
+  #    logs/ragas_adapt_cache/chinese/ 下五个「中文」文件 CJK 字符数全为 0。
+  #    后果:第一代中文金标 47 条候选里 33 条(70%)因语种不符被丢,只活下来 6 条。
+  #    现有 fail-fast 只捕获异常,对这种形态完全无效 ——「没报错」不等于「做对了」。
+  synthesis:
+    # 适配产物中目标语言字符的占比下限。低于此值判定为「未翻译」,失败且**不写缓存**。
+    # ⚠️ 实测未翻译时恒为 0.0%;翻译后的提示词仍含大量 JSON schema 与英文字段名,
+    #    所以这个值应远低于「纯中文」的水平。0.05 是初值,需按首轮实测校准。
+    adapt_language_ratio_min: 0.05
+    # 合成候选中「问题语种与目标语言不一致」的比例上限,超过即告警。
+    # 第一代实测 70%(33/47) —— 那是适配未生效的典型信号。
+    question_language_mismatch_warn: 0.20
+
   # 金标标注的判定 LLM (仅 label_golden_chunks.py 使用)
   # MUST 与上方 judge_llm 异源 —— ground_truth 是 judge_llm 合成的,用同一个
   # 模型判断「哪些 chunk 支撑我自己写的答案」是自我确认。判据同 screening_llm:
