@@ -544,6 +544,10 @@ class DeltaReport:
         baseline_report_id: 对比基线的 run_id
         per_metric_delta: 8 项主聚合指标各自的 delta
         per_tag_delta: by-tag 切片各自的 delta(切片缺失/skipped 时该 entry 为 None)
+        incomparable_metrics: (change evaluation-degradation-governance)
+            分母不一致因而不可比的指标 -> 原因说明。
+            **不可比时 delta 仍然输出** —— 沿用 delta_comparable 的既有语义:
+            隐藏它会让人以为没算,标注它才能让人知道别误读。
     """
 
     current_report_id: str
@@ -552,6 +556,7 @@ class DeltaReport:
     per_tag_delta: Dict[str, Dict[str, Optional[Dict[str, float]]]] = field(
         default_factory=dict
     )
+    incomparable_metrics: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """序列化为字典。"""
@@ -560,4 +565,89 @@ class DeltaReport:
             "baseline_report_id": self.baseline_report_id,
             "per_metric_delta": dict(self.per_metric_delta),
             "per_tag_delta": dict(self.per_tag_delta),
+            "incomparable_metrics": dict(self.incomparable_metrics),
+        }
+
+
+# ---------------------------------------------------------------------------
+# 评估运行完整性实体 (change evaluation-degradation-governance)
+# ---------------------------------------------------------------------------
+# 见 openspec/changes/evaluation-degradation-governance/specs/evaluation/
+#     run-integrity/spec.md
+#
+# 「降级」(degradation) 指:judge LLM 未能产出可解析的判定结果,该 case 的该
+# metric 记为 NaN。RAGAS 四项指标都靠 LLM 判定,所以它们才会降级;custom 四项
+# 是纯计算,永不降级。
+#
+# 为什么要单独建模:NaN 不计入均值的分母 —— 这个策略本身是对的(NaN 参与平均
+# 会污染整列),但它让样本流失变得静默。实测 run 80a82405:公布的
+# faithfulness=0.8887 实为 27 条的均值而非 42 条,而报告里看不出这件事。
+# ---------------------------------------------------------------------------
+
+
+class DegradationReason(str, Enum):
+    """judge 判定失败的原因分类。
+
+    只做**机械可判**的分类 —— 从 judge 调用的结果特征直接读出,不做语义推断
+    (不去猜「模型是不是觉得材料不足」)。宁可落 UNKNOWN 也不臆断,因为
+    UNKNOWN 的占比本身就是「归因能力够不够」的指标。
+
+    EMPTY_RESPONSE : judge 返回空字符串/纯空白。项目在 labeling 路径上踩过
+                     这个坑 —— max_tokens 给少了会让模型没写完就被截断,
+                     表现为空响应,看起来却像「模型不遵从 JSON 格式」。
+    UNPARSEABLE    : judge 返回了内容,但不符合 RAGAS 期待的结构、解析不出判定。
+    TIMEOUT        : 判定调用超时。
+    UPSTREAM_ERROR : 上游拒绝(鉴权失败、限流、模型下架等)。本项目所在网关的
+                     模型下架是常态,不是偶发事故。
+    UNKNOWN        : 无法归入上述任一类。**不是垃圾桶** —— 占比超过配置阈值
+                     即告警,说明采集或归约逻辑本身有盲区。
+
+    继承 str 让 JSON 序列化天然产出字符串值(与 AcceptanceStatus 一致)。
+    """
+
+    EMPTY_RESPONSE = "empty_response"
+    UNPARSEABLE = "unparseable"
+    TIMEOUT = "timeout"
+    UPSTREAM_ERROR = "upstream_error"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class MetricIntegrity:
+    """单个聚合指标的「分母披露」。
+
+    回答一个此前无法从报告直接读出的问题:**这个聚合值是在多少条样本上算的?**
+
+    Attributes:
+        valid_count: 参与聚合的有效样本数(即该 metric 的实际分母)
+        degraded_count: 因判定失败被排除的样本数
+        reasons: 降级原因分布(原因 -> 条数);无降级时为空字典
+    """
+
+    valid_count: int = 0
+    degraded_count: int = 0
+    reasons: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def total_count(self) -> int:
+        """该 metric 涉及的样本总数 = 有效 + 降级。"""
+        return self.valid_count + self.degraded_count
+
+    @property
+    def degradation_ratio(self) -> float:
+        """该 metric 的降级率;总数为 0 时返回 0.0(无样本不算降级)。"""
+        total = self.total_count
+        return (self.degraded_count / total) if total else 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为字典。
+
+        ``reasons`` 即使为空也保留 —— 字段恒在,阅读方不必区分「没有降级」
+        与「字段缺失」两种情况(spec § 无降级时字段依然存在)。
+        """
+        return {
+            "valid_count": self.valid_count,
+            "degraded_count": self.degraded_count,
+            "degradation_ratio": self.degradation_ratio,
+            "reasons": dict(self.reasons),
         }

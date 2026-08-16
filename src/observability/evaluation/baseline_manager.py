@@ -301,7 +301,82 @@ class BaselineManager:
             baseline_report_id=base_run_id,
             per_metric_delta=per_metric_delta,
             per_tag_delta=per_tag_delta,
+            incomparable_metrics=self._find_incomparable_metrics(
+                current_report, baseline_report, per_metric_delta.keys()
+            ),
         )
+
+    @staticmethod
+    def _find_incomparable_metrics(
+        current_report: dict[str, Any],
+        baseline_report: dict[str, Any],
+        metric_keys: Any,
+    ) -> dict[str, str]:
+        """找出因分母不一致而不可比的指标 (change evaluation-degradation-governance)。
+
+        **为什么需要**:judge 判定失败的 case 不计入均值分母。若两次运行降级的
+        条数不同,两个均值就是在不同样本集上算的 —— 相减得到的「delta」混了
+        「质量变化」和「分母变化」两件事。实测 run 80a82405 的 faithfulness
+        是 27 条的均值,而另一次可能是 30 条,直接相减毫无意义。
+
+        判定规则(按优先级):
+          1. 两侧都有 ``metric_integrity`` → 逐指标比 ``valid_count``,不等即不可比
+          2. 基线**没有** ``metric_integrity``(产出于本能力落地之前):
+             a. 基线 ``degraded_case_count > 0`` → 它确实丢过样本但不知丢在哪个
+                指标上 → **全部指标不可比**(保守)
+             b. 基线 ``degraded_case_count == 0`` → 没有任何 case 降级,因此每个
+                指标的分母**必然**等于 total_cases,这是确定的而非推断 → 拿它
+                与当前的 valid_count 比,不等才不可比
+
+        规则 2b 是刻意的:一刀切把所有老基线判为不可比会白白丢掉大量可用历史,
+        而「零降级 ⇒ 分母 = 总条数」这个推理是严密的,没有保守的必要。
+
+        Args:
+            current_report: 当前评估报告 dict。
+            baseline_report: 基线评估报告 dict。
+            metric_keys: 需要检查的指标名集合(即已算出 delta 的那些)。
+
+        Returns:
+            指标名 -> 不可比原因;全部可比时为空字典。
+        """
+        cur_integrity = current_report.get("metric_integrity") or {}
+        base_integrity = baseline_report.get("metric_integrity") or {}
+
+        # 基线缺分母信息且确实降级过 → 无从核对,全部标不可比
+        if not base_integrity:
+            base_degraded = baseline_report.get("degraded_case_count") or 0
+            if base_degraded:
+                reason = (
+                    f"baseline report predates metric_integrity and had "
+                    f"{base_degraded} degraded case(s); per-metric denominators unknown"
+                )
+                return {str(key): reason for key in metric_keys}
+
+        base_total = baseline_report.get("total_cases")
+
+        incomparable: dict[str, str] = {}
+        for key in metric_keys:
+            key = str(key)
+            cur_entry = cur_integrity.get(key)
+            if not isinstance(cur_entry, dict):
+                continue  # 当前报告也没有分母信息 → 无从判断,不臆断
+            cur_valid = cur_entry.get("valid_count")
+
+            base_entry = base_integrity.get(key)
+            if isinstance(base_entry, dict):
+                base_valid = base_entry.get("valid_count")
+            elif base_total is not None:
+                # 规则 2b:基线零降级,分母必然等于总条数
+                base_valid = base_total
+            else:
+                continue
+
+            if cur_valid is not None and base_valid is not None and cur_valid != base_valid:
+                incomparable[key] = (
+                    f"denominator mismatch: current n={cur_valid}, baseline n={base_valid}"
+                )
+
+        return incomparable
 
     # ------------------------------------------------------------------
     # 报告读取(给 EvalRunner 集成 / 面板用)

@@ -27,7 +27,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.core.settings import Settings
-from src.core.types import AcceptanceStatus, RetrievalResult, TestCaseTags
+from src.core.types import (
+    AcceptanceStatus,
+    DegradationReason,
+    MetricIntegrity,
+    RetrievalResult,
+    TestCaseTags,
+)
 from src.libs.evaluator.base_evaluator import BaseEvaluator
 from src.observability.evaluation.threshold_evaluator import ThresholdEvaluator
 from src.observability.logger import get_logger
@@ -75,6 +81,10 @@ class EvalCaseResult:
     ground_truth: str = ""
     # Feature-001:用例标签(从 EvalCase 透传,供 by-tag 聚合使用)
     tags: Optional[TestCaseTags] = None
+    # change evaluation-degradation-governance:该 case 中判定失败的 metric ->
+    # 失败原因(``DegradationReason`` 的值)。只对 NaN 的 metric 有条目;
+    # 未被 evaluator 上报原因的 NaN 在聚合时回落为 ``unknown``。
+    degradation_reasons: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典(tags 为 None 时不输出该字段)。"""
@@ -82,6 +92,10 @@ class EvalCaseResult:
         # tags=None 时去掉该字段,保持 JSON 紧凑
         if result.get("tags") is None:
             result.pop("tags", None)
+        # 无降级时不输出空字典,保持 case_results 紧凑(报告级的
+        # metric_integrity 才是恒在字段,case 级没必要每条都带个空壳)
+        if not result.get("degradation_reasons"):
+            result.pop("degradation_reasons", None)
         return result
 
 
@@ -127,12 +141,20 @@ class EvalReport:
     # 隐藏它会让人以为没算,标注它才能让人知道别误读。
     delta_comparable: Optional[bool] = None
     delta_incomparable_reason: Optional[str] = None
+    # 分母不一致因而不可比的指标 -> 原因(change evaluation-degradation-governance)。
+    # 与 delta_comparable 是两个独立维度:那个说「尺子换了」,这个说「分母不同」。
+    delta_incomparable_metrics: dict[str, str] = field(default_factory=dict)
     created_at: str = ""
     judge_llm_identifier: Optional[str] = None
     embedding_identifier: Optional[str] = None
     acceptance_thresholds_snapshot: dict[str, float] = field(default_factory=dict)
     acceptance_status: Optional[AcceptanceStatus] = None
     degraded_case_count: int = 0
+    # ──────── change evaluation-degradation-governance 新增 ────────
+    # 按 metric 的分母披露。degraded_case_count 是 case 级的(任一 metric NaN 即
+    # 记一次),回答不了「faithfulness 这个 0.8887 是几条算出来的」——
+    # metric_integrity 才能。两者并存:前者向后兼容,后者是新的真相来源。
+    metric_integrity: dict[str, MetricIntegrity] = field(default_factory=dict)
     aggregate_metrics_by_tag: dict[str, dict[str, dict[str, Optional[float]]]] = field(
         default_factory=dict
     )
@@ -177,6 +199,12 @@ class EvalReport:
             result["acceptance_status"] = self.acceptance_status.value
         # degraded_case_count 总是输出(0 也有意义,表示无降级)
         result["degraded_case_count"] = self.degraded_case_count
+        # metric_integrity 同样总是输出 —— 恒在的字段才能让阅读方区分
+        # 「无降级」与「字段缺失」(后者意味着报告产自本能力落地之前,
+        # BaselineManager 会据此保守判定不可比)
+        result["metric_integrity"] = {
+            name: integrity.to_dict() for name, integrity in self.metric_integrity.items()
+        }
         if self.aggregate_metrics_by_tag:
             result["aggregate_metrics_by_tag"] = self.aggregate_metrics_by_tag
         # 仅在 baseline 信息存在时才输出 delta 字段,保持向后兼容
@@ -192,6 +220,8 @@ class EvalReport:
                 result["delta_comparable"] = self.delta_comparable
             if self.delta_incomparable_reason:
                 result["delta_incomparable_reason"] = self.delta_incomparable_reason
+            if self.delta_incomparable_metrics:
+                result["delta_incomparable_metrics"] = dict(self.delta_incomparable_metrics)
         return result
 
 
@@ -285,6 +315,11 @@ class EvalRunner:
         # 3. degraded_case_count:任一 metric NaN 即视为该 case 降级(SC-006)
         all_metric_keys: set[str] = set()
         metric_value_lists: dict[str, list[float]] = {}
+        # 4. metric_integrity:按 metric 的分母披露(change
+        #    evaluation-degradation-governance)。与 degraded_case_count 的区别是
+        #    粒度 —— 那个是 case 级的布尔汇总,这个能回答「某个 metric 的均值
+        #    到底除以了几」。
+        metric_integrity: dict[str, MetricIntegrity] = {}
         hit_count = 0
         rr_sum = 0.0
         source_hit_count = 0
@@ -317,9 +352,19 @@ class EvalRunner:
             for metric_name, value in case_result.metrics.items():
                 # 先记录 metric key 出现过(无论是否 NaN),保证 aggregate 含完整 key 集
                 all_metric_keys.add(metric_name)
+                integrity = metric_integrity.setdefault(metric_name, MetricIntegrity())
                 if self._is_nan(value):
                     case_has_nan = True
+                    # change evaluation-degradation-governance:此前这里只是
+                    # continue,样本就这么静默消失了。现在同时记账 ——
+                    # 分母少了多少、少在哪个原因上,都要能从报告读出来。
+                    integrity.degraded_count += 1
+                    reason = case_result.degradation_reasons.get(
+                        metric_name, DegradationReason.UNKNOWN.value
+                    )
+                    integrity.reasons[reason] = integrity.reasons.get(reason, 0) + 1
                     continue  # 不计入分母,避免污染均值
+                integrity.valid_count += 1
                 metric_value_lists.setdefault(metric_name, []).append(float(value))
             if case_has_nan:
                 degraded_case_count += 1
@@ -343,10 +388,16 @@ class EvalRunner:
         )
 
         # FR-013: 用 ThresholdEvaluator 计算 acceptance_status
+        # change evaluation-degradation-governance T-5.2:降级率一并参与判定 ——
+        # 8 项指标全过、但其中一半是在收缩后的分母上算出来的,这种 pass 是假的。
+        degradation_ratio = (degraded_case_count / total) if total else 0.0
         threshold_evaluator = ThresholdEvaluator(
-            self._settings.evaluation.acceptance_thresholds
+            self._settings.evaluation.acceptance_thresholds,
+            max_degradation_ratio=self._settings.evaluation.degradation.max_ratio,
         )
-        acceptance_status = threshold_evaluator.evaluate(aggregate_metrics)
+        acceptance_status = threshold_evaluator.evaluate(
+            aggregate_metrics, degradation_ratio=degradation_ratio
+        )
         thresholds_snapshot = threshold_evaluator.thresholds_snapshot
 
         # FR-016 / FR-017: judge_llm_identifier / embedding_identifier
@@ -375,6 +426,7 @@ class EvalRunner:
             acceptance_thresholds_snapshot=thresholds_snapshot,
             acceptance_status=acceptance_status,
             degraded_case_count=degraded_case_count,
+            metric_integrity=metric_integrity,
             aggregate_metrics_by_tag=aggregate_metrics_by_tag,
         )
 
@@ -632,6 +684,11 @@ class EvalRunner:
         else:
             metrics = self._evaluator.zero_metrics()
 
+        # change evaluation-degradation-governance T-2.2:拉取本条 case 的降级原因。
+        # 用「拉」而非「evaluate() 返回值里带」,是为了不改 BaseEvaluator 的公共
+        # 契约 —— 降级归因只对 LLM 判定类后端有意义,纯计算类没有这个概念。
+        degradation_reasons = self._collect_degradation_reasons(metrics)
+
         return EvalCaseResult(
             query=case.query,
             expected_chunk_ids=case.expected_chunk_ids,
@@ -646,7 +703,34 @@ class EvalRunner:
             contexts=contexts_text,
             ground_truth=case.ground_truth,
             tags=case.tags,
+            degradation_reasons=degradation_reasons,
         )
+
+    def _collect_degradation_reasons(self, metrics: dict[str, float]) -> dict[str, str]:
+        """向 evaluator 拉取本条 case 的降级原因,并做防御性收敛。
+
+        只保留「确实是 NaN」的 metric 的原因 —— evaluator 若因实现缺陷多报了
+        原因,不能让它污染统计。
+
+        Args:
+            metrics: 本条 case 的 metric 字典。
+
+        Returns:
+            metric 名 -> 原因;evaluator 不支持归因时为空字典(聚合时回落 unknown)。
+        """
+        getter = getattr(self._evaluator, "get_last_degradation_reasons", None)
+        if not callable(getter):
+            return {}
+        try:
+            reported = getter() or {}
+        except Exception:  # pragma: no cover - 防御性:归因失败不该打断评估
+            logger.warning("Failed to collect degradation reasons; falling back to unknown")
+            return {}
+        return {
+            name: reason
+            for name, reason in reported.items()
+            if name in metrics and self._is_nan(metrics[name])
+        }
 
     # ------------------------------------------------------------------
     # FR-015: by-tag 切片聚合
@@ -778,6 +862,18 @@ class EvalRunner:
             )
         else:
             report.delta_comparable = True
+
+        # 分母不一致的指标(change evaluation-degradation-governance T-4.1)。
+        # 与上面的跨代不可比是**两个独立的原因**:那个是「尺子换了」,这个是
+        # 「两个均值除的不是同一个分母」。都成立时两个标注并存,各说各的。
+        report.delta_incomparable_metrics = dict(delta.incomparable_metrics)
+        if delta.incomparable_metrics:
+            logger.warning(
+                "baseline delta has denominator mismatch on %d metric(s): %s",
+                len(delta.incomparable_metrics),
+                sorted(delta.incomparable_metrics),
+            )
+
         report.per_tag_delta = dict(delta.per_tag_delta) if delta.per_tag_delta else None
         # 顶层 hit_rate / mrr 的 delta(从 baseline_report 直接读取顶层字段)
         try:

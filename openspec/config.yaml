@@ -122,6 +122,27 @@ context: |
   - **调试脚本务必加 `python -u`** —— stdout 在管道下是全缓冲的,不加会看到空
     输出并误判成「进程卡死」。本项目日志走 stderr、进度条走 stdout,混在一起时
     尤其容易误判。本次为此误杀过两个正常运行的评估进程。
+  - **RAGAS 聚合指标的分母是浮动的**(2026-08-16, change evaluation-degradation-governance)
+    —— judge 判不出来时该 case 的该指标记 NaN 且**不计入分母**。这个排除策略是
+    对的,但它让样本流失静默:run `80a82405` 公布的 faithfulness=0.8887 实为
+    **27/42** 条的均值,`context_precision` 0.7643 实为 31 条。现已治理:报告有
+    按指标的 `metric_integrity`,降级率进 `acceptance_status`
+    (`evaluation.degradation.max_ratio`),分母不一致时 delta 标不可比。
+    **读任何 RAGAS 数之前先看降级率。**
+  - **降级的病因在输入侧:英文问题产出中文答案**(同上变更的归因结论)——
+    剔除限流干扰后 14 条真实判定失败**全部**是语言错乱,语言一致组**零失败**;
+    42 条里 28 条(66.7%)答案语言与问题不符。两个能力悬殊的 judge
+    (claude-sonnet-5 / glm-5.2-free)收敛到同一残余降级率 33%,佐证不是 judge 弱。
+    **`max_tokens` 猜想已否证**(595 次成功调用零空响应),故 `JudgeLLMSettings`
+    刻意不加该字段 —— 详见 change 的 `acceptance.md`。
+  - **判断 judge 是否"判不出来"要区分三件事**:①上游拒绝/限流 ②响应为空
+    ③响应非空但结构不符。用免费模型跑批时**限流会伪装成降级** —— 实测 21 条
+    降级里 7 条实为 `upstream_error`,且集中在连续 index 区间(突发窗口,不是
+    case 属性)。看归因结果先按 `upstream_error` 过滤。
+  - **RAGAS 把 judge 的原始响应吞掉了**,只把结果表达为分数或 NaN。而
+    `ragas==0.1.21` 是基线锚定点,不能升级也不能改源码。唯一还能看到原始响应的
+    位置是项目自己的适配层 `_ragas_wrappers`(RAGAS 经它回调项目 `BaseLLM`) ——
+    任何「为什么判不出来」的采集都只能挂在那里。
   - **金标有两代标注方式,分数不可跨代比较**(2026-08-13,change retriever-agnostic-golden-labels)
     —— **完整解释见 `docs/learning/golden-test-set-explained.md`**(词源、两种答案、
     逐词拆解、制作流程、两代偏向)。

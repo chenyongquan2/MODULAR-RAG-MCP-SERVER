@@ -22,12 +22,13 @@ RAGAS 也能 import 本模块的兄弟模块(eval_runner 等)。
 from __future__ import annotations
 
 import copy as _copy_module
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from src.observability.logger import get_logger
 
 if TYPE_CHECKING:
     from src.core.settings import Settings
+    from src.observability.evaluation.judge_call_collector import JudgeCallCollector
 
 logger = get_logger(__name__)
 
@@ -85,7 +86,10 @@ def build_project_llm_from_sub_settings(settings: "Settings", sub: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def build_ragas_judge(settings: "Settings") -> Any:
+def build_ragas_judge(
+    settings: "Settings",
+    collector: Optional["JudgeCallCollector"] = None,
+) -> Any:
     """构建 RAGAS 期待的 Judge LLM 包装实例。
 
     步骤:
@@ -98,6 +102,9 @@ def build_ragas_judge(settings: "Settings") -> Any:
 
     Args:
         settings: 全局 Settings 实例,需含 evaluation.judge_llm.* 配置。
+        collector: (change evaluation-degradation-governance)judge 调用结果
+            采集器。显式传入而非全局状态(硬约束 4)。为 ``None`` 时不采集,
+            行为与本能力落地之前完全一致。
 
     Returns:
         ragas.llms.BaseRagasLLM 实例(实际为 LangchainLLMWrapper);
@@ -147,8 +154,24 @@ def build_ragas_judge(settings: "Settings") -> Any:
             chat_kwargs: dict[str, Any] = {}
             if eval_judge.temperature is not None:
                 chat_kwargs["temperature"] = eval_judge.temperature
+            # 注:judge 路径**刻意不传** max_tokens。曾怀疑它是降级主因(labeling
+            # 路径正因这个参数给少了出现过空响应),但 T-3.1 归因否证了这条:
+            # 595 次成功判定调用**零空响应**,最长响应 3378 字符,模型在自由书写。
+            # 加一个不解决任何问题的配置项 = 下一个死配置(见 acceptance.md § 线索 1)。
             chat_kwargs.update(kwargs)
-            return project_llm.chat(messages, **chat_kwargs)
+            # change evaluation-degradation-governance T-2.1:
+            # 这里是**唯一**还能看到 judge 原始响应的地方 —— 再往上走
+            # RAGAS 就把它吞掉、只留一个 NaN 了。采集器显式传入(非全局
+            # 状态,硬约束 4),collector 为 None 时行为与改造前完全一致。
+            if collector is None:
+                return project_llm.chat(messages, **chat_kwargs)
+            try:
+                response = project_llm.chat(messages, **chat_kwargs)
+            except Exception as exc:
+                collector.record_failure(exc)
+                raise
+            collector.record_success(response)
+            return response
 
     langchain_llm = _ProjectLLMAsLangChain()
     logger.info(

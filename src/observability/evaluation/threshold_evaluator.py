@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import math as _math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from src.core.types import AcceptanceStatus
 
@@ -60,23 +60,55 @@ class ThresholdEvaluator:
         "custom__ndcg",
     )
 
-    def __init__(self, thresholds: "AcceptanceThresholds") -> None:
-        """记录阈值清单(浅引用即可,本类不修改)。"""
+    DEGRADATION_FAILURE_KEY = "degradation_ratio"
+    """降级率不达标时在 ``get_failed_metrics()`` 里使用的伪 metric key。
+
+    它不是聚合指标,但要出现在同一个「哪里没过」的清单里 —— 否则读者会看到
+    ``acceptance_status=fail`` 却在 8 项指标里找不到任何一项不达标。
+    """
+
+    def __init__(
+        self,
+        thresholds: "AcceptanceThresholds",
+        max_degradation_ratio: Optional[float] = None,
+    ) -> None:
+        """记录阈值清单(浅引用即可,本类不修改)。
+
+        Args:
+            thresholds: 8 项主聚合指标的阈值。
+            max_degradation_ratio: (change evaluation-degradation-governance)
+                降级率门槛。为 ``None`` 时不判降级 —— 保持本能力落地之前的行为,
+                让只关心指标阈值的调用方(如历史报告重算)不受影响。
+        """
         self._thresholds = thresholds
         # 阈值 dict 化以避免每次 evaluate() 重新调用 to_dict
         self._threshold_map: dict[str, float] = thresholds.to_dict()
+        self._max_degradation_ratio = max_degradation_ratio
 
-    def evaluate(self, aggregate_metrics: dict[str, float]) -> AcceptanceStatus:
-        """根据 aggregate_metrics 与阈值计算 pass/fail。
+    def evaluate(
+        self,
+        aggregate_metrics: dict[str, float],
+        degradation_ratio: Optional[float] = None,
+    ) -> AcceptanceStatus:
+        """根据 aggregate_metrics、阈值与降级率计算 pass/fail。
+
+        **为什么降级率也要判**:8 项指标全过、而其中一半是在收缩后的分母上算出
+        来的 —— 这种 ``pass`` 是假的。实测 run 80a82405 的 faithfulness 0.8887
+        只是 27/42 条的均值。指标达标与样本完整是两个独立的合格条件。
 
         Args:
             aggregate_metrics: 评估报告的 8 项主聚合指标快照,key 必须含
                 ``ragas__*`` 与 ``custom__*`` 共 8 项。
+            degradation_ratio: 本次运行的降级率(降级 case 数 / 总 case 数)。
+                与构造时的 ``max_degradation_ratio`` 任一为 ``None`` 则不判此项。
 
         Returns:
-            AcceptanceStatus.PASS:全部 8 项均 ≥ 各自阈值。
-            AcceptanceStatus.FAIL:任一项 < 阈值、缺失 key、或值为 NaN。
+            AcceptanceStatus.PASS:全部 8 项均 ≥ 各自阈值,且降级率未超门槛。
+            AcceptanceStatus.FAIL:任一项 < 阈值、缺失 key、值为 NaN,或降级率超标。
         """
+        if self._is_degradation_over_threshold(degradation_ratio):
+            return AcceptanceStatus.FAIL
+
         for metric_key in self._METRIC_KEYS:
             threshold = self._threshold_map.get(metric_key)
             if threshold is None:
@@ -94,18 +126,38 @@ class ThresholdEvaluator:
 
         return AcceptanceStatus.PASS
 
+    def _is_degradation_over_threshold(self, degradation_ratio: Optional[float]) -> bool:
+        """降级率是否超过门槛。
+
+        两个值任一为 ``None`` 就不判 —— 「没配门槛」与「没提供降级率」都不是
+        失败,只是本项不参与判定。
+        """
+        if self._max_degradation_ratio is None or degradation_ratio is None:
+            return False
+        try:
+            return float(degradation_ratio) > float(self._max_degradation_ratio)
+        except (TypeError, ValueError):  # pragma: no cover - 防御性
+            return False
+
     def get_failed_metrics(
-        self, aggregate_metrics: dict[str, float]
+        self,
+        aggregate_metrics: dict[str, float],
+        degradation_ratio: Optional[float] = None,
     ) -> list[str]:
-        """返回未达标的 metric key 列表(供面板诊断、日志使用)。
+        """返回未达标项的清单(供面板诊断、日志使用)。
 
         Args:
             aggregate_metrics: 8 项主聚合指标快照。
+            degradation_ratio: 本次运行的降级率;超标时清单里会含
+                ``DEGRADATION_FAILURE_KEY``。
 
         Returns:
-            按 ``_METRIC_KEYS`` 顺序排列的未达标 metric key;全部达标时返回空列表。
+            未达标项;全部达标时返回空列表。降级率超标排在最前 —— 它一旦成立,
+            后面那些指标值本身就是在不完整样本上算的,先看它才对。
         """
         failed: list[str] = []
+        if self._is_degradation_over_threshold(degradation_ratio):
+            failed.append(self.DEGRADATION_FAILURE_KEY)
         for metric_key in self._METRIC_KEYS:
             threshold = self._threshold_map.get(metric_key)
             if threshold is None:

@@ -25,6 +25,7 @@ from src.core.response.response_builder import ResponseBuilder
 from src.core.settings import Settings, load_settings
 from src.core.types import AcceptanceStatus
 from src.libs.evaluator.evaluator_factory import EvaluatorFactory
+from src.observability.evaluation.degradation_summary import format_degradation_summary
 from src.observability.evaluation.eval_runner import EvalRunner
 from src.observability.logger import get_logger
 
@@ -236,6 +237,24 @@ def main() -> int:
     report_dict = report.to_dict()
     indent = 2 if args.pretty else None
     print(json.dumps(report_dict, ensure_ascii=False, indent=indent))
+
+    # change evaluation-degradation-governance T-1.2:降级摘要打到 stderr。
+    #
+    # 为什么是 stderr 而不是 stdout:stdout 这一路是报告 JSON,调用方可能
+    # 直接管道给 jq;掺入人读文本会破坏它。摘要属于诊断信息,与项目的日志
+    # 走向一致。
+    #
+    # 为什么要打:降级字段一直都在报告 JSON 里,但 run 80a82405 的 54.8%
+    # 降级率(SC-006 门槛的 11 倍)就这么躺了几天没人读到。
+    print(
+        format_degradation_summary(
+            metric_integrity=report.metric_integrity,
+            degraded_case_count=report.degraded_case_count,
+            total_cases=report.total_cases,
+            max_ratio=settings.evaluation.degradation.max_ratio,
+        ),
+        file=sys.stderr,
+    )
 
     # FR-013 + --exit-on-fail:acceptance_status=fail 时返回退出码 3 (CI gate)
     if args.exit_on_fail and report.acceptance_status == AcceptanceStatus.FAIL:

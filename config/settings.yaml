@@ -338,6 +338,23 @@ evaluation:
     custom__recall: 0.70
     custom__ndcg: 0.55
 
+  # ─── 评估运行完整性 (change evaluation-degradation-governance) ───
+  #
+  # 「降级」= judge LLM 没能产出可解析的判定结果,该 case 的该指标记 NaN 且
+  # **不计入均值分母**。排除策略本身是对的(NaN 参与平均会污染整列),问题在于
+  # 它让样本流失变得静默 —— 2026-08-15 复核 run 80a82405:公布的
+  # faithfulness=0.8887 其实是 27 条的均值而非 42 条,context_precision 0.7643
+  # 是 31 条;degraded_case_count 高达 23/42 = 54.8%,是 SC-006 门槛的 11 倍,
+  # 而这个字段一直躺在报告 JSON 里没人读到。
+  degradation:
+    # 降级率门槛。超过即 acceptance_status=fail(--exit-on-fail 退出码非零)。
+    # 0.05 源自 Feature-001 SC-006,不是新拍的数。
+    # ⚠️ 需要分阶段收口时可临时放宽,阈值会进报告快照,不会丢失痕迹。
+    max_ratio: 0.05
+    # 兜底原因("unknown")占全部降级的比例超此值即告警。
+    # 它与「降级多」是两回事 —— 这个量的是**归因能力**本身有没有盲区。
+    unknown_reason_warn: 0.10
+
   # by-tag 切片维度 (MVP 仅支持 content_type / difficulty)
   by_tag_dimensions:
     - content_type

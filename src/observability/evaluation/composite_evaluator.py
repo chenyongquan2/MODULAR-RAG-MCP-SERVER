@@ -132,6 +132,28 @@ class CompositeEvaluator(BaseEvaluator):
                 merged[key] = 0.0
         return merged
 
+    def get_last_degradation_reasons(self) -> dict[str, str]:
+        """汇总各子评估器最近一次的降级原因,并加上与 metric 一致的前缀。
+
+        change evaluation-degradation-governance T-2.2。
+
+        前缀规则必须与 ``evaluate()`` 完全一致 —— 否则 EvalRunner 拿着
+        ``ragas__faithfulness`` 去查原因字典里的 ``faithfulness``,永远查不到,
+        于是全部回落 ``unknown``:归因功能会**静默失效**,正是本变更在治理的
+        那类失败。
+        """
+        apply_prefix = len(self._evaluators) > 1
+        merged: dict[str, str] = {}
+        for evaluator in self._evaluators:
+            getter = getattr(evaluator, "get_last_degradation_reasons", None)
+            if not callable(getter):
+                continue  # 纯计算类评估器没有降级概念
+            prefix = _class_name_to_prefix(evaluator.__class__.__name__) if apply_prefix else ""
+            for metric_name, reason in getter().items():
+                key = f"{prefix}__{metric_name}" if prefix else metric_name
+                merged[key] = reason
+        return merged
+
     def get_judge_identifier(self) -> Optional[str]:
         """透传第一个支持该方法的子评估器的 Judge identifier。
 

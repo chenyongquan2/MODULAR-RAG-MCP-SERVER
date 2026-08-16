@@ -561,6 +561,26 @@ class SynthesisSettings:
 
 
 @dataclass
+class DegradationSettings:
+    """评估运行的降级治理配置 (change evaluation-degradation-governance)。
+
+    「降级」= judge LLM 未能产出可解析的判定结果,该 case 的该 metric 记 NaN
+    且不计入均值分母。这个排除策略本身是对的(NaN 参与平均会污染整列),
+    问题在于它让样本流失变得**静默**:实测 run 80a82405 公布的
+    faithfulness=0.8887 实为 27 条的均值而非 42 条。
+
+    Attributes:
+        max_ratio: 降级率门槛。超过即 acceptance_status=fail。
+            默认 0.05 源自 Feature-001 SC-006,不是新拍的数。
+        unknown_reason_warn: 兜底原因("unknown")占全部降级的比例超此值即告警
+            —— 这是「归因能力本身失效」的信号,与「降级多」是两回事。
+    """
+
+    max_ratio: float = 0.05
+    unknown_reason_warn: float = 0.10
+
+
+@dataclass
 class EvaluationSettings:
     """评估配置(Feature-001 后扩展)。
 
@@ -594,6 +614,7 @@ class EvaluationSettings:
     synthesis: SynthesisSettings = field(default_factory=SynthesisSettings)
     embedding: EvaluationEmbeddingSettings = field(default_factory=EvaluationEmbeddingSettings)
     acceptance_thresholds: AcceptanceThresholds = field(default_factory=AcceptanceThresholds)
+    degradation: DegradationSettings = field(default_factory=DegradationSettings)
     by_tag_dimensions: list[str] = field(default_factory=lambda: ["content_type", "difficulty"])
     tag_slice_min_samples: int = 5
     report_archive_dir: str = "./logs/evaluation_reports"
@@ -864,6 +885,7 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     synthesis_raw = evaluation_raw.get("synthesis") or {}
     eval_embedding_raw = evaluation_raw.get("embedding") or {}
     acceptance_thresholds_raw = evaluation_raw.get("acceptance_thresholds") or {}
+    degradation_raw = evaluation_raw.get("degradation") or {}
     # 顶层 EvaluationSettings 字段(去掉嵌套子段,后续显式注入)
     eval_top_raw = {
         k: v for k, v in evaluation_raw.items()
@@ -875,6 +897,7 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
             "synthesis",
             "embedding",
             "acceptance_thresholds",
+            "degradation",
         }
     }
     evaluation_settings = EvaluationSettings(
@@ -900,6 +923,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
     )
     evaluation_settings.acceptance_thresholds = _build_sub_settings(
         acceptance_thresholds_raw, AcceptanceThresholds, "evaluation.acceptance_thresholds"
+    )
+    evaluation_settings.degradation = _build_sub_settings(
+        degradation_raw, DegradationSettings, "evaluation.degradation"
     )
 
     settings = Settings(
@@ -1313,6 +1339,18 @@ def _validate_evaluation_settings(settings: Settings) -> None:
         raise SettingsError(
             f"evaluation._schema_version={eval_s.schema_version} invalid (>= 1 required)"
         )
+
+    # degradation 门槛为比例,必须落在 [0, 1]
+    # (change evaluation-degradation-governance;硬约束 3 快速失败,不兜底)
+    for _field_name, _value in (
+        ("max_ratio", eval_s.degradation.max_ratio),
+        ("unknown_reason_warn", eval_s.degradation.unknown_reason_warn),
+    ):
+        if not 0.0 <= _value <= 1.0:
+            raise SettingsError(
+                f"evaluation.degradation.{_field_name}={_value} invalid; "
+                f"must be a ratio within [0, 1]"
+            )
 
     # backends 元素白名单
     invalid_backends = [b for b in eval_s.backends if b not in _VALID_EVAL_BACKENDS]

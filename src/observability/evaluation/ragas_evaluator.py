@@ -66,6 +66,15 @@ class RagasEvaluator(BaseEvaluator):
         self._judge_wrapper: Any = None
         self._embedding_wrapper: Any = None
         self._wrappers_built: bool = False
+        # change evaluation-degradation-governance T-2.2:judge 调用结果采集器。
+        # RAGAS 把 judge 的原始响应吞掉了,只留一个 NaN —— 采集器挂在项目
+        # 自己的适配层上,是唯一还能看到「为什么判不出来」的位置。
+        # 显式持有并注入(非全局状态,硬约束 4),生命周期与单次 evaluate() 对齐。
+        from src.observability.evaluation.judge_call_collector import JudgeCallCollector
+
+        self._call_collector = JudgeCallCollector()
+        # 最近一次 evaluate() 中各 metric 的降级原因;由 EvalRunner 读取。
+        self._last_degradation_reasons: dict[str, str] = {}
 
     def _ensure_wrappers(self) -> None:
         """首次评估时构建 Judge / embedding 包装,后续重用。
@@ -85,7 +94,9 @@ class RagasEvaluator(BaseEvaluator):
             build_ragas_judge,
         )
 
-        self._judge_wrapper = build_ragas_judge(self.settings)
+        # collector 注入 judge 包装:RAGAS 每次回调项目 BaseLLM 时,调用结果
+        # (空响应 / 超时 / 上游拒绝)都会被记下来,供 evaluate() 归约成原因。
+        self._judge_wrapper = build_ragas_judge(self.settings, collector=self._call_collector)
         self._embedding_wrapper = build_ragas_embedding(self.settings)
         self._wrappers_built = True
 
@@ -164,18 +175,69 @@ class RagasEvaluator(BaseEvaluator):
         mock_metrics = kwargs.get("mock_metrics")
         if isinstance(mock_metrics, dict):
             metrics = self._normalize_metrics(mock_metrics)
+            self._last_degradation_reasons = self._reduce_degradation_reasons(metrics)
             if trace:
                 trace.add_metadata("metrics", metrics)
             return metrics
+
+        # 每条 case 独立采集 —— 不 reset 会让上一条的失败串味到这一条
+        self._call_collector.reset()
 
         metrics = self._evaluate_with_ragas(
             query=query,
             **kwargs,
         )
 
+        self._last_degradation_reasons = self._reduce_degradation_reasons(metrics)
+
         if trace:
             trace.add_metadata("metrics", metrics)
+            if self._last_degradation_reasons:
+                trace.add_metadata("degradation_reasons", self._last_degradation_reasons)
         return metrics
+
+    def get_last_degradation_reasons(self) -> dict[str, str]:
+        """返回最近一次 ``evaluate()`` 中各降级 metric 的原因。
+
+        由 ``EvalRunner`` 在每条 case 评估后读取,写入 ``EvalCaseResult``。
+        用「拉」而不是「返回值里带」,是为了不改 ``BaseEvaluator.evaluate()``
+        的签名 —— 那是所有 evaluator 共用的契约,而降级归因只有 LLM 判定类
+        后端才有意义。
+
+        Returns:
+            metric 名 -> ``DegradationReason`` 值;无降级时为空字典。
+        """
+        return dict(self._last_degradation_reasons)
+
+    def _reduce_degradation_reasons(self, metrics: dict[str, float]) -> dict[str, str]:
+        """把本次调用记录归约成各降级 metric 的原因。
+
+        当前实现给同一条 case 内所有降级 metric **同一个**原因 —— 因为 RAGAS
+        的四个指标共用一批 judge 调用,调用与指标之间没有可靠的归属关系。
+        这是 design § Risks 里显式记录的已知局限:宁可粗一点也不臆造归属,
+        兜底占比(``unknown_reason_warn``)就是用来暴露归约能力不足的。
+
+        Args:
+            metrics: 本次评估产出的 metric 字典(可能含 NaN)。
+
+        Returns:
+            metric 名 -> 原因;无降级时为空字典。
+        """
+        degraded = [name for name, value in metrics.items() if self._is_nan_value(value)]
+        if not degraded:
+            return {}
+        reason = self._call_collector.dominant_reason()
+        return {name: reason for name in degraded}
+
+    @staticmethod
+    def _is_nan_value(value: Any) -> bool:
+        """判断 metric 值是否为 NaN(降级标志)。"""
+        import math as _math
+
+        try:
+            return _math.isnan(float(value))
+        except (TypeError, ValueError):
+            return False
 
     def _evaluate_with_ragas(
         self,
