@@ -1,0 +1,25 @@
+[
+  {
+    "model": "z-ai/glm-5.2-free",
+    "effective_judge": "glm:z-ai/glm-5.2-free",
+    "adapt_raised": false,
+    "elapsed_sec": 769.5,
+    "file_ratios": {
+      "answer_formulate.json": 0.0,
+      "compress_question.json": 0.0,
+      "evolution_elimination.json": 0.0,
+      "filter_question.json": 0.0,
+      "find_relevant_context.json": 0.0,
+      "keyphrase_extraction.json": 0.0,
+      "multi_context_question.json": 0.0,
+      "reasoning_question.json": 0.0,
+      "rewrite_question.json": 0.0,
+      "score_context.json": 0.0,
+      "seed_question.json": 0.0
+    },
+    "files": 11,
+    "max_ratio": 0.0,
+    "min_ratio": 0.0,
+    "verdict": "FAIL"
+  }
+]
