@@ -316,7 +316,16 @@ evaluation:
     #    (z-ai/glm-5.2-free、真实 chunk):301 字符截断在 JSON 中间,367 与 430
     #    字符直接返回**空响应**,于是每条都标 judge_failed。表现像「模型不会遵从
     #    JSON 格式」,真实原因是没给它写完的余量。800 下全部完整且解析成功。
-    max_tokens: 800
+    #
+    # 2026-08-16 800 → 3000:机制查清了 —— 本模型是**推理型**,不可见的推理段
+    #    占 completion token 的 85-90%(探针 scripts/dev/probe_structured_output.py
+    #    实测:一次中性提示词 out=786 其中 reason_tok=703,可见内容仅 83)。
+    #    所以 200 那次不是「余量不够写完」,是**推理段吃光了预算、可见内容一个字
+    #    都没轮到**,故返回彻底的空串而非半截 JSON。
+    #    而 800 在可比任务上实测已用到 786(98% 利用率)—— 不是安全值,是刚好卡住。
+    #    max_tokens 是**上限不是配额**,调高不产生额外成本,没有理由卡在 98%。
+    #    详见 docs/learning/structured-output/00-prerequisites.md § 4
+    max_tokens: 3000
 
   # 评估流程使用的 embedding (默认全空 = 复用顶层 settings.embedding)
   # FR-017: 评估流程所有 embedding 环节 MUST 用同一配置 (避免 train-eval skew)
