@@ -66,7 +66,10 @@ htmlcov/
 *.bak
 *.tmp
 # Development scripts (not to be committed)
-scripts/dev/
+scripts/dev/*
+# 探针脚本破例入库 —— settings.yaml 注释与 docs/learning 把它们当可执行凭据引用
+# (写成 scripts/dev/* 而非 scripts/dev/ 是必须的:父目录被排除后否定规则会失效)
+!scripts/dev/probe_*.py
 
 # 二进制测试文件（CHM 等）
 *.chm
