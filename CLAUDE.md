@@ -270,7 +270,7 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 - **金标评估集合**:`golden_test_set_{zh,en}.json` **必须**在含全部语料的集合上评估(当前是 `default_text-embedding-v4`),**不要指向 `mt5_docs_chinese` / `mt5_docs_english`**。中英文语料是同一份 MT5 文档的两个语言版本,金标回填时匹配跨了语言(en 集 42 条里 18 条跨语料、210 个 chunk_id 里 20 个指向中文),分语言集合只能解析 190/210,评估会直接触发 `chunk_id_validation` 失败
 - **`custom__recall` 与 `ragas__context_recall` 量的不是一回事**:前者是「检索到的 chunk id 与回填脚本挑的那 5 个的重合比例」,后者是「检索到的上下文实际支撑答案的比例」。实测同一批结果分别是 0.30 与 0.83 —— 金标的 `expected_chunk_ids` 是 `backfill_chunk_ids.py` 机器按 top-5 回填的,非人工标注的答案边界,解读 `custom__recall` / `custom__ndcg` 时必须计入这个折扣
 - **⚠️ RAGAS 聚合指标的分母是浮动的,报告里的数不是全样本均值**:judge 输出无法解析时该 case 的该指标记为 NaN,`eval_runner` 设计为**不计入分母**(见 [eval_runner.py:14](src/observability/evaluation/eval_runner.py#L14) 与 `degraded_case_count`),于是 42 条的金标可能只有 27 条参与了 faithfulness 的平均。2026-08-15 复核 run `80a82405`:`faithfulness` 15/42 降级(公布值 0.8887 实为 n=27 的均值)、`context_precision` 11/42 降级(0.7643 实为 n=31),`degraded_case_count: 23` = **54.8%,是 SC-006 所定 ≤ 5% 门槛的 11 倍**。后果有二:①单次报告的绝对值被幸存者偏差抬高;②**两次运行若降级条数不同则严格不可比**(delta 会把「分母变了」读成「质量变了」)。看 RAGAS 指标前**先看 `degraded_case_count`** —— 这个字段在报告 JSON 里,不在聚合指标里,极易漏读。**已治理**(change `evaluation-degradation-governance`):报告新增按指标的 `metric_integrity`(`valid_count` / `degraded_count` / `reasons`),降级率进 `acceptance_status`(门槛 `evaluation.degradation.max_ratio`,默认 0.05),`scripts/evaluate.py` 结束时把摘要打到 stderr,`BaselineManager` 在分母不一致时标注该指标不可比
-- **降级的病因是「英文问题产出中文答案」,不是 judge 弱、不是 `max_tokens`**(2026-08-16 归因,42 条冻结元组,判定 `glm:z-ai/glm-5.2-free`,详见 [acceptance.md](openspec/changes/evaluation-degradation-governance/acceptance.md)):
+- **降级的病因是「英文问题产出中文答案」,不是 judge 弱、不是 `max_tokens`**(2026-08-16 归因,42 条冻结元组,判定 `glm:z-ai/glm-5.2-free`,详见 [acceptance.md](openspec/changes/archive/2026-08-16-evaluation-degradation-governance/acceptance.md)):
   - **完全分离**:剔除网关限流干扰后的 14 条真实判定失败**全部**是「英文问题 + 中文答案」;语言一致的 14 条**零失败**。42 条里有 **28 条(66.7%)** 答案语言与问题不符
   - 机制上讲得通:faithfulness 先把 answer 拆成 statements、再拿 contexts 逐条做 NLI。answer 中文而 contexts 英文时两步都在跨语言做,而 RAGAS 0.1.x 的内部 prompt 是英文写的
   - **`max_tokens` 猜想已否证**:595 次成功判定调用**零空响应**,最长响应 3378 字符。labeling 路径那个前科(硬编码 200 致空响应)**没有**在 judge 路径重演,所以 `JudgeLLMSettings` **刻意不加** `max_tokens` —— 加一个不解决任何问题的配置项就是第三个 `top_m`。限定:该否证只在 `glm-5.2-free` 上做过
@@ -292,7 +292,7 @@ The dashboard is fully dynamic - component names displayed are read from trace l
   - `rerank.top_m` **此前是死配置**(全仓只有定义和 dashboard 展示,从未截断过候选),现已生效:超出部分按原名次追加,不参与重排但不丢弃
   - `rerank.timeout_sec` / `batch_size` 为新增。超时靠**分批 + 批间计时**实现 —— cross-encoder 是同步 CPU 推理,`signal.alarm` 在 Windows 无效、线程 join 无法中断 torch。代价是超时粒度 = 一批的推理时间
   - **延迟实测**(AMD Zen 3、真实 chunk 中位 428 字符、`batch_size=8`):每候选 **121-147 ms** → 40 条候选约 **5.2 秒**。别拿短文本微基准(约 25 ms/pair)做规划,cross-encoder 开销随 token 数走
-- **⚠️ 金标无法公正评判重排**(本项目当前最重要的评估局限):`expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 回填的 —— 标准答案本身就是「embedding 认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此**四项 custom 指标全是 dense-anchored 的**,`MRR` / `nDCG` 对重排**并不比** `recall` / `hit_rate` 更中立(上一条关于 MRR/nDCG 更可信的说法只适用于 dense-vs-sparse 的路径比较)。实测:英文 42 条 MRR 0.4914 → 0.3668、中文 6 条 0.5833 → 0.4167,**而集成测试里同一模型每次都能把故意放在末位的相关段落提到首位**。模型在做正确的事,指标却在跌 —— 在换掉金标构造方式之前,本项目**没有可用于评判重排的离线指标**。详见 [openspec/changes/activate-cross-encoder-rerank/acceptance.md](openspec/changes/activate-cross-encoder-rerank/acceptance.md) § 五
+- **⚠️ 金标无法公正评判重排**(本项目当前最重要的评估局限):`expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 回填的 —— 标准答案本身就是「embedding 认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此**四项 custom 指标全是 dense-anchored 的**,`MRR` / `nDCG` 对重排**并不比** `recall` / `hit_rate` 更中立(上一条关于 MRR/nDCG 更可信的说法只适用于 dense-vs-sparse 的路径比较)。实测:英文 42 条 MRR 0.4914 → 0.3668、中文 6 条 0.5833 → 0.4167,**而集成测试里同一模型每次都能把故意放在末位的相关段落提到首位**。模型在做正确的事,指标却在跌 —— 在换掉金标构造方式之前,本项目**没有可用于评判重排的离线指标**。详见 [activate-cross-encoder-rerank/acceptance.md](openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/acceptance.md) § 五
 - **金标有两代,`expected_chunk_ids` 的构造方式不同,分数不可跨代比较**(change `retriever-agnostic-golden-labels` 起):
   - **第一代**(`version: v1.0`,报告里 `labeling_method: dense-top-k`):`scripts/backfill_chunk_ids.py` 把 `ground_truth` 编码后查 **纯 dense top-5** 回填。标准答案就是「embedding 认为最像答案的那几条」—— 这就是上一条说的那个评估局限的来源。**该脚本刻意保留**(第一代金标的可复现来源),但不要再用它产出新金标
   - **第二代**(`version: v2.0`,`labeling_method: pooled-llm-judged`):`scripts/label_golden_chunks.py` 用 **query**(不是答案)从 dense / sparse / rerank 三路各取 top-N 取并集,再让 LLM 判 0-3 分级相关度。中文 6 条实测:与纯 dense top-K 的 Jaccard 仅 **0.328**,被接受的 72 条里 **22 条(31%)是纯 dense 结构上看不到的**
@@ -384,6 +384,26 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 - **Role**: 你是一个具备丰富 RAG 知识的专业高级开发工程师，用户是 RAG 开发经验尚浅的学习者
 - **Code Comments**: 相关代码需要加上必要的中文注释，帮助理解 RAG 概念和实现细节
 - **Testing**: 编写代码后，需要运行单元测试 (`pytest tests/unit -v`)，确保用例通过
+
+## 学习笔记（docs/learning/）
+
+用户要「学习笔记 / 学习文档 / 系统化整理某个主题」时，**走 `learning-topic` skill**，不要临场发挥。
+
+**形态**：
+
+- 落地位置 `docs/learning/`，英文 kebab-case 文件名，中文正文
+- **两种体裁，别混**：单篇 `<topic>-explained.md` 是 **Explanation**（深、预设读者有基础）；`<topic>/` 目录是 **Tutorial 专题**（README + 编号短章，从 `00-prerequisites.md` 起铺台阶）。混在一篇里会让两者都变差
+- 用户说「系统化」「适合新手」「补前置知识」→ 建专题，已有深文原样保留为参考层
+- 已有专题：[rag-evaluation/](docs/learning/rag-evaluation/README.md)、[structured-output/](docs/learning/structured-output/README.md)
+
+**内容（比形态更重要 —— owner 明确强调过）**：
+
+- **必须补前置知识，不能让读者猜**。找法是**逆向定位卡点**：逐段问「新手读到这句会卡在哪」，卡点具体到某一句话，在 README 里用表格显式列出「卡点 ↔ 缺的前置」。列不出来说明前置是编的
+- **读者就同一件事追问第二次 = 解释错了，不是读者笨**。追问位置精确指出缺口，且往往缺的是一整个层次（多半是缺 why it exists，只讲了 what）
+- 有效动作：先纠正误解再讲正确的 / 锚到读者已有经验（如约束解码锚到 `temperature`）/ 具体走一遍带真实值 / 并排对比逼出差异 / **用实测数字不用形容词** / 类比要能回答后续问题
+- 讲完机制**立刻给推论** —— 推论才是能用的东西，且上一章的推论正好是下一章的前提
+- **所有数据标置信度**：`【实测】`（附日期）/`【文献】`/`【代码】`（附行号）/`【推演】`。**没跑过不许标【实测】**
+- ⚠️ 写「本项目现状」类内容前，**先核对 CLAUDE.md / openspec / 代码注释里的既有结论**。新证据不自动作废旧归因（本项目已因此翻车一次，记录在 [structured-output/05-this-project.md](docs/learning/structured-output/05-this-project.md) §4②）
 
 ## Active Change
 
