@@ -81,3 +81,9 @@ secrets.yaml
 logs/ragas_adapt_cache/
 # Feature-001: smoke test artifacts
 tests/fixtures/candidates/*_smoke*.json
+
+# 探针原始 prompt 明细(与 ragas_adapt_cache 同源,机器生成);只保留顶层 summary 作结论凭据
+logs/ragas_adapt_probe/*/
+
+# 探针运行日志(过程输出,非结论凭据;顶层 logs/*.log 规则盖不到子目录)
+logs/**/*.log
