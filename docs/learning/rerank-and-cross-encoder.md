@@ -1,5 +1,6 @@
 # 重排（Rerank）与 Cross-Encoder 学习笔记
 
+> **专题定位**：本文 § 重排评估局限 属于 [RAG 评估系统学习](rag-evaluation/README.md) **第 05 层（元评估）的深入阅读**。「指标在跌但模型做对了」这个结论的完整推导在专题 [05 章 § 2.2](rag-evaluation/05-meta-evaluation.md)，其前置是 [02](rag-evaluation/02-retrieval-metrics.md) 与 [04](rag-evaluation/04-golden-set.md) 两章 —— 没有这两块背景读不懂。文章其余部分讲重排本身，不需要评估背景。
 > **记录日期**：2026-08-03
 > **关联代码**：`src/libs/reranker/`、`src/core/query_engine/reranker.py`、`config/settings.yaml`
 > **本机环境快照**：见 [§7.1](#71-环境硬约束实测) 与 [§9](#9-部署条件核验实测)
@@ -600,7 +601,7 @@ $env:HF_ENDPOINT = "https://hf-mirror.com"
 
 ### 10.2 待办清单
 
-> **2026-08-13 状态更新**：本清单 10 条已由 change `activate-cross-encoder-rerank` 处理完 8 条。验收记录见 [openspec/changes/activate-cross-encoder-rerank/acceptance.md](../../openspec/changes/activate-cross-encoder-rerank/acceptance.md)。
+> **2026-08-13 状态更新**：本清单 10 条已由 change `activate-cross-encoder-rerank` 处理完 8 条。验收记录见 [activate-cross-encoder-rerank/acceptance.md](../../openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/acceptance.md)。
 
 | # | 事项 | 状态 | 说明 |
 |---|---|---|---|

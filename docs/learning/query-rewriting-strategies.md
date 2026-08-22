@@ -1,5 +1,6 @@
 # 查询改写策略对照：同义词扩展 / Multi-Query / HyDE / Step-back
 
+> **专题定位**：本文涉及评估的部分（HyDE 分数虚高）属于 [RAG 评估系统学习](rag-evaluation/README.md) **第 05-06 层的深入阅读** —— 该机制在专题 [05 章 § 2.3](rag-evaluation/05-meta-evaluation.md) 有对称论证（金标结构性**奖励** HyDE，与它惩罚重排同源）。策略对照部分不需要评估背景，可直接读。
 > **记录日期**：2026-08-15
 > **关联代码**：[`src/core/query_engine/query_processor.py`](../../src/core/query_engine/query_processor.py)、[`src/core/query_engine/fusion.py`](../../src/core/query_engine/fusion.py)、[`src/core/text/tokenizer.py`](../../src/core/text/tokenizer.py)
 > **关联规格**：`specs/004-retrieval-infra-fix/spec.md:174`、`specs/005-weighted-fusion/spec.md:160`（两者都把「查询改写」列为后续 feature）

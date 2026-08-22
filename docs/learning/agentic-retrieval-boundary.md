@@ -1,5 +1,6 @@
 # Agentic Retrieval 的能力边界：改写、规划、迭代该放在哪一侧
 
+> **归属**：[学习笔记索引](README.md) § 检索主题。本文是 **Explanation（解释性）** 体裁 —— 独立成篇，不属任何专题。验证这些能力的效果需要 [RAG 评估专题](rag-evaluation/README.md) 的判读纪律（尤其 05·06 章）。
 > **记录日期**：2026-08-08
 > **关联代码**：`src/core/query_engine/`、`src/core/trace/`、`src/mcp_server/`
 > **关联外部项目**：`C:\workspace\smart-appointment-ai-agent`（本项目的第二个调用方）

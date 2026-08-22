@@ -1,5 +1,6 @@
 # 金标是什么：从词源到本项目的两代标注方式
 
+> **专题定位**：[RAG 评估系统学习](rag-evaluation/README.md) **第 04 层（测试集）的深入阅读**。本文讨论的 `expected_chunk_ids` 正是 [02 章](rag-evaluation/02-retrieval-metrics.md) 所有指标的输入。第一次接触请先读专题的 [04 章](rag-evaluation/04-golden-set.md)（入口版，25 分钟，含金标文件清点与「拿到一份陌生金标怎么判断能不能用」），再回来看这里的完整流水线与两代逐词拆解。
 > **记录日期**：2026-08-15
 > **关联代码**：[`scripts/backfill_chunk_ids.py`](../../scripts/backfill_chunk_ids.py)、[`scripts/label_golden_chunks.py`](../../scripts/label_golden_chunks.py)、[`src/observability/evaluation/eval_runner.py`](../../src/observability/evaluation/eval_runner.py)、`tests/fixtures/golden_test_set_*.json`
 > **关联变更**：`openspec/changes/archive/2026-08-14-retriever-agnostic-golden-labels/`（两代划分的定义处）
@@ -7,14 +8,20 @@
 
 ## 置信度标注约定
 
-沿用 [rerank-and-cross-encoder.md](rerank-and-cross-encoder.md) 的约定：
+「置信度」= **这句话有多可信、凭什么可信**。本文每条结论都在句尾挂一个方括号标签，说明它的**来源**——因为一篇笔记里混着「源码里写着的事实」和「我个人的推测」，读者若分不清，就会把后者当前者去做决策。
 
-| 标注 | 含义 |
-|---|---|
-| **【代码】** | 从本仓库源码直接读出，附文件行号 |
-| **【实测】** | 在本机实际运行验证过，2026-08-15 |
-| **【文献】** | 来自论文/公开资料，高置信但请以最新版为准 |
-| **【推断】** | 本文作者的综合判断，**不是共识，引用前请自行核验** |
+沿用 [rerank-and-cross-encoder.md](rerank-and-cross-encoder.md) 的约定，四档**从硬到软**：
+
+| 标注 | 含义 | 可信度 | 引用时 |
+|---|---|---|---|
+| **【代码】** | 从本仓库源码直接读出，附文件行号 | 最硬——可当场翻代码复核 | 直接用 |
+| **【实测】** | 在本机实际运行验证过，2026-08-15 | 硬，但**只在当时那套环境/模型/语料下成立** | 换环境需重测 |
+| **【文献】** | 来自论文/公开资料 | 高，但可能过时 | 以最新版为准 |
+| **【推断】** | 本文作者的综合判断 | 最软，**不是共识** | **引用前请自行核验** |
+
+> 💡 这个约定本身就是本项目的一条硬规矩（CLAUDE.md § 学习笔记）：**没跑过不许标【实测】**。§9「HyDE 分数会虚高」标的是【推断】而不是【实测】，正是因为本项目**还没真跑过 HyDE 的 A/B**——那是逻辑推出来的，不是量出来的。
+
+> ⚠️ **本文里「置信度」有两个不相干的含义，别混**：这里说的是**给读者看的来源标签**（人工标的、四档离散值）；§6.5 ②「精修」里 `keep_threshold: 0.90` 那个置信度是**预筛模型自己吐出来的一个 0~1 数字**，用来决定该 case 自动处理还是转人工，与本节无关。
 
 ---
 
@@ -306,6 +313,20 @@ python -u scripts/synthesize_testset.py --collection default_text-embedding-v4 -
 ```
 
 **【代码】** 阈值全在 `config/settings.yaml` 的 `evaluation.screening_llm`：`keep_threshold: 0.90` / `drop_threshold: 0.80` / `sample_ratio: 0.10` / `compliance_gate: 0.90`。
+
+#### 这里的「置信度」是什么
+
+**【代码】** 它是**预筛模型自己在 JSON 里报的一个 0~1 数字**——[`testset_screener.py:61`](../../src/observability/evaluation/testset_screener.py) 直接要求模型按这个格式输出：
+
+```json
+{"decision": "keep|drop|borderline", "confidence": 0.0, "reason": "one sentence"}
+```
+
+读作**「模型对自己这个判断有多大把握」**：0.95 ≈「这题明显该留」，0.6 ≈「我也拿不准」。程序拿它当**闸门**——够高就自动执行，不够高就转人工（`testset_screener.py:599`）。范围不在 [0,1] 或解析不出，整条降级为 borderline，**不兜底成 0**（同 §6 `judge_failed` 的思路）。
+
+> ⚠️ **它不是概率，也没有绝对刻度**。没人验证过「标 0.9 的判断是否真有 90% 正确」——那只是模型生成的一个数，A 模型的 0.9 可能相当于 B 模型的 0.75。**【推断】**
+>
+> **这正是下面那条「阈值需要校准」的根本原因**：阈值不是绑在任务上，而是绑在**那一个具体模型**上。本项目里同类情形一共四处（换 `judge_llm` 的验收阈值、换 `screening_llm` 的 `keep_threshold`、换 `labeling_llm` 的 `relevance_threshold`、换 embedding 的相似度门限），根因都是同一个。
 
 > ⚠️ **阈值需要校准**。默认值是初始猜测，不同模型的置信度标度不可互换。校准办法：跑一轮看 `_review_metadata.borderline_ratio`——远高于 20% 说明阈值太严，接近 0% 说明太松。
 
@@ -609,6 +630,8 @@ HyDE（Hypothetical Document Embeddings）的机制是：**让 LLM 编一段假�
 | **`judge_llm`** | 合成端 + RAGAS 评估裁判。当前 `glm:minimax/minimax-m2.7` |
 | **`screening_llm`** | 精修阶段的预筛模型，**必须与 judge 异源** |
 | **`labeling_llm`** | 第二代标注的判定模型，**必须与 judge 异源** |
+| **置信度（本文顶部的标注约定）** | 挂在每条结论后的**来源标签**：【代码】/【实测】/【文献】/【推断】，从硬到软。人工标注，四档离散。见 [§置信度标注约定](#置信度标注约定) |
+| **置信度（`confidence` 字段）** | 预筛/标注模型**自报**的 0~1 把握程度，程序拿它当自动化闸门。**不是概率、无绝对刻度、不可跨模型移植**。见 §6.5 ② |
 | **borderline** | 预筛置信度不足、需转人工的候选。占比是阈值校准的观测指标 |
 | **evolution / distribution** | RAGAS 合成的难度分布：simple / reasoning / multi_context |
 

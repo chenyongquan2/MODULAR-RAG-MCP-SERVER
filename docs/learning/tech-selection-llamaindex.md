@@ -1,5 +1,6 @@
 # 技术选型复盘：为什么本项目不用 LlamaIndex
 
+> **归属**：[学习笔记索引](README.md) § 工程与选型。本文是 **Explanation（解释性）** 体裁 —— 独立成篇，不属任何专题，也没有前置要求。
 > **记录日期**：2026-08-15
 > **关联代码**：`src/libs/`、`src/core/query_engine/`、`src/observability/evaluation/`、[pyproject.toml](../../pyproject.toml)
 > **起因**：厘清 LlamaIndex 是什么、与 RAG 和本项目的关系，客观评估是否应该迁移，并沉淀成一套可复用的选型方法论 + 面试答法

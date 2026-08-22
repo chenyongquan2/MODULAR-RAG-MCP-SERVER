@@ -1,5 +1,6 @@
 # Skill 形态 vs RAG 服务：两种知识交付范式的分界线在哪
 
+> **归属**：[学习笔记索引](README.md) § 工程与选型。本文是 **Explanation（解释性）** 体裁 —— 独立成篇，不属任何专题，也没有前置要求。
 > **记录日期**：2026-08-10
 > **关联代码**：`src/core/text/tokenizer.py`、`src/ingestion/embedding/sparse_encoder.py`、`scripts/rebuild_bm25_index.py`
 > **关联外部产物**：`~/.claude/skills/mt4-api-docs/`、`~/.claude/skills/mt5-api-docs/`（两个 MetaTrader 文档查询 skill）

@@ -1,5 +1,6 @@
 # RAGAS 基础：用 LLM 当裁判来评估 RAG，到底在评什么
 
+> **专题定位**：[RAG 评估系统学习](rag-evaluation/README.md) **第 03 层（生成指标）的深入阅读**。本文默认你已知道 judge 是什么形态、评估流水线每一步产出什么、以及一套确定性指标做参照系 —— 第一次接触请先走专题的 [00](rag-evaluation/00-prerequisites.md) → [03](rag-evaluation/03-generation-metrics.md)（约 1.7 小时），再回来看这里的完整算法与六个坑。
 > **记录日期**：2026-08-15
 > **关联代码**：`src/observability/evaluation/ragas_evaluator.py`、`_ragas_wrappers.py`、`testset_synthesizer.py`、`composite_evaluator.py`、`config/settings.yaml` § `evaluation`
 > **关联依赖**：`ragas==0.1.21`（[pyproject.toml](../../pyproject.toml) 中刻意 pin 死）
@@ -214,7 +215,7 @@ RAGAS 0.1.x 有十几个指标，但**核心四件套**是这四个。理解它�
 
 **低分意味着**：召回了太多噪声，或者排序不好。**这是重排（rerank）模块该解决的问题。**
 
-> 💡 这条对你项目特别有意义。CLAUDE.md 里记着「金标无法公正评判重排」——那说的是 `custom__mrr` / `custom__ndcg` 这些**锚定在 chunk_id 上**的指标。而 `ragas__context_precision` 是**让 LLM 现场判断每个 chunk 有没有用**，不依赖任何预先标好的 chunk_id 列表。**【推断】它在结构上不受第一代金标 dense-anchored 缺陷的影响，理论上更适合当重排的裁判。**但这个推断需要实验验证，见 [§8.6](#86-坑六别把-ragas-指标当成免费的午餐)。
+> 💡 这条对你项目特别有意义。CLAUDE.md 里记着「金标无法公正评判重排」——那说的是 `custom__mrr` / `custom__ndcg` 这些**锚定在 chunk_id 上**的指标。而 `ragas__context_precision` 是**让 LLM 现场判断每个 chunk 有没有用**，不依赖任何预先标好的 chunk_id 列表。**【推断】它在结构上不受第一代金标 dense-anchored 缺陷的影响，理论上更适合当重排的裁判。**但这个推断需要实验验证，见 [§8.6](#86-坑六别把-ragas-指标当成免费的午餐) —— 那里有一条 2026-08-17 的重要限定：**它同时是四项里对 judge 漂移最敏感的一项**，用它评重排之前必须先固定 judge。
 
 ---
 
@@ -448,6 +449,14 @@ RAGAS 去掉了「标准答案锚定在某一路检索器上」的问题，但�
 一个具体的风险：如果 Judge LLM 和生成答案的 LLM 来自同一家（甚至同一个模型），它可能系统性地偏爱那种风格的回答。你项目的配置注释里把这条约束写死了：`judge_llm` / `screening_llm` / `labeling_llm` 三者必须**完整标识串 `<provider>:<model>` 互不相等**，而且明确指出「只比 provider 会误判」——因为 `glm:minimax/minimax-m2.7` 的 provider 名义是 glm，实际路由到 minimax。【代码】
 
 **【推断】** 我在 [§4.3](#43-context_precision上下文精确率检索到的东西干不干净且排序对不对) 提到 `ragas__context_precision` 可能是更公正的重排裁判——这个想法逻辑上成立（它不依赖 chunk_id 锚点），但**没有实验数据支持**。真要验证，做法是：在你已有的重排 A/B 上，看 `ragas__context_precision` 是升还是降。如果它升了而 `custom__mrr` 降了，就同时印证了「重排有效」和「custom 指标不适合评重排」两件事。**这是一个成本很低、信息量很高的实验，值得做。**
+
+> ⚠️ **2026-08-17 补充：这个实验仍未做，但它的设计前提变了。**
+>
+> 2026-08-15 的 judge 配对实验（42 条冻结元组，`minimax-m2.7` vs `claude-sonnet-5`）测出：**`context_precision` 是四项里对 judge 漂移最敏感的一项** —— 配对 n=30 上 0.7861 → 0.7037（**p=0.0013**，18 降 / 3 升），报告口径下 0.7643(n=31) → 0.6498(n=40)。**幅度 0.08~0.11 远大于日常决策所依据的差异。**【实测】
+>
+> 也就是说：本项目唯一可能公正评判重排的候选指标，同时也是最经不起裁判更换的那个。**做上面那个 A/B 时必须先把 judge 固定死**，否则 judge 差异会盖过重排效应，实验白做。
+>
+> 完整数据与方法见 [专题 05 章 § 3.2](rag-evaluation/05-meta-evaluation.md)。顺带一条方法论：**不要用重跑 `scripts/evaluate.py` 做 judge 对照** —— 那会连检索与答案生成一起重做，分数变化无法归因。正确做法是拿归档报告 `case_results` 里已存的四元组喂不同 judge。
 
 ---
 
