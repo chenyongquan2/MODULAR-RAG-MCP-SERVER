@@ -620,6 +620,20 @@ class EvalRunner:
             "version": str(raw_data.get("version", "")),
             "language": str(raw_data.get("language", "")),
             "source_corpus_collection": str(raw_data.get("source_corpus_collection", "")),
+            # ``_labeling_method`` 必须原样带出来 —— 它是**代次的唯一代码判据**
+            # (见本模块顶部 §"两代金标"说明),下游用它决定跨代 delta 是否
+            # 标 ``delta_comparable: false``。
+            #
+            # 2026-08-24 修:这个键此前**根本没被拷进 meta**,于是
+            # ``test_set_meta.get("_labeling_method")`` 恒为 None、
+            # ``labeling_method`` 恒回落成 ``dense-top-k``。后果是跨代保护在
+            # 「标注方式」这一维上**从未生效过** —— 归档报告 97743b41 /
+            # d08e540d 跑的是 pooled-llm-judged 的 en_v2,却都标着 dense-top-k。
+            # (那次 A/B 的结论不受影响:两臂用的是同一份金标,错的只是报告上的
+            # 标签。但「报告会告诉你用了哪把尺子」这个保证是假的。)
+            #
+            # 又是本项目的招牌病:有实现、有默认值、有文档,就是没接上。
+            "_labeling_method": str(raw_data.get("_labeling_method") or ""),
         }
         return cases, meta
 

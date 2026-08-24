@@ -57,6 +57,87 @@ class TestLabelingMethodField:
         assert "labeling_method" not in _report().to_dict()
 
 
+class TestLabelingMethodReachesTheReport:
+    """``_labeling_method`` 必须真的从金标文件流到报告里。
+
+    **这组用例补的是一个真实事故的缺口**(2026-08-24 修):上面
+    ``TestLabelingMethodField`` 测的是「``EvalReport`` 收到这个值以后会不会
+    序列化」,从没测过「这个值到底有没有被读出来」。而 ``_load_test_cases``
+    构造 meta 时**根本没拷 ``_labeling_method``**,于是
+    ``labeling_method`` 恒回落成 ``dense-top-k``,跨代保护在「标注方式」这一
+    维上**从未生效过** —— 归档报告 ``97743b41`` / ``d08e540d`` 跑的是
+    ``pooled-llm-judged`` 的 ``en_v2``,却都标着 ``dense-top-k``。
+
+    典型的本项目招牌病:有实现、有默认值、有文档、有单测,就是**没接上**。
+    单测测的是终点,没人测那条线。
+    """
+
+    @staticmethod
+    def _write_golden(tmp_path, **extra):
+        import json
+
+        data = {
+            "_schema_version": 1,
+            "version": "v2.0",
+            "language": "zh",
+            "source_corpus_collection": "default",
+            "test_cases": [
+                {
+                    "query": "北极星是什么?",
+                    "expected_chunk_ids": ["c1"],
+                    "expected_sources": [],
+                    "ground_truth": "一颗星。",
+                }
+            ],
+        }
+        data.update(extra)
+        path = tmp_path / "golden.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return str(path)
+
+    @staticmethod
+    def _runner():
+        from unittest.mock import MagicMock
+
+        from src.observability.evaluation.eval_runner import EvalRunner
+
+        # 只调 _load_test_cases,不跑检索 —— 依赖全部给 Mock。
+        return EvalRunner.__new__(EvalRunner)
+
+    def test_second_generation_method_is_loaded(self, tmp_path) -> None:
+        path = self._write_golden(tmp_path, _labeling_method="pooled-llm-judged")
+
+        _cases, meta = self._runner()._load_test_cases(path)
+
+        assert meta["_labeling_method"] == "pooled-llm-judged"
+
+    def test_first_generation_absence_is_preserved_as_empty(self, tmp_path) -> None:
+        """第一代文件没有该字段 → meta 里是空串,由调用方回落成 dense-top-k。
+
+        注意这里**不**在 meta 层就替换成 ``dense-top-k`` —— 「文件里没写」与
+        「文件里写了 dense-top-k」是两件不同的事,保留区别便于排查。
+        """
+        path = self._write_golden(tmp_path)
+
+        _cases, meta = self._runner()._load_test_cases(path)
+
+        assert meta["_labeling_method"] == ""
+
+    def test_report_reflects_the_file_not_the_fallback(self, tmp_path) -> None:
+        """端到端守住那条线:文件写 pooled-llm-judged,报告就不能是 dense-top-k。
+
+        这一条是**回归判据** —— 事故的形态正是「文件对、报告错」。
+        """
+        path = self._write_golden(tmp_path, _labeling_method="pooled-llm-judged")
+        _cases, meta = self._runner()._load_test_cases(path)
+
+        resolved = str(meta.get("_labeling_method") or LABELING_METHOD_DENSE_TOP_K)
+        report = _report(labeling_method=resolved)
+
+        assert report.to_dict()["labeling_method"] == "pooled-llm-judged"
+        assert report.to_dict()["labeling_method"] != LABELING_METHOD_DENSE_TOP_K
+
+
 class TestDeltaComparability:
     """跨代 delta 必须被标注为不可比。"""
 
