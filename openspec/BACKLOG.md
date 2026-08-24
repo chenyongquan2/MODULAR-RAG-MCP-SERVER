@@ -155,7 +155,7 @@ delta spec 已同步为主规格 `openspec/specs/evaluation/testset-synthesis/sp
 
 ---
 
-## [ ] B1 + B2 · 切到第二代金标 + 重标基线　`半天`
+## [x] B1 + B2 · 切到第二代金标 + 重标基线　`半天`　✅ 2026-08-24
 
 **为什么**：错误传染性最高。现在 `evaluation.golden_test_sets_by_lang` 指向的是**第一代**
 （dense 锚定）金标，而这把尺子已被实测证明会给出**方向相反**的结论。不切，则今后每一个
@@ -193,7 +193,7 @@ evaluation:
 **完成判据**：新基线已标；报告里 `_labeling_method: pooled-llm-judged`；`custom` 四项有了
 可用于后续对比的同代基准。
 
-### 进行中（2026-08-24）
+### ✅ 已完成（2026-08-24）
 
 **B1 已完成** —— `golden_test_sets_by_lang` 已切到 `zh_v2` / `en_v2`。
 
@@ -228,6 +228,52 @@ evaluation:
 
 新增的 `metric_integrity` stderr 摘要工作正常（按指标列出有效/降级条数与原因）。
 `upstream_error` 各 1 条，说明**限流污染仍在**，绝对值要按此折价。
+
+---
+
+### 最终结果
+
+**新基线**：`57259cb6-cbd3-4f1a-b267-700a6a350195`（英文 41 条，`marked_by: B2-pooled-llm-judged-en-2026-08-24`）。
+旧基线 `80a82405` 已降级进 `history`，未删除。标记入口：`scripts/dev/mark_baseline.py`（新增）。
+
+| 指标 | **英文 41 条**（run `57259cb6`，**新基线**） | 中文 6 条（run `31f2ed71`） |
+|---|---|---|
+| `custom__hit_rate` | **0.9756** | 0.8333 |
+| `custom__mrr` | **0.8585** | 0.7500 |
+| `custom__ndcg` | **0.7140** | 0.6230 |
+| `custom__recall` | **0.4584** | 0.4584 |
+| `ragas__context_recall` | 0.9146 *(41/41)* | 0.8333 *(6/6)* |
+| `ragas__context_precision` | 0.7995 *(36/41)* | 0.8450 *(6/6)* |
+| `ragas__answer_relevancy` | 0.8921 *(40/41)* | 0.8470 *(6/6)* |
+| `ragas__faithfulness` | 0.8562 *(**25**/41)* | 1.0000 *(**1**/6)* |
+| 降级率 | **46.3%（19/41）** | **83.3%（5/6）** |
+
+*斜体是 `metric_integrity` 的 valid/total。* **中文那个 `faithfulness = 1.0000` 是 1 条算出来的** ——
+这是「先读 `metric_integrity` 再读数」最好的教材。
+
+**三个值得留下的观察**：
+
+1. **英文 custom 四项与归档 A/B 的 `none` 臂（`d08e540d`）逐位重合**（0.9756 / 0.8585 / 0.7140 / 0.4584），
+   中文两轮之间也逐位重合。**检索侧完全可复现** —— 这四个数可以放心当基准用。
+2. **降级率从第一代的 54.8% 降到 46.3%**，但仍是 5% 门槛的 **9 倍**。病灶集中在
+   `faithfulness`（39.0% 降级，16/41 全部 `unparseable`）；`context_recall` 反而 **0 降级**。
+   与既有归因一致（病因在输入侧的语言错乱，不是 judge 弱）。
+3. ⚠️ **这次跑批遇到一次网关突发限流**（21:13–21:16 连续 `Connection error`），
+   第 29 条时 `ResponseBuilder` 抛错终止整轮，**80 分钟全丢**。3 分钟后探测 3/3 健康，重跑
+   零错误一次过。已登记为 **C9**。
+
+**修掉的两个 bug**（都不在原计划里，都是招牌病）：
+
+- **`_labeling_method` 从未流到报告**（commit `6859dc3`）—— 本条的完成判据「报告里
+  `_labeling_method: pooled-llm-judged`」**在修之前根本不可能达成**。修后
+  `delta_comparable: False` **第一次真正触发**，并给出了正确的说明文本。
+- **`mark_baseline.py` 的成功提示用了 emoji**（commit `a9cde03`）—— GBK 控制台抛
+  `UnicodeEncodeError`，而它在 `mark_as_baseline` **之后**，于是「基线标成功了、脚本报错退出」。
+
+**新登记的两项**：C9（`evaluate.py` 无续跑）、**C10（基线只按 collection 存一份，不分语种）**。
+C10 **已被本次实测确认**：中文 6 条那份 run 的 `delta_comparable` 是 `True`（标注方式与基线相同），
+但它比的基线是 **41 条英文** —— 8 项全被 `delta_incomparable_metrics` 以「分母不一致」拦住了，
+`delta_comparable` 本身却说「可比」。**拦住了，但理由说错了。**
 
 ---
 
@@ -277,6 +323,14 @@ grep -rilE "agentic|react|rewrite|planner|sub_quer|subquer" src/
 | # | 事项 | 为什么可以等 | 规模 |
 |---|---|---|---|
 | **C9** | `scripts/evaluate.py` **无断点续跑，且答案生成一次失败就终止整轮** | 不影响结论正确性，只影响跑批体验 —— 但代价很实：本次英文 41 条跑到第 29 条时网关连续 `Connection error`，`ResponseBuilder` 抛错直接 `Evaluation runtime failed`，**80 分钟的工作全部丢失且没有归档任何报告**。标注脚本 `label_golden_chunks.py` 早就有续跑（英文那轮跨 4 次中断累积完成），评估脚本没有 | 中 |
+
+| **C10** | 基线只按 **collection** 存一份,不区分语种 / 测试集 | 现在中英共用 `default_text-embedding-v4` 这一个基线槽 —— 标了英文基线,之后跑中文就会拿 6 条中文去和 41 条英文比 delta。`delta_incomparable_metrics` 会因分母不同标出来,但**原因写的是「分母不一致」而不是「你在拿中文比英文」**,读的人容易归因错 | 小~中 |
+
+**C10 的关键事实**：`BaselineManager` 的 key 是 `collection`（`logs/baselines.json` 的
+`current.<collection>`）。最小修法是把 key 扩成 `<collection>:<lang>` 或
+`<collection>:<test_set_basename>`，并让 `delta_incomparable_reason` 能说出
+「测试集不同」这个更根本的原因 —— 与 `_labeling_method` 那条修复是同一类：
+**让报告说出它到底在比什么。**
 
 **C9 的关键事实**：网关的限流是**突发窗口**（本次 21:13–21:16 密集失败，21:20 探测 3/3 健康），
 所以「失败即重头再来」在这个网关上是很差的设计。两个方向：①每条 case 评估完就落盘（增量
