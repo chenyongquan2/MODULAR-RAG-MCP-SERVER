@@ -18,7 +18,26 @@
 
 ## 4. libs 后端清理
 
-- [ ] 4.1 `src/libs/reranker/cross_encoder_reranker.py`：删除 `model` 的 `getattr(..., "cross-encoder/ms-marco-MiniLM-L-6-v2")` 隐式兜底（模型名由 2.1 强制显式配置）；`batch_size` / `max_length` 改读配置而非硬编码。**`except ImportError → 降级` 分支保留** —— 原计划删它，理由（「2.2 的探测让它不可达」）已被证伪，见 design D7 的修正说明。运行期 `except Exception → 降级` 同样保持不变
+- [x] 4.1 `src/libs/reranker/cross_encoder_reranker.py`：删除 `model` 的 `getattr(..., "cross-encoder/ms-marco-MiniLM-L-6-v2")` 隐式兜底（模型名由 2.1 强制显式配置）；`batch_size` / `max_length` 改读配置而非硬编码。**`except ImportError → 降级` 分支保留** —— 原计划删它，理由（「2.2 的探测让它不可达」）已被证伪，见 design D7 的修正说明。运行期 `except Exception → 降级` 同样保持不变
+
+  **2026-08-24 归档后补勾（代码早已落实，当时漏勾复选框）**，逐项核对
+  [cross_encoder_reranker.py:66-79](../../../../src/libs/reranker/cross_encoder_reranker.py#L66)：
+
+  | 子项 | 状态 |
+  |---|---|
+  | 删除 `model` 的 `getattr` 隐式兜底 | ✅ 已删（源码里只剩解释为什么删的注释） |
+  | `batch_size` 改读配置 | ✅ `kwargs.get("batch_size", settings.rerank.batch_size)` |
+  | `max_length` 改读配置 | ⚠️ **未做，且判定为不该做** —— 见下 |
+  | `except ImportError → 降级` 保留 | ✅ 保留 |
+  | 运行期 `except Exception → 降级` 保留 | ✅ 保留 |
+
+  **`max_length` 故意保持为 `kwargs.get("max_length", 512)` 而不进 `RerankSettings`**：
+  512 是 BERT 系 cross-encoder（含推荐的 `bge-reranker-base`，XLM-RoBERTa 架构）的位置编码
+  上限【文献】，配成更大的值不会换来更长的有效上下文，只会在 tokenizer 层被截断或报错。
+  暴露成配置项等于给用户一个**调了也没用的旋钮** —— 那正是本项目 `rerank.top_m` 死配置
+  的形态（见 CLAUDE.md § 招牌病）。**测试仍可经 kwargs 覆写**，需要时再提升为配置项。
+  当年 tasks.md 把它和 `batch_size` 并列是笔误:`batch_size` 影响吞吐与超时粒度（真该可配），
+  `max_length` 是模型的物理上限（不该可配）。
 
   **测试改动的边界**（原护栏「4 个 rerank 测试文件断言不得修改」按实施发现修订，见 2026-08-13 会话）：
   - **不得触碰**：`test_reranker_fallback.py` 全部，以及 `test_cross_encoder_reranker.py::test_rerank_falls_back_on_import_error` / `test_rerank_falls_back_on_predict_error` —— 这些是降级语义的护栏，护栏的本意就是守住它们

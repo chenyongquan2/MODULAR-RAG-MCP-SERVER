@@ -77,9 +77,32 @@ delta_* / delta_comparable / delta_incomparable_metrics
 
 **为什么排第一**：它同时卡住了中文检索、中文生成、中文重排的**全部**结论。
 
-**最低成本的补法**：`golden_test_set_zh_v3.json` **已有 29 条精修完成的 case**，但 `expected_chunk_ids` 全空【实测】—— 也就是说合成和精修两步已经做完了，**只差第三步标注**。跑一次 `label_golden_chunks.py` 即可从 6 条跳到 29 条（分辨率 16.7% → 3.4%）。
+> ### ⛔ 2026-08-24 更正：本节原来推荐的「最低成本补法」是错的，已作废
+>
+> 原文写的是：「`golden_test_set_zh_v3.json` 已有 29 条精修完成的 case，只差第三步标注，
+> 跑一次 `label_golden_chunks.py` 即可从 6 条跳到 29 条」。**不要照做。**
+>
+> 复核发现【实测 2026-08-24】：那 29 条里 **25 条的 `query` 是英文**（零个汉字）。它是
+> Feature-003 时期在**被污染的 RAGAS adapt 缓存**下产出的 —— 缓存里那五个「中文」prompt
+> 一个汉字都没有，于是合成端静默产出了英文问题。**对它补标注只会得到一份 86% 英文的
+> 「中文金标」**：条数从 6 涨到 29，分辨率数字变好看了，而中文侧的结论一个都没变可信。
+> 这是「把污染洗白」，比 6 条更危险 —— 6 条至少诚实地告诉你样本不足。
+>
+> 该文件已于 2026-08-24 改名为 `tests/fixtures/_ARTIFACT_contaminated_zh_candidate.json`
+> 并加上 `_do_not_use` 标记，保留作物证。
+>
+> **正确的补法**：绕开 RAGAS 的 evolution，直接用 LLM 从中文 chunk 生成问题
+> （[BACKLOG](../../../openspec/BACKLOG.md) 梯队三 **C1**）。为什么必须绕开：
+> `adapt(language=chinese)` 在 `minimax/minimax-m2.7` / `z-ai/glm-5.2` /
+> `z-ai/glm-5.2-free` 三个模型上**全部产出 0.0% 中文且不抛异常**【实测 2026-08-16】——
+> 形态完全一致，说明失败点在 RAGAS 0.1.21 的实现，不在模型能力，**换模型不是解法**。
+>
+> **可以现在就做的一小步**：把 `golden_test_sets_by_lang.zh` 从第一代切到
+> `golden_test_set_zh_v2.json`（同样 6 条，但标注方式是 `pooled-llm-judged`，去掉了
+> dense 锚定）。条数不变，尺子更准。
 
-> ⚠️ 跑之前要确认 `labeling_llm` 与合成端异源（04 章 § 4.3），且标完之后**阈值和基线都要重新校准** —— 换代金标分数不可跨代比较。
+**这条 P1 目前没有低成本解法** —— 中文只有 6 条（一条 case 值 16.7%），补齐需要新建一条
+合成链路，是一个独立变更的体量。在它完成之前，**中文侧的 delta 一律按噪声处理，不要据此下结论**。
 
 ### P2 · 降级率 54.8%，病因在生成端
 
@@ -236,7 +259,8 @@ source 级粗一档 —— 它答不了「排第几」「漏了哪一段」。�
 > | `golden_test_set.json`（4 条占位 smoke） | 4 | 4 |
 > | `golden_test_set_en.json` | 42 | **0** |
 > | `golden_test_set_en_v2.json` | 41 | **0** |
-> | `golden_test_set_zh.json` / `_zh_v2` / `_zh_v3` | 6 / 6 / 29 | **0** |
+> | `golden_test_set_zh.json` / `_zh_v2` | 6 / 6 | **0** |
+> | `_ARTIFACT_contaminated_zh_candidate.json`（旧名 `_zh_v3`，**已作废**） | 29 | **0** |
 >
 > 而 `_compute_source_hit` 在 `expected_sources` 为空时**返回 `False`**（[eval_runner.py:954](../../../src/observability/evaluation/eval_runner.py#L954)）。
 >
@@ -358,7 +382,7 @@ source 级粗一档 —— 它答不了「排第几」「漏了哪一段」。�
 ```
 1. 读一份最近的报告          →  先看 metric_integrity，再看 aggregate_metrics
 2. 跑一次 evaluate.py         →  确认环境能通（记得在 .venv 下，加 -u）
-3. 标 zh_v3 的期望片段        →  P1，一次调用换来分辨率 5 倍提升
+3. 切 zh 到 zh_v2（第二代标注） →  零成本换更准的尺子；条数仍是 6，见 P1 的更正块
 4. 修生成端语言一致性         →  P2，解锁两项 RAGAS 指标
 5. 重新校准阈值与基线         →  上面两步都会让旧基线失效
 6. 再谈重排                   →  P3 需要 3 和 5 先完成

@@ -410,7 +410,7 @@ routes = {
 | `golden_test_set_zh.json` | v0.1-partial | `dense-top-k` | 6 | ✗ | 中断产物 |
 | **`golden_test_set_en_v2.json`** | v2.0 | **`pooled-llm-judged`** | **41** | ✓ | ✅ **已就位，> SC-002 的 ≥40** |
 | `golden_test_set_zh_v2.json` | v2.0 | `pooled-llm-judged` | 6 | ✓ | ❌ 样本量不足 |
-| `golden_test_set_zh_v3.json` | v1.0 | `dense-top-k` | 29 | ✗ | 🚧 在途，尚未二代标注 |
+| `_ARTIFACT_contaminated_zh_candidate.json`<br>（旧名 `golden_test_set_zh_v3.json`） | v1.0 | `dense-top-k` | 29 | ✗ | ⛔ **污染残骸**，25/29 条 query 是英文，**禁止标注** |
 
 **结论修正：英文侧的查询改写 A/B 今天就能做**（41 条 `pooled-llm-judged` 金标已达标）。**只有中文侧被阻塞。**
 
@@ -420,9 +420,11 @@ routes = {
 
 > 末行正是 §7.0 那个实例：文件名带 `_v3`，但 `version` 是 `v1.0`、标注方式仍是 `dense-top-k`——**文件序号与标注代次是两回事**。
 
-`golden_test_set_zh_v3.json` 是在途变更 `openspec/changes/expand-chinese-golden-set/` 的中间产物——29 条，还没跑二代标注（无 `_chunk_labels`）。该变更还发现了一处更严重的静默失效：RAGAS `adapt(language=chinese)` 产出的五个「中文」prompt 文件里**一个中文字符都没有**，且被永久固化进磁盘缓存（2026-04-28），导致后续任何合成都读到英文 prompt。
+末行那 29 条是变更 `expand-chinese-golden-set` 的中间产物，**但它是废品而非「只差标注的半成品」**【实测 2026-08-24】：**25/29 条 query 是英文**。成因正是该变更查出的静默失效 —— RAGAS `adapt(language=chinese)` 产出的「中文」prompt 文件里**一个中文字符都没有**，且被永久固化进磁盘缓存（2026-04-28），于是后续每次合成都读到英文 prompt。该文件已改名为 `_ARTIFACT_contaminated_zh_candidate.json` 并加 `_do_not_use` 标记。
 
-**所以前置条件应拆成两条**：英文侧无阻塞，可先行；中文侧等 `expand-chinese-golden-set` 完成。
+该变更已于 2026-08-24 归档，**扩容未达成**：三个候选模型（`minimax/minimax-m2.7` / `z-ai/glm-5.2` / `z-ai/glm-5.2-free`）的 adapt 产物 CJK 占比**全为 0.0% 且全部不抛异常**【实测 2026-08-16】—— 形态一致说明失败点在 RAGAS 0.1.21 的实现，**换模型不是解法**。中文扩容改走 [BACKLOG](../../openspec/BACKLOG.md) 梯队三 **C1**（绕开 evolution，直接用 LLM 从中文 chunk 生成问题）。
+
+**所以前置条件应拆成两条**：英文侧无阻塞，41 条 `pooled-llm-judged` 金标今天就能做改写 A/B；**中文侧的阻塞短期内不会解除** —— 别把中文 A/B 排进依赖链。
 
 ### 7.3 还需要额外的评估口径
 

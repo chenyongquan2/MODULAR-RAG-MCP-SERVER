@@ -258,6 +258,18 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 
 ## Important Implementation Notes
 
+### ⚠️ 先读这条:本项目的招牌病是「看起来生效、实际没生效、而且不报错」
+
+排一排事故:`rerank.top_m` 死配置(全仓只有定义,从未截断过候选)、`--collection` 死参数(塞进 `filters` 做融合后过滤,没真正切集合)、`labeling_llm.max_tokens=200` 饿死判定(367 字符 chunk 就返回空响应,表现得像「模型不遵从 JSON」)、CJK 全链路 ASCII-only、chunk_id 两端不相交、RAGAS `adapt()` 静默不翻译、磁盘缓存固化坏产物、`synthesis.question_language_mismatch_warn` 只被校验从不被读 —— **八次事故同一个病。八次里有六次都有日志,只是日志说的是「成功」。**
+
+  **第八例最有教育意义,因为它发生在「专门为消灭这个病」的变更内部**(2026-08-24 归档核对时抓到):`language_check.mismatch_ratio` 写好了、有单测、`question_language_mismatch_warn` 进了 settings 并被校验取值范围 —— **然后没有任何生产路径调用它们**。说明这个病不是「粗心」,而是「写实现 + 写单测」这套流程**结构上不覆盖「实现有没有被接上」**:单测测的是函数,没人测那条线。**补一个「改了这个配置,结论就该变」的用例** —— 死配置的判据正是「改了它什么都不变」。
+
+**可操作的判据**:任何「配置项 / 参数 / 转换步骤」上线时,先回答一句 **「它没生效的时候,我怎么会知道?」** 答不出来就补一条校验或一个断言测试。这比事后加日志有效得多。**还有一条**:不要用「回落成看起来正常的默认值」来处理「没测 / 测不了」—— 那会让「没测」和「测过且完美」长得一样。正确形态是显式的 `measured: false` + **不给**那个会被误读的数(现例:`_synthesis_metadata.language_consistency`)。两条最常踩的具体形态:
+
+- **只捕获异常检测不出静默失效**(2026-08-24,change `expand-chinese-golden-set`):RAGAS `adapt(language=chinese)` 的 fail-fast 只捕 `RuntimeError`,而真实失败形态是**不抛异常但没翻译** —— 它「成功」了,写出完整的 11 个 prompt 文件,CJK 占比**全为 0.0%**。**必须校验产物本身,不能只看有没有报错。** 现已由 `src/observability/evaluation/language_check.py`(纯函数,不 import ragas)+ `testset_synthesizer.py` 的产物校验守住,配置项 `synthesis.adapt_language_ratio_min`(默认 0.05,锚点是「未翻译时实测恒为 0.0%」)
+- **缓存会把坏产物永久固化**(同上):2026-04-28 那次 adapt 的英文产物被写进磁盘缓存,此后**每次合成都从磁盘读到英文 prompt,换什么模型都一样** —— 第一代中文金标 47 条候选丢掉 33 条(70%)的根因就在这里。**缓存本是为了绕过「LLM 输出不稳定」,结果把不稳定的产物永久化了。** 缓存 LLM 产物必须带来源标识与校验标记(现为旁挂的 `_adapt_metadata.json`:模型完整标识 / 目标语言 / 校验结果 / 实测占比 / 写入时间),**缺元数据或校验未过者 MUST NOT 被读取**,并留强制重建的手段。物证保留在 `logs/ragas_adapt_cache_POISONED_EVIDENCE/`
+- **⚠️ RAGAS 的 `adapt(language=chinese)` 在本项目上无可用模型**(2026-08-16 实测,一模型一进程):`minimax/minimax-m2.7`(679.9 s)、`z-ai/glm-5.2`(922.9 s)、`z-ai/glm-5.2-free`(769.5 s)**三者形态完全一致** —— 跑满十几分钟、写满 11 个文件、CJK 占比全 0.0%、不抛异常。**这种一致性说明失败点在 RAGAS 0.1.21 的实现,不在模型能力,换模型不是解法**。此前「换掉 GLM 是因为它不遵从 JSON」那个结论也**不适用于 adapt**(该误诊的真实原因是 `max_tokens`,只对标注任务成立)。中文金标扩容需**绕开 evolution**、直接用 LLM 从中文 chunk 生成问题,已登记为 [BACKLOG](openspec/BACKLOG.md) 梯队三 C1。⚠️ 另外:RAGAS 的 `simple` / `reasoning` / `multi_context` 是**模块级可变单例**,一个进程里跑第二个模型的 `adapt()` 会因「已适配」立刻返回 —— **探针必须一模型一进程**,否则会误判成「秒过」
+
 - **Settings Loading**: `core.settings.load_settings()` loads from `config/settings.yaml` with env var overrides
 - **Logger Usage**: Always import `from observability.logger import get_logger` and call `logger = get_logger(__name__)`
 - **PDF Loading**: Currently only PDF and Markdown formats supported via `src/libs/loader/` (uses MarkItDown for PDF → Markdown conversion)
@@ -283,7 +295,7 @@ The dashboard is fully dynamic - component names displayed are read from trace l
   - `answer_relevancy` 显著下降但仍过阈:0.8473 → 0.8018(p=0.0028);`context_recall` 无显著变化(p=0.46)
   - **强 judge 能压降级率但压不平**:任一指标降级 55% → 33%,其中 `context_precision` 26% → 5%(基本修复),但 `faithfulness` 仍有 29% 判不出 —— 说明该项的降级**不是 judge 弱造成的**,病因在输入侧(实测:英文问题产出中文答案、最短答案仅 48 字符,statement 抽取无从下手)
   - **方法可复用**:不要用重跑 `scripts/evaluate.py` 做 judge 对照 —— 那会连检索与答案生成一起重做(`llm.temperature` 未设为 0),分数变化无法归因。正确做法是**拿归档报告 `case_results` 里已存的 query/answer/contexts/ground_truth 四元组**喂不同 judge,做严格配对比较;judge 在内存里覆写,不改 `settings.yaml`
-  - ⚠️ **谁对谁错仍无人工裁判**:分歧最大的 case 41 两个 judge 给出 1.000 与 0.000 的相反判断,无法裁决。这与 v2 金标 `human_agreement_rate` 为 `null` 是同一个缺口 —— **两个 LLM 打架时本项目没有基准**
+  - ⚠️ **谁对谁错仍无人工裁判**:分歧最大的 case 41 两个 judge 给出 1.000 与 0.000 的相反判断,无法裁决。这与 `pooled-llm-judged` 金标 `human_agreement_rate` 为 `null` 是同一个缺口 —— **两个 LLM 打架时本项目没有基准**
 - **融合权重是配置项且语料相关**(Feature-005 起):`retrieval.fusion_weights` 控制 dense / sparse 两路在 RRF 中的相对分量,`retrieval.rrf_k` 控制平滑参数(此前硬编码 60)。**只有相对比例有意义** —— `{dense:1, sparse:0.5}` 与 `{dense:2, sparse:1}` 排序完全相同。当前值 `sparse=0.1` 由英文金标校准得出,**换语料必须重新校准**:`python scripts/calibrate_fusion_weights.py --build-cache --lang en` 然后 `--sweep --lang en`。完整曲线见 [specs/005-weighted-fusion/acceptance.md](specs/005-weighted-fusion/acceptance.md)
 - **金标的 recall / hit_rate 不是混合检索的中立裁判**:`backfill_chunk_ids.py:85` 直接调 `vector_store.query()` 回填期望 chunk_id —— **纯 dense 检索,无 BM25、无融合**。因此这两项结构性地偏向 dense:任何 sparse 贡献挤掉一条 dense 命中就只能拉低它们。比较混合与单路时,`MRR` / `nDCG` 比 `recall` / `hit_rate` 可信。Feature-005 实测:英文金标上 `sparse` 任何正权重都会让 hit_rate 从 69.0% 掉到 66.7%(1 条 case),而 MRR 从 0.4365 升到最高 0.5395
 - **重排是可选能力,默认关闭**(change `activate-cross-encoder-rerank` 起):`cross_encoder` 后端需 `pip install -e ".[rerank]"`(增量仅约 9 MB 4 个包 —— `torch` 早已由核心依赖 `docling` 拉入,不是重排引入的)。**本地推理,零 token**。推荐 `BAAI/bge-reranker-base`(中英双语,权重 1.08 GB,首次下载需 `HF_ENDPOINT=https://hf-mirror.com`)。`settings.yaml` **默认仍是 `backend: none`** —— A/B 显示负增益,见下条
@@ -292,15 +304,24 @@ The dashboard is fully dynamic - component names displayed are read from trace l
   - `rerank.top_m` **此前是死配置**(全仓只有定义和 dashboard 展示,从未截断过候选),现已生效:超出部分按原名次追加,不参与重排但不丢弃
   - `rerank.timeout_sec` / `batch_size` 为新增。超时靠**分批 + 批间计时**实现 —— cross-encoder 是同步 CPU 推理,`signal.alarm` 在 Windows 无效、线程 join 无法中断 torch。代价是超时粒度 = 一批的推理时间
   - **延迟实测**(AMD Zen 3、真实 chunk 中位 428 字符、`batch_size=8`):每候选 **121-147 ms** → 40 条候选约 **5.2 秒**。别拿短文本微基准(约 25 ms/pair)做规划,cross-encoder 开销随 token 数走
-- **⚠️ 金标无法公正评判重排**(本项目当前最重要的评估局限):`expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 回填的 —— 标准答案本身就是「embedding 认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此**四项 custom 指标全是 dense-anchored 的**,`MRR` / `nDCG` 对重排**并不比** `recall` / `hit_rate` 更中立(上一条关于 MRR/nDCG 更可信的说法只适用于 dense-vs-sparse 的路径比较)。实测:英文 42 条 MRR 0.4914 → 0.3668、中文 6 条 0.5833 → 0.4167,**而集成测试里同一模型每次都能把故意放在末位的相关段落提到首位**。模型在做正确的事,指标却在跌 —— 在换掉金标构造方式之前,本项目**没有可用于评判重排的离线指标**。详见 [activate-cross-encoder-rerank/acceptance.md](openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/acceptance.md) § 五
-- **金标有两代,`expected_chunk_ids` 的构造方式不同,分数不可跨代比较**(change `retriever-agnostic-golden-labels` 起):
-  - **第一代**(`version: v1.0`,报告里 `labeling_method: dense-top-k`):`scripts/backfill_chunk_ids.py` 把 `ground_truth` 编码后查 **纯 dense top-5** 回填。标准答案就是「embedding 认为最像答案的那几条」—— 这就是上一条说的那个评估局限的来源。**该脚本刻意保留**(第一代金标的可复现来源),但不要再用它产出新金标
-  - **第二代**(`version: v2.0`,`labeling_method: pooled-llm-judged`):`scripts/label_golden_chunks.py` 用 **query**(不是答案)从 dense / sparse / rerank 三路各取 top-N 取并集,再让 LLM 判 0-3 分级相关度。中文 6 条实测:与纯 dense top-K 的 Jaccard 仅 **0.328**,被接受的 72 条里 **22 条(31%)是纯 dense 结构上看不到的**
-  - **跨代 delta 会被报告显式标注 `delta_comparable: false`** —— 别把「标注口径变了」读成「检索质量变了」。换代次后必须重标基线
+- **⚠️ `dense-top-k` 金标(第一代)无法公正评判重排 —— 但这个局限已被第二代解除**(2026-08-13 发现,2026-08-14 随 change `retriever-agnostic-golden-labels` 翻转):第一代的 `expected_chunk_ids` 是 `backfill_chunk_ids.py` 用**纯 dense top-5** 回填的 —— 标准答案本身就是「embedding 认为最相关的那几条」,而重排的全部工作就是**不同意第一阶段的排序**。因此**在第一代金标下**四项 custom 指标全是 dense-anchored 的,`MRR` / `nDCG` 对重排**并不比** `recall` / `hit_rate` 更中立(上一条关于 MRR/nDCG 更可信的说法只适用于 dense-vs-sparse 的路径比较)。**换掉标注方式后 A/B 方向直接翻转**(英文金标、`backends: [custom]`、`--no-generate-answers`、集合 `default_text-embedding-v4`;`run_id` `d08e540d` = none / `97743b41` = cross_encoder):
+
+  | 指标 | `dense-top-k`(42 条) | `pooled-llm-judged`(41 条) |
+  |---|---|---|
+  | `custom__mrr` | 0.4914 → 0.3668　**−0.1246** | 0.8585 → 0.9350　**+0.0764** |
+  | `custom__ndcg` | 0.4182 → 0.3373　**−0.0809** | 0.7140 → 0.7916　**+0.0776** |
+  | `custom__recall` | 0.4571 → 0.4190　−0.0381 | 0.4584 → 0.5081　+0.0497 |
+  | `custom__hit_rate` | 0.6905 → 0.6905　0 | 0.9756 → 0.9756　0 |
+
+  当时集成测试里同一模型每次都能把故意放在末位的相关段落提到首位,指标却在跌 —— **模型在做正确的事,是尺子在说谎**。**当前口径**:`pooled-llm-judged` 金标下 `custom__mrr` / `custom__ndcg` **可以**用来评判重排,以及任何「敢改变名次」的改进(查询改写、HyDE 同理);**但不要再用第一代金标去评它们**。⚠️ 绝对值仍不可跨代比 —— 第二代每 case 均值 **14.9** 条标签(第一代恒为 5 条),`hit_rate` 从 0.69 涨到 0.98 主要是「标签变多了更容易命中」。详见 [activate-cross-encoder-rerank/acceptance.md](openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/acceptance.md) § 五(局限的原始诊断)与 [retriever-agnostic-golden-labels/acceptance.md](openspec/changes/archive/2026-08-14-retriever-agnostic-golden-labels/acceptance.md)(翻转的实测)
+- **金标有两代标注方式,`expected_chunk_ids` 的构造方式不同,分数不可跨代比较**(change `retriever-agnostic-golden-labels` 起)。**一律用标注方式名称呼(`dense-top-k` / `pooled-llm-judged`),不要用「v1 / v2」** —— 文件名后缀、JSON 的 `version` 字段、`_labeling_method` 三者会打架,**只有 `_labeling_method` 是代码判据**([eval_runner.py:421](src/observability/evaluation/eval_runner.py#L421),缺失即回落为 `dense-top-k`;设计说明在同文件 [:105](src/observability/evaluation/eval_runner.py#L105))。完整解释(词源、两种答案、逐词拆解、制作流程、两代偏向)见 [golden-test-set-explained.md](docs/learning/golden-test-set-explained.md)
+  - **`dense-top-k`**(第一代,文件名无后缀):`scripts/backfill_chunk_ids.py` 把 `ground_truth`(**答案**)编码后查 **纯 dense top-5** 回填。期望片段 = 某一路检索器的输出,即**检索器锚定**。**该脚本刻意保留**(第一代金标的可复现来源),但不要再用它产出新金标
+  - **`pooled-llm-judged`**(第二代,文件名后缀 `_v2`):`scripts/label_golden_chunks.py` 用 **query**(不是答案)从 dense / sparse / rerank 三路各取 top-N 取并集,再让 LLM 判 0-3 分级相关度 —— 这是 TREC pooling 的做法,只是把人工评审员换成了 LLM。与纯 dense top-K 的 Jaccard:英文 **0.406** / 中文 **0.328**(远低于 0.90 告警线,说明池化与判定确实生效);中文被接受的 72 条里 **22 条(31%)是纯 dense 结构上看不到的**
+  - **跨代 delta 会被报告显式标注 `delta_comparable: false`** —— 别把「标注口径变了」读成「检索质量变了」。换标注方式后必须重标基线
   - `evaluation.labeling_llm` **必须与 `judge_llm` 异源**(合成 `ground_truth` 的就是 judge),判据同 `screening_llm`:完整标识串相等即同源。**同源不可用 `--allow-same-source` 豁免**,该参数只豁免「无法确认」
   - ⚠️ **两代金标都没有机器可读的合成端标识**(建于 2026-04-28,早于 Feature-003 的 `_review_metadata`),所以异源检测返回 `UNVERIFIABLE`,当前只能靠 `--allow-same-source` 显式承担风险
   - ⚠️ **LLM 判定不等于人工级 ground truth**。它去掉了检索器锚定,但引入了判定模型自身的偏好。`--export-sample` / `--import-sample` 的人工抽检是校准手段
-  - ⚠️ **v2 金标的校准是「跨模型」而非「人工」**(2026-08-14):24 条三元组由 `anthropic:claude-opus-5` 盲评,与 `glm:z-ai/glm-5.2-free` 一致率 **95.8%(23/24)**,唯一分歧那条复盘为原判定更正确。元数据里记的是 `cross_judge_agreement_rate`,**`human_agreement_rate` 是 `null`** —— 两个判定方都是 LLM,**可能共享人类会发现的盲点**。若将来重排结论(或任何依赖 v2 金标的结论)被质疑,**第一件该做的事就是补真人抽检**:审阅表在 `tests/fixtures/labeling_review_zh.md`,可直接对照两方分歧
+  - ⚠️ **`pooled-llm-judged` 金标的校准是「跨模型」而非「人工」**(2026-08-14):24 条三元组由 `anthropic:claude-opus-5` 盲评,与 `glm:z-ai/glm-5.2-free` 一致率 **95.8%(23/24)**,唯一分歧那条复盘为原判定更正确。元数据里记的是 `cross_judge_agreement_rate`,**`human_agreement_rate` 是 `null`** —— 两个判定方都是 LLM,**可能共享人类会发现的盲点**。**上面那条重排翻转结论正是建立在这个前提上的**;若它(或任何依赖第二代金标的结论)被质疑,**第一件该做的事是补真人抽检,而不是先去改检索代码**:审阅表在 `tests/fixtures/labeling_review_zh.md`,可直接对照两方分歧。做交叉判定务必**盲评**(先藏掉原判定与理由),否则第二判定方会附和,算出的一致率没有校准价值
   - `labeling_llm.max_tokens` **不要调小**。此前硬编码 200,真实语料上 367 字符的 chunk 就返回**空响应**,导致每条都标 `judge_failed` —— 表现得像「模型不遵从 JSON 格式」,真实原因是没给它写完的余量。默认 800
 - **`scripts/evaluate.py` 与 `scripts/query.py` 都不写 query trace** —— 只有 MCP server 路径写 `logs/traces.jsonl`。想量某个阶段的真实耗时得写专门的基准脚本,别指望从 trace 里捞
 - **跑 Python 脚本调试时务必加 `-u`** —— stdout 在管道下是全缓冲的,不加会看到空输出并误判成「进程卡死」。本项目的日志走 stderr、进度条走 stdout,两者混在一起时尤其容易误判
@@ -328,8 +349,8 @@ Supports pluggable evaluators (Ragas, custom metrics). Evaluations run against g
 - `scripts/synthesize_testset.py --collection <c> --lang {zh,en}` — RAGAS TestsetGenerator 合成候选(US2)
 - `scripts/refine_testset.py --input <candidate>` — interactive y/e/d/s/q 精修
 - `scripts/refine_testset.py --input <candidate> --auto-mode` — **异源 LLM 预筛 + borderline 路由**(Feature-003),只对存疑用例点人 + 收尾抽样自检
-- `scripts/backfill_chunk_ids.py --input <golden> --collection <c>` — **第一代**回填(纯 dense top-5;保留作历史可复现,新金标不要用)
-- `scripts/label_golden_chunks.py --input <golden> --output <v2> --collection <c>` — **第二代**标注(多路池化 + LLM 分级判定)。`--dry-run` 只池化不判定(零成本);`--export-sample N` / `--import-sample <f>` 做人工抽检
+- `scripts/backfill_chunk_ids.py --input <golden> --collection <c>` — **`dense-top-k`(第一代)**回填(纯 dense top-5;保留作历史可复现,新金标不要用)
+- `scripts/label_golden_chunks.py --input <golden> --output <out_v2.json> --collection <c>` — **`pooled-llm-judged`(第二代)**标注(多路池化 + LLM 分级判定)。`--dry-run` 只池化不判定(零成本);`--export-sample N` / `--import-sample <f>` 做人工抽检
 
 ### 金标精修自动化(Feature-003)
 
@@ -408,6 +429,8 @@ When implementing features, reference the corresponding section in DEV_SPEC.md f
 ## Active Change
 
 当前在途的变更用 `openspec list` 查看,不在本文件里登记 —— 这里曾有一个 `speckit-plan` 自动维护的 "Active Feature" 块,它在 2026-08-12 随 Spec-Kit 一起移除(该块设计上应覆写,实际却累积出了一个陈旧的 Feature-004 副本,是它退役的一个理由)。
+
+**尚未立项的待办**(收尾项、待拍板决策、路线图上还没开 change 的能力)整理在 [openspec/BACKLOG.md](openspec/BACKLOG.md),按价值分梯队,含事实速查表。它不是 OpenSpec 产物,`openspec list` 看不到它。**这里只放指针,状态一律以该文件为准** —— 上一个块就是因为在 CLAUDE.md 里维护状态而变陈旧的。
 
 最后一个 Spec-Kit feature 是 **005-weighted-fusion**(带权重的结果融合),已完成并冻结在 [specs/005-weighted-fusion/](specs/005-weighted-fusion/)。
 

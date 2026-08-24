@@ -1,4 +1,10 @@
 {
+  "_do_not_use": true,
+  "_do_not_use_reason": "CONTAMINATED ARTIFACT - DO NOT USE AS A GOLDEN TEST SET, AND DO NOT LABEL IT. 25/29 queries are English despite this being a zh (Chinese) candidate set, and expected_chunk_ids is empty for all cases. Root cause: produced during Feature-003 while the RAGAS adapt(language=chinese) disk cache was poisoned - the cached \"Chinese\" prompts contained zero CJK characters, so synthesis silently generated English questions. See openspec/changes/archive/2026-08-24-expand-chinese-golden-set/acceptance.md.",
+  "_do_not_use_note_zh": "污染残骸,禁止当金标使用,也禁止对它跑 label_golden_chunks.py。25/29 条 query 是英文(本应是中文集),且 expected_chunk_ids 全空。成因:Feature-003 时期 RAGAS adapt 的磁盘缓存已被污染(「中文」prompt 里零个汉字),合成端于是静默产出英文问题。**对它补标注只会得到一份 86% 英文的「中文金标」**,看起来条数从 6 涨到 29,实际是把污染洗白。中文扩容走 BACKLOG 梯队三 C1(绕开 RAGAS evolution)。",
+  "_renamed_from": "golden_test_set_zh_v3.json",
+  "_renamed_on": "2026-08-24",
+  "_retained_because": "保留作物证与 Feature-003 的可追溯产出;另一份物证是 logs/ragas_adapt_cache_POISONED_EVIDENCE/",
   "_schema_version": 1,
   "language": "zh",
   "version": "v1.0",

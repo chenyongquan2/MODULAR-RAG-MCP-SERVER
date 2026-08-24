@@ -498,7 +498,33 @@ async def search(query, top_k=3, category=None) -> list[dict]:
 | 顺序 | 事项 | 为什么 |
 |---|---|---|
 | **1** | 位置 ①：Query Rewriting（含带权重 RRF 前置改造） | port 单次调用下，提供方是唯一能改善查询的地方 |
-| **2** | 位置 ②③：检索规划器（**条件性**，取决于 T2） | 内部编排细粒度检索工具，贴合 port 形状 |
+| **2** | 位置 ②③：检索规划器（**条件性** —— T2 已出结果，见下方 gate 判定） | 内部编排细粒度检索工具，贴合 port 形状 |
+
+> ### ✅ T2 gate 已裁决（2026-08-10 实测，回写于 2026-08-24）
+>
+> 英文金标 42 条按难度分组的召回【实测】（`specs/004-retrieval-infra-fix/tasks.md:118`）：
+>
+> | 难度类 | hit_rate | recall |
+> |---|---|---|
+> | `simple`(22) | 63.6% | 40.0% |
+> | `multi_context`(9) | 77.8% | **68.9%** |
+> | `reasoning`(11) | 45.5% | **25.5%** |
+>
+> **结论与本节的设计假设相反。** 当初的假设是「多跳更难，所以需要规划器把它拆开」——
+> 实测 `multi_context` 是三类里**最好**的一类（68.9%，甚至优于 `simple` 的 40.0%），
+> 真正的缺口在 `reasoning`（25.5%，不到多跳的四成）。
+>
+> **对规划器的影响**：**靶子换了，且优先级降了。**
+> - 拆子查询解决的是「一个问题需要多处证据」，而实测这类本来就检索得不错 ——
+>   **规划器原本要打的那个靶子基本不存在**
+> - `reasoning` 类的失败形态不是「证据分散」，而是「问题的措辞与文档的措辞不在同一层」
+>   （需要推断、换说法、补隐含前提）。**这正是 Query Rewriting 的作用域，不是规划器的**
+> - 所以顺序 1（Query Rewriting）**不但保留，重要性还上升了**；顺序 2（规划器）从
+>   「条件性」进一步降为 **「等 Query Rewriting 做完再看还剩多少缺口」** ——
+>   有相当可能改写吃掉大部分收益后就不需要规划器了
+>
+> ⚠️ 单类样本量 9~22 条，比例差异未做显著性检验。方向足够明确以支撑排序决策，
+> 但不要拿这三个数去做更细的推断。
 
 > **细粒度工具的定位修正**：`search_by_keyword` / `expand_neighbors` 等仍要做，但**定位是规划器的内部工具，不是优先暴露的 MCP 工具**。原因：预约 agent 用不了（port 单次），只有 Claude Code 能用。
 
@@ -565,7 +591,7 @@ async def search(query, top_k=3, category=None) -> list[dict]:
 **Feature-004（已完成并冻结于 [specs/004-retrieval-infra-fix/](../../specs/004-retrieval-infra-fix/)）**
 
 - [x] T1 collection 物理隔离 + 迁移脚本 + `--collection` 语义修正 + 金标 `source_corpus_collection` 修正
-- [x] T2 跑 Step 0，拿多跳缺口数据（gate：决定规划器做不做）
+- [x] T2 跑 Step 0，拿多跳缺口数据（gate：决定规划器做不做）→ **已裁决：难的是 `reasoning` 而非多跳，规划器降级、改写升级，见 §8.2 的 gate 判定块**
 - [x] T3 CJK bigram，tokenizer 抽两端共享模块 —— 落地为 `src/core/text/tokenizer.py`，由 `tests/unit/test_tokenizer.py::TestBothEndsAgree` 守住两端一致
 - [x] T4 从 Chroma 反向重建 BM25 + 格式瘦身 + 重标基线 —— `scripts/rebuild_bm25_index.py`，索引格式 v2
 - [x] 10 条 temp 残留 chunk 清理 —— 2026-08-10 用户确认后删除，向量库与索引均 10 → 0

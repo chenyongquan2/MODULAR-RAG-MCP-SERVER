@@ -472,11 +472,11 @@ python -u scripts/label_golden_chunks.py --input <v2> --import-sample sample.jso
 - `refine_testset.py:269` → `"version": "v1.0" if not partial else "v0.9-partial"`
 - `label_golden_chunks.py:620-625` → 写 `"v2.0"` + `_labeling_method`
 
-第 3 项才是代码读的东西（`eval_runner.py:88-94`，见 §5）。
+第 3 项才是代码读的东西（判据在 `eval_runner.py:421`，设计说明在同文件 `:105`，见 §5）。
 
 ### 一个能说明问题的实例 **【实测】**
 
-`golden_test_set_zh_v3.json`：
+`golden_test_set_zh_v3.json`（2026-08-24 已改名为 `_ARTIFACT_contaminated_zh_candidate.json`，此处沿用旧名以保留这个实例）：
 
 | | 值 | 含义 |
 |---|---|---|
@@ -582,12 +582,12 @@ HyDE（Hypothetical Document Embeddings）的机制是：**让 LLM 编一段假�
 | `golden_test_set_zh.json` | v0.1-partial | `dense-top-k` | 6 | ✗ | 中断产物 |
 | **`golden_test_set_en_v2.json`** | v2.0 | **`pooled-llm-judged`** | **41** | ✓ | ✅ **已就位**（> SC-002 的 ≥40） |
 | `golden_test_set_zh_v2.json` | v2.0 | `pooled-llm-judged` | 6 | ✓ | ❌ 样本量不足 |
-| `golden_test_set_zh_v3.json` | v1.0 | `dense-top-k` | 29 | ✗ | 🚧 在途，尚未二代标注 |
+| `_ARTIFACT_contaminated_zh_candidate.json`<br>（旧名 `golden_test_set_zh_v3.json`） | v1.0 | `dense-top-k` | 29 | ✗ | ⛔ **污染残骸**，25/29 条 query 是英文，**禁止标注** |
 
 **要点**：
 - **英文侧的第二代金标已达标**（41 条），任何需要中立裁判的 A/B **英文侧今天就能做**
-- **中文侧被阻塞**，在途变更 `openspec/changes/expand-chinese-golden-set/` 正在扩充
-- 末行正是 §8 的实例：文件名 `_v3` 但标注方式仍是第一代
+- **中文侧被阻塞**。变更 `expand-chinese-golden-set` 已于 2026-08-24 归档 —— **未达成扩容**：RAGAS `adapt(language=chinese)` 在三个候选模型上全部产出 0.0% 中文且不抛异常【实测 2026-08-16】，说明失败点在 RAGAS 0.1.21 的实现而非模型能力。中文扩容改走 [BACKLOG](../../openspec/BACKLOG.md) 梯队三 **C1**（绕开 evolution，直接用 LLM 从中文 chunk 生成问题）
+- 末行正是 §8 的实例：文件名 `_v3` 但标注方式仍是第一代。⚠️ **它还是一份废品**：25/29 条 query 是英文（被污染的 adapt 缓存导致），2026-08-24 已改名加 `_do_not_use` 标记 —— **别照着「只差标注」去补标**
 
 > ⚠️ 另一条硬约束（CLAUDE.md）：**金标必须在含全部语料的集合上评估**（当前 `default_text-embedding-v4`），不要指向 `mt5_docs_{zh,en}` 分语言集合——中英金标存在跨语言匹配，分语言集合只能解析 190/210 个 chunk_id，会直接触发 `chunk_id_validation` 失败。
 

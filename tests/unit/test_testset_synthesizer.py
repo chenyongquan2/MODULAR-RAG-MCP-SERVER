@@ -169,11 +169,119 @@ class TestCandidateSchema:
         # 第二条 case 的 evolution_type → difficulty 映射
         assert candidate["test_cases"][1]["tags"]["difficulty"] == "reasoning"
 
+        # 语种一致性随候选集一同产出。本用例的两个问题都是英文而 lang="zh",
+        # 所以不一致比例必然是 1.0 并越过上限 —— 这正是第一代中文合成的形态。
+        lc = meta["language_consistency"]
+        assert lc["total"] == 2.0
+        assert lc["mismatch_ratio"] == 1.0
+        assert lc["exceeded_warn_threshold"] is True
+        assert lc["warn_above"] == _s.evaluation.synthesis.question_language_mismatch_warn
+
     def test_empty_collection_raises_value_error(self) -> None:
         synth = TestsetSynthesizer(settings=_make_settings())
         synth._fetch_chunks = MagicMock(return_value=[])  # type: ignore[method-assign]
         with pytest.raises(ValueError, match="contains no chunks"):
             synth.synthesize(collection="empty", lang="zh", target_count=10)
+
+
+class TestLanguageConsistency:
+    """合成产物的语种一致性必须被量化并随候选集产出。
+
+    change: expand-chinese-golden-set —— spec § "合成产物的语种一致性必须被量化"。
+
+    为什么这组用例必须存在:`question_language_mismatch_warn` 与
+    ``language_check.summarize_language`` 都曾**只被定义、从未被调用** ——
+    一个死配置 + 一对死函数。这正是本项目的招牌病(`rerank.top_m` 死配置、
+    `--collection` 死参数……):看起来生效、实际没生效、而且不报错。
+    这些断言就是「它没生效的时候我怎么会知道」的答案。
+    """
+
+    @staticmethod
+    def _candidate(queries: list[str], lang: str, warn_above: float = 0.20) -> dict:
+        settings = _make_settings()
+        settings.evaluation.synthesis.question_language_mismatch_warn = warn_above
+        synth = TestsetSynthesizer(settings=settings)
+        fake = MagicMock()
+        fake.test_data = [
+            MagicMock(
+                question=q, ground_truth="gt", contexts=["ctx"], evolution_type="simple"
+            )
+            for q in queries
+        ]
+        del fake.to_pandas
+        with patch(
+            "src.observability.evaluation._ragas_wrappers.get_judge_identifier",
+            return_value="glm:glm-4",
+        ), patch(
+            "src.observability.evaluation._ragas_wrappers.get_embedding_identifier",
+            return_value="openai:text-embedding-3-small",
+        ):
+            return synth._testset_to_candidate(fake, lang, DEFAULT_DISTRIBUTION)
+
+    def test_all_chinese_questions_zero_mismatch(self) -> None:
+        cand = self._candidate(["北极星是什么?", "如何配置检索器?"], "zh")
+        lc = cand["_synthesis_metadata"]["language_consistency"]
+        assert lc["measured"] is True
+        assert lc["mismatch_ratio"] == 0.0
+        assert lc["exceeded_warn_threshold"] is False
+        assert lc["total"] == 2.0
+
+    def test_all_english_questions_in_zh_set_is_full_mismatch(self) -> None:
+        """第一代中文金标的真实形态:声称中文集,问题全是英文。"""
+        cand = self._candidate(["What is X?", "How to configure Y?"], "zh")
+        lc = cand["_synthesis_metadata"]["language_consistency"]
+        assert lc["mismatch_ratio"] == 1.0
+        assert lc["exceeded_warn_threshold"] is True
+
+    def test_ratio_matches_first_generation_baseline(self) -> None:
+        """10 条里 7 条英文 → 0.70,正是第一代 33/47 的量级。"""
+        queries = ["中文问题一", "中文问题二", "中文问题三"] + [
+            f"English question {i}?" for i in range(7)
+        ]
+        cand = self._candidate(queries, "zh")
+        lc = cand["_synthesis_metadata"]["language_consistency"]
+        assert lc["total"] == 10.0
+        assert lc["mismatch_ratio"] == pytest.approx(0.70)
+        assert lc["exceeded_warn_threshold"] is True
+
+    def test_warn_threshold_is_read_from_settings_not_hardcoded(self) -> None:
+        """把上限调到 1.0 后,同一批 0.70 的产物不再越线。
+
+        这条守的是「配置项真的被读了」—— 死配置的判据就是「改了它什么都不变」。
+        """
+        queries = ["中文问题一", "中文问题二", "中文问题三"] + [
+            f"English question {i}?" for i in range(7)
+        ]
+        strict = self._candidate(queries, "zh", warn_above=0.20)
+        loose = self._candidate(queries, "zh", warn_above=1.00)
+        assert strict["_synthesis_metadata"]["language_consistency"][
+            "exceeded_warn_threshold"
+        ] is True
+        assert loose["_synthesis_metadata"]["language_consistency"][
+            "exceeded_warn_threshold"
+        ] is False
+        assert loose["_synthesis_metadata"]["language_consistency"]["warn_above"] == 1.00
+
+    def test_unregistered_language_is_marked_unmeasured_not_zero(self) -> None:
+        """``en`` 没有登记字符集规则 → 必须显式标 ``measured: False``。
+
+        **不能回落成 ``mismatch_ratio: 0.0``** —— 那会让「没测」长得跟「测过且
+        完美」一模一样。英文是 RAGAS 的原生语言、不走 adapt,本来就没有「适配
+        没生效」这个失效模式,所以不测是对的;**但必须说出来。**
+        """
+        cand = self._candidate(["What is X?", "How to configure Y?"], "en")
+        lc = cand["_synthesis_metadata"]["language_consistency"]
+        assert lc["measured"] is False
+        assert "mismatch_ratio" not in lc  # 关键:不给一个会被误读的数
+        assert lc["total"] == 2.0
+        assert "language_check" in lc["reason"]
+
+    def test_empty_testset_does_not_divide_by_zero(self) -> None:
+        cand = self._candidate([], "zh")
+        lc = cand["_synthesis_metadata"]["language_consistency"]
+        assert lc["total"] == 0.0
+        assert lc["mismatch_ratio"] == 0.0
+        assert lc["exceeded_warn_threshold"] is False
 
 
 class TestSourceFilter:

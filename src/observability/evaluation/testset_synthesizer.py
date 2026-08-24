@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from src.observability.evaluation.language_check import (
     LanguageCheck,
     check_language,
+    summarize_language,
     supported_languages,
 )
 from src.observability.logger import get_logger
@@ -661,6 +662,59 @@ class TestsetSynthesizer:
                 },
             })
 
+        # 语种一致性:合成产物是不是真的目标语言。
+        #
+        # 这是「适配到底有没有起作用」的**最终判据** —— adapt 侧的产物校验
+        # (_validate_adapt_output) 看的是提示词,这里看的是问题本身。第一代中文
+        # 合成 47 条里 33 条(70%)是英文问题,而这个数字直到人工精修阶段才被发现;
+        # 合成阶段本来就该量出来。
+        #
+        # 阈值复用 adapt_language_ratio_min:单条问题里目标语言字符占比低于它,
+        # 就算这条「语种不一致」。上限是 question_language_mismatch_warn。
+        synthesis_cfg = self._settings.evaluation.synthesis
+        warn_above = synthesis_cfg.question_language_mismatch_warn
+        if lang in supported_languages():
+            language_stats: dict[str, Any] = summarize_language(
+                (c["query"] for c in test_cases),
+                lang,
+                synthesis_cfg.adapt_language_ratio_min,
+            )
+            language_stats["warn_above"] = warn_above
+            exceeded = language_stats["mismatch_ratio"] > warn_above
+            language_stats["exceeded_warn_threshold"] = exceeded
+            language_stats["measured"] = True
+        else:
+            # 该语言没有登记字符集规则(当前只有 zh 需要 —— 英文是 RAGAS 的原生
+            # 语言,不走 adapt,也就没有「适配没生效」这个失效模式)。
+            #
+            # 这里**刻意不回落成 mismatch_ratio=0.0** —— 那会让「没测」长得跟
+            # 「测过且完美」一模一样,正是本项目要消灭的那种静默。字段显式写
+            # measured=False,读元数据的人一眼能分辨。
+            language_stats = {
+                "measured": False,
+                "reason": (
+                    f"language {lang!r} has no character-set rule registered in "
+                    f"language_check; supported: {list(supported_languages())}"
+                ),
+                "total": float(len(test_cases)),
+                "warn_above": warn_above,
+            }
+            exceeded = False
+        if exceeded:
+            # 只告警不失败:合成产物仍有价值(精修阶段可以筛),但必须留下痕迹。
+            # 措辞刻意指向 adapt 而非语料 —— 实测的成因一直是适配没生效。
+            logger.warning(
+                "合成候选的语种不一致比例 %.1f%% 超过上限 %.1f%% "
+                "(目标语言=%s, 共 %d 条)。这通常意味着**语言适配未生效**"
+                "(提示词仍是原文语言),而不是语料的问题 —— 先查 "
+                "logs/ragas_adapt_cache/<lang>/ 的 _adapt_metadata.json,"
+                "而不是先去换语料或调 distribution。",
+                language_stats["mismatch_ratio"] * 100.0,
+                warn_above * 100.0,
+                lang,
+                len(test_cases),
+            )
+
         return {
             "_schema_version": 1,
             "language": lang,
@@ -671,6 +725,8 @@ class TestsetSynthesizer:
                 "embedding_identifier": get_embedding_identifier(self._settings),
                 "distribution": dict(distribution),
                 "synthesized_at": datetime.now(timezone.utc).isoformat(),
+                # 随候选集一同产出,供与历史批次对比(第一代基线:0.70)
+                "language_consistency": language_stats,
             },
             "test_cases": test_cases,
         }

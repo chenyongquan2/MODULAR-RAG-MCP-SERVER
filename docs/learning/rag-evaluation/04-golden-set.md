@@ -231,13 +231,13 @@ Jaccard 0.328 意味着：**新旧两套标准答案的重合度只有约三分�
 | `golden_test_set_en_v2.json` | v2.0 | 41 | `pooled-llm-judged` | 15.4 | 第二代，未设为默认 |
 | `golden_test_set_zh.json` | v0.1-partial | **6** | `dense-top-k` | 5.0 | **当前中文主力**（条数严重不足） |
 | `golden_test_set_zh_v2.json` | v2.0 | 6 | `pooled-llm-judged` | 12.0 | 第二代 |
-| `golden_test_set_zh_v3.json` | v1.0 | 29 | — | **0.0** | 已精修，**期望片段尚未标注** |
+| `_ARTIFACT_contaminated_zh_candidate.json`<br>（旧名 `golden_test_set_zh_v3.json`） | v1.0 | 29 | — | **0.0** | ⛔ **污染残骸，禁止使用与标注**（25/29 条 query 是英文） |
 
 三处值得注意：
 
 1. **`settings.yaml` 默认指向的仍是第一代**【代码】（[config/settings.yaml:175-177](../../../config/settings.yaml#L175)）。也就是说本项目**日常跑的报告全部是 dense-anchored 的**。
 2. **中文只有 6 条**，一条 case 值 16.7% —— 中文侧的任何结论都应视为轶事而非证据。
-3. **`zh_v3` 有 29 条但期望片段是空的**，跑检索指标会直接失败。它是「已完成精修、卡在标注」的半成品。
+3. **末行那 29 条不是「半成品」，是废品**【实测 2026-08-24 更正】。期望片段全空只是表症；真正的问题是 **25/29 条 `query` 是英文**（零个汉字）—— 它是 Feature-003 时期在**被污染的 RAGAS adapt 缓存**下产出的（缓存里那五个「中文」prompt 一个汉字都没有）。**对它补标注只会得到一份 86% 英文的「中文金标」**，条数从 6 涨到 29 而可信度归零。该文件已于 2026-08-24 改名为 `_ARTIFACT_contaminated_zh_candidate.json` 并加 `_do_not_use` 标记，只作物证保留。中文扩容的正确路线见 [BACKLOG](../../../openspec/BACKLOG.md) 梯队三 C1。
 
 ### 7.1 还有一个必须记住的坑
 

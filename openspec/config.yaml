@@ -58,6 +58,44 @@ context: |
 
   ## 已知陷阱(delta 规格必须建立在这些前提上)
 
+  ### ⚠️ 招牌病:看起来生效、实际没生效、而且不报错
+
+  本项目**七次事故同一个病**:`rerank.top_m` 死配置(全仓只有定义,从未截断过
+  候选)、`--collection` 死参数(塞进 filters 做融合后过滤,没真正切集合)、
+  `labeling_llm.max_tokens=200` 饿死判定(367 字符 chunk 就返回空响应,表现得
+  像「不遵从 JSON」)、CJK 全链路 ASCII-only、chunk_id 两端不相交、RAGAS
+  `adapt()` 静默不翻译、磁盘缓存固化坏产物、`question_language_mismatch_warn`
+  只被校验从不被读。**八次里有六次都有日志,只是日志说的是「成功」。**
+
+  第八例发生在「专门为消灭这个病」的变更内部(2026-08-24):helper 写好了、有
+  单测、配置项进了 settings 并被校验 —— **然后没有任何生产路径调用它**。说明
+  「写实现 + 写单测」这套流程**结构上不覆盖「实现有没有被接上」**。写 tasks 时
+  给每个新配置项配一条 **「改了它,结论就该变」** 的用例 —— 死配置的判据正是
+  「改了它什么都不变」。
+
+  另一条同族陷阱:**不要用「回落成看起来正常的默认值」处理「没测 / 测不了」**,
+  那会让「没测」和「测过且完美」长得一样。正确形态是显式 `measured: false` +
+  **不给**那个会被误读的数。
+
+  写 design / tasks 时对任何「配置项 / 参数 / 转换步骤」必须回答一句:
+  **「它没生效的时候,我怎么会知道?」** 答不出来就补一条校验或一个断言测试。
+  两条最常踩的具体形态:
+
+  - **只捕获异常检测不出静默失效**(2026-08-24,change expand-chinese-golden-set)。
+    RAGAS `adapt(language=chinese)` 的 fail-fast 只捕 `RuntimeError`,而真实
+    失败形态是**不抛异常但没翻译** —— 它「成功」了,产出的 11 个 prompt 文件
+    CJK 占比全为 0.0%。**必须校验产物本身,不能只看有没有报错。**
+    实测三个候选模型(`minimax/minimax-m2.7` / `z-ai/glm-5.2` /
+    `z-ai/glm-5.2-free`)形态完全一致,故**失败点在 RAGAS 0.1.21 实现,不在模型
+    能力,换模型不是解法**;中文金标扩容需绕开 evolution 另开变更。
+  - **缓存会把坏产物永久固化**(同上)。2026-04-28 那次 adapt 的英文产物被写进
+    磁盘缓存,此后每次合成都从磁盘读到英文 prompt,换什么模型都一样(第一代
+    中文金标 47 条丢 33 条的根因)。**缓存本是为了绕过「LLM 输出不稳定」,结果
+    把不稳定的产物永久化了。** 缓存 LLM 产物必须带来源标识与校验标记
+    (`_adapt_metadata.json` 的做法),**校验未过或缺元数据者不得被读取**,并留
+    强制重建的手段。物证:`logs/ragas_adapt_cache_POISONED_EVIDENCE/`。
+
+
   - 生效集合是 `default_text-embedding-v4`(1024 维,qwen/text-embedding-v4)。
     旧的 1536 维集合(`default` / `mt5_docs_*`)是归档,其模型
     `text-embedding-3-small` 已于 2026-08-09 永久下架,**不要把 collection_name
@@ -97,8 +135,10 @@ context: |
     对重排而言**四项 custom 指标全是 dense-anchored**,`MRR`/`nDCG` 并不比
     `recall`/`hit_rate` 更中立(上面那条「看 MRR/nDCG」只适用于 dense-vs-sparse
     的路径比较)。实测:英文 42 条 MRR 0.4914→0.3668,而集成测试里同一模型每次
-    都能把故意放在末位的相关段落提到首位。**在换掉金标构造方式之前,不要用现有
-    离线指标去判断任何「敢改变名次」的改进。**
+    都能把故意放在末位的相关段落提到首位。**这个局限已被 `pooled-llm-judged`
+    解除**(2026-08-14 实测方向翻转:MRR -0.1246 → +0.0764,nDCG -0.0809 → +0.0776)
+    —— 现在评判「敢改变名次」的改进(重排、查询改写、HyDE)**用第二代金标的
+    `MRR`/`nDCG`,不要再用第一代**。
   - **重排默认关闭**:`cross_encoder` 需 `pip install -e ".[rerank]"`(增量约 9MB;
     `torch` 早已由核心依赖 `docling` 拉入)。`backend != none` 时 `model` 必填、
     依赖缺失启动期抛 `SettingsError`。延迟实测:每候选 121-147 ms → 40 条约 5.2 秒。
@@ -148,8 +188,11 @@ context: |
     逐词拆解、制作流程、两代偏向)。
     **一律用标注方式名称呼,不要用「v1/v2」**:项目里文件名后缀(`..._zh_v3.json`)、
     JSON 的 `version` 字段、`_labeling_method` 三者会打架,**只有 `_labeling_method`
-    是代码判据**(`eval_runner.py:88`,缺失即视为第一代)。实例:`golden_test_set_zh_v3.json`
+    是代码判据**(`eval_runner.py:421`,缺失即视为第一代)。实例:`golden_test_set_zh_v3.json`
     文件名带 v3、`version` 是 `v1.0`、标注方式仍是第一代 —— 三者不一致但全对。
+    (该文件已于 2026-08-24 改名为 `tests/fixtures/_ARTIFACT_contaminated_zh_candidate.json`
+    并加 `_do_not_use` 标记:25/29 条 query 是英文,是被污染的 adapt 缓存的产物,
+    **禁止当金标使用、也禁止对它补标注**。此处沿用旧名以保留这个命名冲突的实例。)
     - **`dense-top-k`**(第一代):`backfill_chunk_ids.py` 拿 `ground_truth`(**答案**)
       编码查纯 dense top-5。期望片段 = 某一路检索器的输出,即**检索器锚定**。
     - **`pooled-llm-judged`**(第二代):`label_golden_chunks.py` 拿 `query`(**问题**)
