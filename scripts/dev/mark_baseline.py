@@ -73,7 +73,12 @@ def main() -> int:
         retrieval_mode=retrieval_mode,
         corpus_validity=corpus_validity,
     )
-    print(f"\n✅ 已标记为基线: {baseline.report_id} (marked_by={args.marked_by})")
+    # 不要在这里用 emoji:Windows 控制台默认 GBK 编码,写 emoji 会抛
+    # UnicodeEncodeError,而它发生在 mark_as_baseline **之后** ——
+    # 结果是「基线其实标成功了、脚本却报错退出」,最容易被误读成失败。
+    print("")
+    print("[OK] marked as baseline: "
+          f"{baseline.report_id} (marked_by={args.marked_by})")
     return 0
 
 
