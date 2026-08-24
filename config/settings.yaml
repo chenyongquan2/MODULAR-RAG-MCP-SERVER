@@ -170,11 +170,31 @@ evaluation:
   # 占位金标 (US1 阶段使用)
   golden_test_set: ./tests/fixtures/golden_test_set.json
 
-  # 中英分语种金标 (T027-T029 完成,5 zh + 2 en cases — 小样本验证用,
-  # 完整 SC-002 验收需要重跑 target_count=100 产出 ≥ 40/language)
+  # 中英分语种金标。
+  #
+  # 2026-08-24 起指向 **第二代标注**(`_labeling_method: pooled-llm-judged`) ——
+  # 由 label_golden_chunks.py 用 query 从 dense/sparse/rerank 三路池化取并集、
+  # 再让 LLM 判 0-3 分级相关度产出。
+  #
+  # 为什么必须切:第一代(`dense-top-k`)的 expected_chunk_ids 是拿 ground_truth
+  # 查纯 dense top-5 回填的,标准答案本身就是「embedding 认为最像答案的那几条」。
+  # 这把尺子会给出**方向相反**的结论 —— 同一个重排模型、同一份语料、同一套指标,
+  # 第一代量出 MRR -0.1246,第二代量出 +0.0764。任何「敢改变名次」的改进
+  # (重排 / 查询改写 / HyDE)在第一代金标下都会被结构性地惩罚。
+  #
+  # ⚠️ 跨代分数不可比,报告会标 delta_comparable: false。第二代每 case 均值
+  # 12.0(zh) / 15.4(en) 条标签,第一代恒为 5 条 —— hit_rate 变高主要是
+  # 「标签变多了更容易命中」,不是检索变好了。切换后必须重标基线。
+  #
+  # ⚠️ 中文仍只有 6 条(一条 case 值 16.7%),中文侧 delta 一律按噪声处理。
+  # 扩容需绕开 RAGAS 的 adapt(实测三个模型全部产出 0.0% 中文且不抛异常),
+  # 见 openspec/BACKLOG.md 梯队三 C1。
+  #
+  # 旧的第一代金标保留作历史参照,不要删 —— 它是「第一代 vs 第二代」这组
+  # 消融数据的另一半。
   golden_test_sets_by_lang:
-    zh: ./tests/fixtures/golden_test_set_zh.json
-    en: ./tests/fixtures/golden_test_set_en.json
+    zh: ./tests/fixtures/golden_test_set_zh_v2.json   # 6 条,pooled-llm-judged
+    en: ./tests/fixtures/golden_test_set_en_v2.json   # 41 条,pooled-llm-judged
 
   # Judge LLM (仅 ragas backend 启用时必须填)
   # 复用 LLMFactory 的 5 个 provider: glm/azure/openai/ollama/deepseek
