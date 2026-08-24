@@ -193,6 +193,42 @@ evaluation:
 **完成判据**：新基线已标；报告里 `_labeling_method: pooled-llm-judged`；`custom` 四项有了
 可用于后续对比的同代基准。
 
+### 进行中（2026-08-24）
+
+**B1 已完成** —— `golden_test_sets_by_lang` 已切到 `zh_v2` / `en_v2`。
+
+⚠️ **上面那条命令有误,别照抄**：`scripts/evaluate.py` **不加 `--lang` 会去跑
+`golden_test_set`(4 条占位集)**,不是 41/6 条的真金标。正确写法：
+
+```bash
+.venv/Scripts/python.exe -u scripts/evaluate.py --lang en --pretty --collection default_text-embedding-v4
+```
+
+**⚠️ 跑第一轮时抓到一个更严重的问题(已修,commit `6859dc3`)**：
+`eval_runner._load_test_cases` 构造 meta 时**没拷 `_labeling_method`**,于是报告的
+`labeling_method` **恒回落成 `dense-top-k`** —— 也就是说本条的完成判据
+「报告里 `_labeling_method: pooled-llm-judged`」**在修之前根本不可能达成**。
+连带后果：文档里那条「跨代 delta 会被标 `delta_comparable: false`」在标注方式这一维上
+**从未生效过**（实证：`97743b41` / `d08e540d` 跑的是 `en_v2`，报告里都写着 `dense-top-k`）。
+
+**重排翻转结论不受影响** —— 那次 A/B 两臂用的是同一份正确金标，错的只是报告上的标签。
+但这是招牌病的**第九例**，且**它连单测都有**：既有 `TestLabelingMethodField` 测的是
+「`EvalReport` 收到值后会不会序列化」，从没测过「这个值有没有被读出来」。
+**结论：写测试要守端到端那条线（文件写 X → 报告必须是 X），不是端点行为。**
+
+**中文 6 条首轮结果**（run `6edd013e`，修 label bug 前，故报告标签是错的，需重跑）：
+
+| 指标 | 值 |
+|---|---|
+| `custom__hit_rate` | 0.8333 |
+| `custom__mrr` | 0.7500 |
+| `custom__ndcg` | 0.6230 |
+| `custom__recall` | 0.4584 |
+| 降级率 | **66.7%（4/6）** — `faithfulness` 4/6 降级、`context_precision` 2/6 |
+
+新增的 `metric_integrity` stderr 摘要工作正常（按指标列出有效/降级条数与原因）。
+`upstream_error` 各 1 条，说明**限流污染仍在**，绝对值要按此折价。
+
 ---
 
 # 梯队二 · 尺子校正完就做

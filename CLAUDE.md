@@ -260,7 +260,9 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 
 ### ⚠️ 先读这条:本项目的招牌病是「看起来生效、实际没生效、而且不报错」
 
-排一排事故:`rerank.top_m` 死配置(全仓只有定义,从未截断过候选)、`--collection` 死参数(塞进 `filters` 做融合后过滤,没真正切集合)、`labeling_llm.max_tokens=200` 饿死判定(367 字符 chunk 就返回空响应,表现得像「模型不遵从 JSON」)、CJK 全链路 ASCII-only、chunk_id 两端不相交、RAGAS `adapt()` 静默不翻译、磁盘缓存固化坏产物、`synthesis.question_language_mismatch_warn` 只被校验从不被读 —— **八次事故同一个病。八次里有六次都有日志,只是日志说的是「成功」。**
+排一排事故:`rerank.top_m` 死配置(全仓只有定义,从未截断过候选)、`--collection` 死参数(塞进 `filters` 做融合后过滤,没真正切集合)、`labeling_llm.max_tokens=200` 饿死判定(367 字符 chunk 就返回空响应,表现得像「模型不遵从 JSON」)、CJK 全链路 ASCII-only、chunk_id 两端不相交、RAGAS `adapt()` 静默不翻译、磁盘缓存固化坏产物、`synthesis.question_language_mismatch_warn` 只被校验从不被读、`_labeling_method` 从未流到报告 —— **九次事故同一个病。九次里有六次都有日志,只是日志说的是「成功」。**
+
+  **第九例最狠:它连单测都有**(2026-08-24 修)。`eval_runner._load_test_cases` 构造 meta 时只拷了三个键,**没拷 `_labeling_method`** —— 而它是金标代次的唯一代码判据。于是 `labeling_method` **恒回落成 `dense-top-k`**,文档里那条「跨代 delta 会被标 `delta_comparable: false`」在标注方式这一维上**从未生效过**(实证:归档报告 `97743b41` / `d08e540d` 跑的是 `pooled-llm-judged` 的 `en_v2`,报告里却都写着 `dense-top-k`)。⚠️ **重排翻转结论不受影响** —— 那次 A/B 两臂用的是同一份正确金标,错的只是报告上的标签。**教训在于既有单测的形状**:`TestLabelingMethodField` 测的是「`EvalReport` 收到值后会不会序列化」,**从没测过这个值有没有被读出来** —— 单测测的是终点,没人测那条线。**「有单测」不等于「接上了」**;要守的是**端到端那条线**(文件写 X,报告就必须是 X),不是端点行为
 
   **第八例最有教育意义,因为它发生在「专门为消灭这个病」的变更内部**(2026-08-24 归档核对时抓到):`language_check.mismatch_ratio` 写好了、有单测、`question_language_mismatch_warn` 进了 settings 并被校验取值范围 —— **然后没有任何生产路径调用它们**。说明这个病不是「粗心」,而是「写实现 + 写单测」这套流程**结构上不覆盖「实现有没有被接上」**:单测测的是函数,没人测那条线。**补一个「改了这个配置,结论就该变」的用例** —— 死配置的判据正是「改了它什么都不变」。
 

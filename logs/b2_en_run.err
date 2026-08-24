@@ -1,0 +1,8 @@
+2026-08-24 19:55:37 [INFO] __main__: Overriding retrieval collection: default_text-embedding-v4 -> default_text-embedding-v4
+2026-08-24 19:55:43 [INFO] src.libs.embedding.openai_embedding: Initialized OpenAI Embedding with model: qwen/text-embedding-v4, base_url: https://ai-api.finpoints.tech/v1
+2026-08-24 19:55:46 [INFO] __main__: Answer generation enabled; instantiating ResponseBuilder.
+2026-08-24 19:55:51 [INFO] src.libs.llm.glm_llm: GLM LLM initialized: model=z-ai/glm-5.2, base_url=https://ai-api.finpoints.tech/v1
+2026-08-24 19:55:57 [INFO] src.observability.evaluation.eval_runner: FR-007 chunk_id validation passed: 612 unique IDs across 41 cases
+2026-08-24 19:55:57 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-24 19:55:59 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-24 19:55:59 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.8s (avg 1828.7ms per text)
