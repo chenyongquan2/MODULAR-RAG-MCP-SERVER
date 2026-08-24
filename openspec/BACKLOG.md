@@ -13,7 +13,15 @@
 
 ---
 
-## ⚠️ 开工前必读：`CLAUDE.md` 有一条结论已过期
+## ✅ 已修复（2026-08-24）：`CLAUDE.md` 那条过期结论
+
+> 下面这段是 A2 的原始问题描述，**A2 已完成**，`CLAUDE.md` 与 `openspec/config.yaml` 现已一致。
+> 保留原文作为「文档不一致会造成真实损失」的记录。
+
+<details>
+<summary>原始问题（已解决）</summary>
+
+### ⚠️ `CLAUDE.md` 有一条结论已过期
 
 `CLAUDE.md` 里那条「**⚠️ 金标无法公正评判重排** …… 在换掉金标构造方式之前，本项目没有可用于
 评判重排的离线指标」**已被推翻**，但文件至今没改（这就是下面的 A2）。
@@ -24,6 +32,12 @@
 
 **后果是真实的**：2026-08-24 的会话里，AI 助手照着 `CLAUDE.md` 给出了「本项目没有能评判重排的
 指标」这个错误的战略建议。任何新会话都会被同样误导，直到 A2 做完。
+
+</details>
+
+**A2 实际做的**：`CLAUDE.md` 的标题改为「`dense-top-k` 金标（第一代）无法公正评判重排 ——
+但这个局限已被第二代解除」并附两代 A/B 对照表；v1/v2 称呼全部改为标注方式名；
+连带修掉一个失效的代码引用（`eval_runner.py:88` → 真实判据在 `:421`）。
 
 ---
 
@@ -46,7 +60,7 @@ grep -A 3 golden_test_sets_by_lang config/settings.yaml
 > **这三项共享 `CLAUDE.md` 与 `openspec/config.yaml`，必须在同一个窗口连续做完，不要拆给多个
 > agent 并行** —— 理由见 § 并行指南。
 
-## [ ] A2 · 修正 `CLAUDE.md` 的重排结论　`30 min`
+## [x] A2 · 修正 `CLAUDE.md` 的重排结论　`30 min`　✅ 2026-08-24
 
 **为什么排第一**：`CLAUDE.md` 每次会话都被完整加载进上下文。一条过期结论坐在那里，就是一个
 持续污染每一次判断的源头，而且这种损失不会记进任何 acceptance.md。性价比全表最高。
@@ -66,7 +80,7 @@ grep -A 3 golden_test_sets_by_lang config/settings.yaml
 
 ---
 
-## [ ] A1 · 收口 `expand-chinese-golden-set` 并归档　`2–3 h`
+## [x] A1 · 收口 `expand-chinese-golden-set` 并归档　`2–3 h`　✅ 2026-08-24
 
 **当前进度**：16 个任务完成 5 个（1.1 / 1.2 / 2.1 / 2.2 / 2.3），3.1 数据已齐但复选框还是 `[~]`。
 
@@ -103,17 +117,41 @@ grep -A 3 golden_test_sets_by_lang config/settings.yaml
 
 **顺手做掉的琐碎项**（都在这一趟里，别单独排期）：
 
-- [ ] **A3** · `docs/learning/agentic-retrieval-boundary.md` §8.2 回写 T2 gate 结论。当初假设
+- [x] **A3** · `docs/learning/agentic-retrieval-boundary.md` §8.2 回写 T2 gate 结论。当初假设
   「多跳更难」，实测相反：`multi_context` recall **68.9%** > `simple` **40.0%** > `reasoning`
   **25.5%**（`specs/004-retrieval-infra-fix/tasks.md:118`）。
   **规划器的靶子应改为推理类**，笔记里「条件性、取决于 T2」那句至今悬着。
-- [ ] **A4** · 勾掉 `openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/tasks.md`
+- [x] **A4** · 勾掉 `openspec/changes/archive/2026-08-13-activate-cross-encoder-rerank/tasks.md`
   的任务 4.1。代码早已落实（`src/libs/reranker/cross_encoder_reranker.py:68` 显示 `getattr`
   兜底已删、`batch_size` 从配置读），只是归档时漏勾。
-- [ ] **A5** · 处置 `tests/fixtures/golden_test_set_zh_v3.json` —— **需先决策，见 § 待拍板**。
+- [x] **A5** · 处置 `golden_test_set_zh_v3.json` —— **D1 已按选项 B 执行**：改名为 `tests/fixtures/_ARTIFACT_contaminated_zh_candidate.json` 并加 `_do_not_use` 标记。选 B 而非删除，是因为 `openspec/config.yaml` 拿它当「文件名 / `version` / `_labeling_method` 三者打架」的实例，删了那条引用就悬空。⚠️ **顺带修掉一个比重命名重要得多的问题**：三份学习笔记在**推荐**拿它去补标注（`docs/learning/rag-evaluation/07-this-project.md` 把这事标为 P1「一次调用换 5 倍分辨率」），而它 25/29 条 query 是英文 —— 照做只会得到一份 86% 英文的「中文金标」。已在三份笔记里加更正块。
 
 **完成判据**：`openspec list` 为空；`acceptance.md` 如实记录三个模型占比；两条教训进了
 `CLAUDE.md` 和 `config.yaml`。
+
+### ✅ 实际完成情况（2026-08-24）
+
+已归档至 `openspec/changes/archive/2026-08-24-expand-chinese-golden-set/`，`openspec list` 为空，
+delta spec 已同步为主规格 `openspec/specs/evaluation/testset-synthesis/spec.md`（4 条 ADDED 全部落地）。
+两条教训 + 第八例已写入 `CLAUDE.md` § 招牌病 与 `config.yaml` § 已知陷阱。
+
+**⚠️ 一个上面这份计划没预料到的发现 —— 招牌病的第八例，就在这个变更内部**：
+
+写 acceptance 时逐条核对 delta spec，发现第三条 ADDED 需求（**合成产物的语种一致性必须被量化**）
+**只做了一半**：`language_check.mismatch_ratio` / `summarize_language` 有实现、有单测，
+**但没有任何生产路径调用它们**；`synthesis.question_language_mismatch_warn` 被
+`load_settings()` 校验取值范围，**然后没有任何代码读它** —— 彻头彻尾的死配置。
+
+**所以上面第 115 行那句「七次事故」现在是八次。** 而第八例最有说服力的地方在于：
+它发生在**专门为消灭这个病而立的变更内部**。说明这个病不是「粗心」，而是
+「写实现 + 写单测」这套流程**结构上不覆盖「实现有没有被接上」** —— 单测测的是函数，
+没人测那条线。**对策**：每个新配置项配一条「改了它，结论就该变」的用例。
+
+已补做（任务 T-2.4）：`_testset_to_candidate` 现在产出
+`_synthesis_metadata.language_consistency`，越限告警且措辞指向 adapt 而非语料。
+未登记字符集的语言标 `measured: false` 且**不给** `mismatch_ratio` —— 刻意不回落成 `0.0`，
+否则「没测」会长得跟「测过且完美」一样（那就是再造一个同病）。
+`pytest tests/unit`：**2032 passed / 2 skipped**（补做前 2026）。
 
 ---
 

@@ -60,7 +60,7 @@ context: |
 
   ### ⚠️ 招牌病:看起来生效、实际没生效、而且不报错
 
-  本项目**七次事故同一个病**:`rerank.top_m` 死配置(全仓只有定义,从未截断过
+  本项目**八次事故同一个病**:`rerank.top_m` 死配置(全仓只有定义,从未截断过
   候选)、`--collection` 死参数(塞进 filters 做融合后过滤,没真正切集合)、
   `labeling_llm.max_tokens=200` 饿死判定(367 字符 chunk 就返回空响应,表现得
   像「不遵从 JSON」)、CJK 全链路 ASCII-only、chunk_id 两端不相交、RAGAS
