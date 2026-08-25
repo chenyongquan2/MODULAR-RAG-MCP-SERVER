@@ -16,6 +16,18 @@ class MockSettings:
     llm.model = "test-model"
     llm.api_key = "test-key"
 
+    # change answer-language-follows-question:ResponseBuilder 现在要读
+    # evaluation.synthesis.adapt_language_ratio_min 作为「一段文本算不算中文」
+    # 的判据阈值。
+    #
+    # ⚠️ 补在替身里而**不是**给生产代码加 getattr 兜底。后者会让「配置缺失」
+    # 静默取默认值 —— 正是本项目在 `getattr(settings.rerank, "model", ...)`
+    # 上栽过的那一次:配置留空就悄悄用一个对语料无效的模型,且不报错。
+    # 生产代码应当直接读、读不到就炸;替身不完整是替身该修。
+    evaluation = Mock()
+    evaluation.synthesis = Mock()
+    evaluation.synthesis.adapt_language_ratio_min = 0.05
+
 
 class MockLLM(BaseLLM):
     """Mock LLM for testing."""
