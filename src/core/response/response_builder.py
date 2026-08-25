@@ -9,7 +9,12 @@ from src.core.types import RetrievalResult
 from src.libs.llm.base_llm import BaseLLM
 from src.libs.llm.llm_factory import LLMFactory
 
+from src.observability.evaluation.language_check import compare_languages
+from src.observability.logger import get_logger
+
 from .citation_generator import Citation, CitationGenerator, StructuredContent
+
+logger = get_logger(__name__)
 
 
 class ResponseBuilder:
@@ -27,14 +32,19 @@ class ResponseBuilder:
         - 类型安全：返回结构化的 StructuredContent
     """
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, llm: Optional[BaseLLM] = None):
         """初始化响应构建器。
 
         Args:
             settings: 应用配置，包含 LLM 配置信息
+            llm: 可选的 LLM 实例（依赖注入）。未提供时经 ``LLMFactory`` 按配置创建。
+
+                与 ``HybridSearch`` 的做法一致 —— 项目其余可插拔组件都支持注入。
+                这里此前没有,导致每次构造都要真建一个 LLM 客户端(实测约 5 秒),
+                单测里既慢又等于在测工厂而不是测本类。
         """
         self.settings = settings
-        self.llm: BaseLLM = LLMFactory.create(settings=settings)
+        self.llm: BaseLLM = llm if llm is not None else LLMFactory.create(settings=settings)
         self.citation_generator = CitationGenerator()
 
         # 从 settings 中读取响应生成配置
@@ -81,8 +91,54 @@ class ResponseBuilder:
         ]
         response_text: str = self.llm.chat(messages=messages, trace=trace, **kwargs)
 
-        # 5. 构建并返回 StructuredContent
-        return StructuredContent(markdown=response_text, citations=citations)
+        # 5. 语言一致性:问答两端各归类一次,结论既进返回值也进 trace。
+        #
+        # 为什么两处都要:MCP 调用方拿到的是 StructuredContent(trace 可能没开),
+        # 而评估侧与仪表盘读 trace。只留一处会让另一条路看不见。
+        #
+        # 为什么必须记:**答案语言错了与答案质量差,在最终指标上表现相同** ——
+        # 两者都只是分数变低。没有这个字段就无法区分,而处置完全不同
+        # (改提示词 / 改检索或模型)。这个缺陷此前存在了数月而无人发现,
+        # 正是因为没有任何地方直接说出「这次答错语言了」。
+        language_consistency = compare_languages(
+            question=query,
+            answer=response_text,
+            threshold=self._language_threshold(),
+        )
+        if not language_consistency.get("measured"):
+            # 判不出来本身值得知道 —— 但只记 info:纯数字问题之类是合法输入,
+            # 不是错误。
+            logger.info(
+                "语言一致性未判定: %s", language_consistency.get("reason", "")
+            )
+        elif not language_consistency.get("consistent"):
+            # 这是本变更要消灭的形态,必须能在日志里直接看到。
+            logger.warning(
+                "答案语言与问题不一致:问题=%s 答案=%s —— "
+                "用户用一种语言提问却拿到另一种语言的答案",
+                language_consistency.get("question_language"),
+                language_consistency.get("answer_language"),
+            )
+
+        if trace is not None:
+            trace.add_metadata("language_consistency", dict(language_consistency))
+
+        # 6. 构建并返回 StructuredContent
+        return StructuredContent(
+            markdown=response_text,
+            citations=citations,
+            language_consistency=language_consistency,
+        )
+
+    def _language_threshold(self) -> float:
+        """取「一段文本算不算中文」的判据阈值。
+
+        复用 ``evaluation.synthesis.adapt_language_ratio_min`` —— 它的语义正是
+        「目标语言字符占比下限」,与这里要判断的是同一件事。刻意不新增配置项:
+        两个字段量同一件事必然漂移,而第二个字段的值没人会去校准,那就是又一个
+        死配置。两处的注释都已指明这次复用。
+        """
+        return float(self.settings.evaluation.synthesis.adapt_language_ratio_min)
 
     def _build_context(
         self,

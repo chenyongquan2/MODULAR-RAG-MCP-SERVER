@@ -1,7 +1,7 @@
 """引用生成器。"""
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.core.types import RetrievalResult
 
@@ -41,6 +41,19 @@ class StructuredContent:
     Attributes:
         markdown: Markdown 格式的响应文本，包含 [1], [2] 等引用标记
         citations: 引用列表，与 markdown 中的标记一一对应
+        language_consistency: 问答两端的语言归类与一致性结论（可选）。
+            含 ``question_language`` / ``answer_language`` / ``threshold`` /
+            ``measured``，且**仅当** ``measured`` 为真时才有 ``consistent``。
+
+            为什么要把它放在返回值里而不是只打 trace：MCP 调用方拿到的就是
+            ``StructuredContent``，而 trace 可能没开。只留一处会让另一条路
+            看不见 —— 把观测通道当数据通道，本项目在分路径指标那里已经拒绝过
+            一次。
+
+            为什么要记：**答案语言错了与答案质量差，在最终指标上表现相同** ——
+            两者都只是分数变低。没有这个字段就无法区分这两件事，而它们的处置
+            完全不同（改提示词 / 改检索或模型）。本项目的这个缺陷存在了数月而
+            无人发现，正是因为没有任何地方直接说出「这次答错语言了」。
 
     示例：
         markdown = "RAG 系统结合了检索和生成 [1]。"
@@ -50,6 +63,7 @@ class StructuredContent:
     """
     markdown: str
     citations: List[Citation]
+    language_consistency: Optional[Dict[str, Any]] = None
 
 
 class CitationGenerator:
