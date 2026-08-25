@@ -35,7 +35,7 @@
 
 ## 2. 同义词/术语扩展改写
 
-- [ ] 2.1 `src/core/settings.py` 新增 `QueryRewriteSettings`（`strategy` / `synonym_dict`），`load_settings()` 校验：策略取值合法、`strategy != none` 时词表存在且可解析且值为列表。违规抛 **`SettingsError`**（本模块既有约定，**不是 `ValueError`**）。`config/settings.yaml` 写入并注释清楚「刻意不设隐式默认值」的理由。配套单测覆盖通过与四种拒绝（未知策略 / 词表路径为空 / 文件不存在 / 内容不可解析），且「未启用时不校验词表」必须有用例
+- [x] 2.1 `src/core/settings.py` 新增 `QueryRewriteSettings`（`strategy` / `synonym_dict`），`load_settings()` 校验：策略取值合法、`strategy != none` 时词表存在且可解析且值为列表。违规抛 **`SettingsError`**（本模块既有约定，**不是 `ValueError`**）。`config/settings.yaml` 写入并注释清楚「刻意不设隐式默认值」的理由。配套单测覆盖通过与四种拒绝（未知策略 / 词表路径为空 / 文件不存在 / 内容不可解析），且「未启用时不校验词表」必须有用例
 
 - [ ] 2.2 按既有可插拔模式新增改写器基类 + 工厂 + `synonym` 实现（硬约束 1：`src/core/` 不得 import 具体实现、不得出现 `if strategy == ...`）。词表双向展开（design D5）。配套单测：命中术语 / 命中缩写 / 命中大小写变体 / 未命中任何词 / 空词表
 

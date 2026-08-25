@@ -199,6 +199,33 @@ class RerankSettings:
 
 
 @dataclass
+class QueryRewriteSettings:
+    """查询改写配置(change per-route-metrics-and-synonym-rewrite)。
+
+    查询改写是在检索**之前**对用户查询做变换,以提升某一条检索路径的召回质量。
+    与重排(检索之后重新排序)是两个不同阶段。
+
+    为什么默认关闭:与 ``rerank.backend`` 同构 —— 一个默认不启用的能力不该向
+    所有调用方收税。默认配置下的检索行为与引入本能力之前逐条相同。
+
+    Attributes:
+        strategy: 改写策略。见 :data:`VALID_QUERY_REWRITE_STRATEGIES`。
+            - ``none``(默认): 不改写,查询原样进入检索
+            - ``synonym``: 按词表把关键词展开为同义词 / 缩写 / 别名。
+              **零 LLM 调用、零延迟、零 token** —— 纯查表。
+              主要受益的是稀疏(BM25)路径:BM25 是字面匹配,查询写 ``SL``
+              而文档写「止损」时命中为零;而稠密路的 embedding 本就对同义词
+              鲁棒,扩展同义词对它几乎无增益。
+        synonym_dict: 同义词表文件路径。``strategy == "synonym"`` 时**必填**,
+            刻意**没有隐式默认值** —— 参照重排那次的教训:兜底成一个对语料无效
+            的默认值,会让「配错了」与「配好了」表现完全相同且不报错。
+    """
+
+    strategy: str = "none"
+    synonym_dict: str = ""
+
+
+@dataclass
 class SplitterSettings:
     """文本切分配置。"""
 
@@ -640,6 +667,14 @@ VALID_TRANSPORTS: frozenset[str] = frozenset({"stdio", "sse"})
 RerankBackendType = Literal["none", "cross_encoder", "llm"]
 VALID_RERANK_BACKENDS: frozenset[str] = frozenset({"none", "cross_encoder", "llm"})
 
+#: 合法的查询改写策略。
+#:
+#: 刻意**不含** ``hyde`` —— 它与另外几个不在同一层:synonym / multi_query 改的是
+#: **查询本身**,改完两路仍共享同一个 ``ProcessedQuery``;而 HyDE 是让稠密路拿
+#: 假想文档、稀疏路拿原始查询,**两路输入不同**,``ProcessedQuery`` 不再能表达
+#: 完整的检索意图。那是接口变更,不是加一个枚举值。
+VALID_QUERY_REWRITE_STRATEGIES: frozenset[str] = frozenset({"none", "synonym"})
+
 
 @dataclass
 class MCPServerSettings:
@@ -664,6 +699,9 @@ class Settings:
     retrieval: RetrievalSettings = field(default_factory=RetrievalSettings)
     query: QuerySettings = field(default_factory=QuerySettings)
     rerank: RerankSettings = field(default_factory=RerankSettings)
+    query_rewrite: QueryRewriteSettings = field(
+        default_factory=QueryRewriteSettings
+    )
     splitter: SplitterSettings = field(default_factory=SplitterSettings)
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
     evaluation: EvaluationSettings = field(default_factory=EvaluationSettings)
@@ -1060,6 +1098,80 @@ def _probe_rerank_backend(rerank: RerankSettings) -> None:
         raise SettingsError(f"Invalid rerank.backend: {e}") from e
 
 
+def _validate_query_rewrite_settings(cfg: QueryRewriteSettings) -> None:
+    """校验查询改写配置(宪法原则三:启动期快速失败)。
+
+    两条都刻意在启动期硬失败:
+
+    1. **未知策略不静默回落 none** —— 回落会让「配置写错了」与「刻意关闭」
+       产生完全相同的表现,而两者的处置完全相反。
+    2. **词表缺失 / 不可解析必须报错,且两者可区分** —— 前者是路径问题,
+       后者是内容问题。刻意不设隐式默认值:重排那次的兜底(纯英文 ms-marco
+       模型)对中文语料完全无效**且不报错**,是「看起来可配、实际取默认值」
+       的典型。
+
+    Args:
+        cfg: 待校验的查询改写配置。
+
+    Raises:
+        SettingsError: 任一参数非法时。
+    """
+    strategy = cfg.strategy
+    if strategy not in VALID_QUERY_REWRITE_STRATEGIES:
+        raise SettingsError(
+            f"Invalid query_rewrite.strategy: {strategy!r}. "
+            f"Expected one of: {sorted(VALID_QUERY_REWRITE_STRATEGIES)}. "
+            "Note there is deliberately no silent fallback to 'none' - a typo "
+            "would otherwise look exactly like deliberately disabling the feature."
+        )
+
+    if strategy == "none":
+        # 未启用时不校验策略专属资源 —— 词表缺失不影响启动。
+        return
+
+    if strategy == "synonym":
+        path_text = cfg.synonym_dict.strip()
+        if not path_text:
+            raise SettingsError(
+                "query_rewrite.synonym_dict is required when "
+                "query_rewrite.strategy is 'synonym', but it is empty. "
+                "There is deliberately no implicit default: a silently-defaulted "
+                "dictionary can be wrong for your corpus and would produce no "
+                "error at all."
+            )
+        dict_path = Path(path_text)
+        if not dict_path.exists():
+            raise SettingsError(
+                f"query_rewrite.synonym_dict not found: {path_text!r} "
+                f"(resolved to {dict_path.resolve()}). Create the file or point "
+                "the setting at an existing one."
+            )
+        # 内容校验与「文件不存在」严格区分 —— 两者的处置不同。
+        try:
+            raw = yaml.safe_load(dict_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise SettingsError(
+                f"query_rewrite.synonym_dict is not parseable YAML: "
+                f"{path_text!r} ({exc}). The file exists but its content cannot "
+                "be read - this is a content problem, not a path problem."
+            ) from exc
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, dict):
+            raise SettingsError(
+                f"query_rewrite.synonym_dict must contain a mapping of "
+                f"term -> list of synonyms, but {path_text!r} contains "
+                f"{type(raw).__name__}."
+            )
+        for term, synonyms in raw.items():
+            if not isinstance(synonyms, list):
+                raise SettingsError(
+                    f"query_rewrite.synonym_dict entry {term!r} must map to a "
+                    f"list of synonyms, got {type(synonyms).__name__}. "
+                    f"Example: {term}: [synonym-a, synonym-b]"
+                )
+
+
 def _validate_fusion_settings(retrieval: RetrievalSettings) -> None:
     """校验融合参数(spec feature-005 T002,宪法原则三:启动期快速失败)。
 
@@ -1164,6 +1276,7 @@ def validate_settings(settings: Settings) -> None:
 
     # 重排配置校验（change activate-cross-encoder-rerank T-2.1 / T-2.2）
     _validate_rerank_settings(settings.rerank)
+    _validate_query_rewrite_settings(settings.query_rewrite)
     _probe_rerank_backend(settings.rerank)
 
     # 合成配置校验（change expand-chinese-golden-set T-1.2）
