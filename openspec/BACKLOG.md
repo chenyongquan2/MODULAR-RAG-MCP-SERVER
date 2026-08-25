@@ -308,7 +308,15 @@ C10 **已被本次实测确认**：中文 6 条那份 run 的 `delta_comparable`
 > - **阶段 2 Multi-Query** —— ⚠️ 它会新增融合路径名，而 `Fusion.weight_for()` 查不到会
 >   **静默回落 1.0**、作废 Feature-005 校准出的 `sparse: 0.1`。风险已作为注释留在
 >   `fusion.py` 的 `weight_for()` 上，不只留在文档里
-> - **阶段 3 `fusion_weights` 重校准** —— 曲线已量好（见下方 ③），最优 0.75
+> - ~~**阶段 3 `fusion_weights` 重校准**~~ —— ✅ **2026-08-25 完成**。`sparse` 0.1 → 0.75，
+>   新基线 run `728a77ab`。custom 四项分母不变故 delta 可信：**MRR +0.0163、nDCG +0.0044**，
+>   hit_rate/recall 持平，**零延迟零 token**。
+>   ⚠️ RAGAS 三项（`faithfulness` / `answer_relevancy` / `context_precision`）因分母变化
+>   被自动标进 `delta_incomparable_metrics`，其「改善」**不可当作权重收益**；
+>   只有 `context_recall` 分母未变，delta 是 **−0.0122**。
+>   ⚠️ 提前到阶段 2 之前做，理由与笔记原文不同：**0.1 不是「会随语料过时」，而是当时就偏低** ——
+>   它在第一代 dense-top-k 金标上校准，那把尺子系统性压低 sparse 权重。
+>   ⚠️ 中文 6 条**尚未在 0.75 下重测**（基线按 collection 单槽，见 C10）。
 > - **阶段 4 HyDE** —— 仍判定不对症，且本次结果**进一步支持**这个判断：
 >   往 sparse 里加普通词汇已被证明有害，而 HyDE 正是喂它 LLM 生成的散文
 > - **单复数扩展**（`parameter` 1692 / `parameters` 8428）—— 缺口真实、机制不同，值得单独测
