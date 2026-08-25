@@ -651,3 +651,58 @@ class MetricIntegrity:
             "degradation_ratio": self.degradation_ratio,
             "reasons": dict(self.reasons),
         }
+
+
+# ---------------------------------------------------------------------------
+# 混合检索的分路径产物
+# ---------------------------------------------------------------------------
+
+
+#: 稠密（语义）检索路径的规范名称。
+#:
+#: 与 ``settings.retrieval.fusion_weights`` 的键、以及 ``Fusion.fuse()`` 的路径名
+#: 保持一致 —— 三处必须是同一个字符串，否则权重查表会落空。
+#: ``Fusion.weight_for()`` 查不到路径名时**静默回落 1.0**，不报错，
+#: 于是校准出来的权重被悄悄作废而系统照常运行。集中定义就是为了让这种漂移
+#: 不可能因为「某处手写了一次字面量」而发生。
+ROUTE_DENSE = "dense"
+
+#: 稀疏（关键词 / BM25）检索路径的规范名称。见 :data:`ROUTE_DENSE` 的说明。
+ROUTE_SPARSE = "sparse"
+
+
+@dataclass
+class SearchOutcome:
+    """一次混合检索的完整产物：最终结果 + 各路各自的结果。
+
+    **为什么需要它**：融合后的指标量的是最终结果，而单路的改善会被该路在融合中
+    的权重稀释。本项目稀疏路的生效权重只有稠密路的十分之一，所以任何只作用于
+    稀疏路的改进（例如同义词扩展），其效果在融合后指标上几乎看不见 —— 会得出
+    「没有效果」的错误结论，而改善其实真的发生了。
+
+    ``routes`` 让评估侧能对每一路**各自打一次分**，从而把「某一路变好了」与
+    「融合后变好了」分开来看。
+
+    Attributes:
+        results: 最终结果 —— 融合 → 元数据过滤 → 重排 → 截断到 top_k 之后的产物。
+            这就是 ``HybridSearch.search()`` 的返回值。
+        routes: 路径名 → 该路自己的**有序**结果。顺序即名次。
+            键使用 :data:`ROUTE_DENSE` / :data:`ROUTE_SPARSE` 等规范名称。
+            这些结果已经过与最终结果**相同的元数据过滤**（否则两者的口径不一致，
+            分路径指标就不再能与融合后指标对照），但**未经融合与重排** ——
+            融合与重排的作用正是「改变名次」，混进来就量不出单路自身的质量了。
+            某一路检索失败或无结果时，该键仍然存在、值为空列表 ——
+            **不省略键**，否则「这一路没结果」与「根本没跑这一路」无法区分。
+    """
+
+    results: List["RetrievalResult"] = field(default_factory=list)
+    routes: Dict[str, List["RetrievalResult"]] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为字典（用于追踪打点与调试，不用于检索热路径）。"""
+        return {
+            "results": [r.to_dict() for r in self.results],
+            "routes": {
+                name: [r.to_dict() for r in items] for name, items in self.routes.items()
+            },
+        }

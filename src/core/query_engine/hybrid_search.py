@@ -19,7 +19,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from src.core.types import RetrievalResult
+from src.core.types import (
+    ROUTE_DENSE,
+    ROUTE_SPARSE,
+    RetrievalResult,
+    SearchOutcome,
+)
 
 if TYPE_CHECKING:
     from src.core.settings import Settings
@@ -121,6 +126,10 @@ class HybridSearch:
     ) -> List[RetrievalResult]:
         """执行混合检索流程。
 
+        这是检索的**主入口**，签名与返回类型自始未变 —— MCP server 与
+        ``scripts/query.py`` 都在用它。需要各路各自的结果时用
+        :meth:`search_with_routes`，本方法只是取它的最终结果。
+
         Args:
             query: 搜索查询文本。
             top_k: 返回结果数量。
@@ -129,6 +138,42 @@ class HybridSearch:
 
         Returns:
             按融合分数降序排列的 RetrievalResult 列表。
+
+        Raises:
+            ValueError: 如果 query 为空或 top_k 无效。
+        """
+        return self.search_with_routes(
+            query, top_k=top_k, filters=filters, trace=trace
+        ).results
+
+    def search_with_routes(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        trace: Optional[Any] = None,
+    ) -> SearchOutcome:
+        """执行混合检索，并把**各路各自的结果**一并返回。
+
+        与 :meth:`search` 是同一条流程 —— 不重跑任何一次检索，只是把融合前
+        本就已经拿到的两路结果也交出去（``SearchOutcome.routes``）。
+
+        **为什么要有这个方法**：融合后的指标量不出单路的改善。稀疏路的生效
+        权重只有稠密路的十分之一，只作用于稀疏路的改进在融合后几乎看不见，
+        于是会被误判为「没有效果」。评估侧需要对每一路分别打分才能看见它。
+
+        为什么不直接改 :meth:`search` 的返回类型：那是无谓的 breaking ——
+        MCP server 与 ``scripts/query.py`` 只关心最终结果。
+
+        Args:
+            query: 搜索查询文本。
+            top_k: 返回结果数量。
+            filters: 可选的元数据过滤器。
+            trace: 可选的链路追踪上下文。
+
+        Returns:
+            SearchOutcome —— ``results`` 是最终结果（与 :meth:`search` 相同），
+            ``routes`` 是各路经同样元数据过滤、但**未经融合与重排**的有序结果。
 
         Raises:
             ValueError: 如果 query 为空或 top_k 无效。
@@ -203,8 +248,24 @@ class HybridSearch:
                     },
                 )
 
+        # 各路自己的结果 —— 与最终结果**同样经过元数据过滤**，但不经融合与重排。
+        #
+        # 为什么也要过滤：不过滤的话两者口径不一致，分路径指标就不能与融合后
+        # 指标对照，而「只留一路时两者应当相等」正是分路径指标唯一的自检手段。
+        # 为什么不经融合与重排：那两步的作用恰恰是**改变名次**，混进来就量不出
+        # 单路自身的质量了。
+        def _route(items: List[RetrievalResult]) -> List[RetrievalResult]:
+            return self._apply_metadata_filters(items, filters) if filters else list(items)
+
+        # 键恒存在，值可能为空 —— 不省略键，否则「这一路没结果」与「根本没跑
+        # 这一路」在数据上无法区分。
+        routes: Dict[str, List[RetrievalResult]] = {
+            ROUTE_DENSE: _route(dense_results),
+            ROUTE_SPARSE: _route(sparse_results),
+        }
+
         if not dense_results and not sparse_results:
-            return []
+            return SearchOutcome(results=[], routes=routes)
 
         # 4) Fusion 阶段打点
         if trace is not None:
@@ -215,8 +276,13 @@ class HybridSearch:
         # 对这两路的顺序理解相反（fusion.py 的注释写作 [sparse, dense]）。
         # 等权时该错误无害，加权重后就是让 dense 拿到 sparse 权重的真 bug，
         # 且不会报错。
+        #
+        # ⚠️ 路径名用 ROUTE_DENSE / ROUTE_SPARSE 常量而非字面量：这三处
+        # （fuse 的键、fusion_weights 的键、SearchOutcome.routes 的键）必须
+        # 是同一个字符串。Fusion.weight_for() 查不到路径名会**静默回落 1.0**，
+        # 于是校准出的权重被悄悄作废而系统照常运行、不报错。
         fused_results = self._fusion.fuse(
-            {"dense": dense_results, "sparse": sparse_results},
+            {ROUTE_DENSE: dense_results, ROUTE_SPARSE: sparse_results},
             top_k=effective_top_k * 2,
         )
 
@@ -243,9 +309,11 @@ class HybridSearch:
             reranked_results = self._reranker.rerank(
                 query, fused_results, trace=trace
             )
-            return reranked_results[:effective_top_k]
+            final = reranked_results[:effective_top_k]
         except Exception:
-            return fused_results[:effective_top_k]
+            final = fused_results[:effective_top_k]
+
+        return SearchOutcome(results=final, routes=routes)
 
     def _apply_metadata_filters(
         self,
