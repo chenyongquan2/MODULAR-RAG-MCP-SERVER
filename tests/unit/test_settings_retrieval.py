@@ -22,6 +22,7 @@ import pytest
 import yaml
 
 from src.core.settings import (
+    VALID_FUSION_ROUTES,
     RetrievalSettings,
     SettingsError,
     _validate_fusion_settings,
@@ -129,11 +130,36 @@ class TestFusionWeightsValidation:
         with pytest.raises(SettingsError, match="fusion_weights"):
             _validate_fusion_settings(RetrievalSettings(fusion_weights=[1.0, 1.0]))  # type: ignore[arg-type]
 
-    def test_extra_route_key_accepted(self) -> None:
-        """多余的路径键不拒绝 —— 可能是为未来路径预留的配置。"""
-        _validate_fusion_settings(
-            RetrievalSettings(fusion_weights={"dense": 1.0, "sparse": 1.0, "future": 0.5})
-        )
+    def test_extra_route_key_rejected(self) -> None:
+        """多余的路径键**必须拒绝**。
+
+        ⚠️ 这条 2026-08-25 从「接受」翻转为「拒绝」，推翻的是 feature-005 当时的
+        决定（原文：「多余的路径键不拒绝 —— 可能是为未来路径预留的配置」）。
+        理由：
+
+        - 「为未来路径预留」**买不到任何东西** —— 代码不支持那条路之前，
+          预留的键什么都不做。
+        - 而它的代价是实打实的：**拼错的键与预留的键完全无法区分**。
+          ``sparce: 0.75`` 会顺利通过校验，然后 ``Fusion.weight_for()``
+          查不到 ``sparse`` 就回落 1.0 —— 校准出来的权重被悄悄作废、
+          sparse 回到等权，系统照常运行、不报错、指标只是变差。
+          本项目已因这一类静默失效栽过十余次。
+
+        翻转的代价是「新增检索路径时要同步更新 ``VALID_FUSION_ROUTES``」——
+        那是同一个 commit 里的一行，而且 ``test_future_multi_query_route_rejected_for_now``
+        已把这件事变成**强制配套**（校验与 ``weight_for()`` 必须一起改）。
+
+        ⚠️ 注意这**不影响**规格承诺的「缺失的键缺省 1.0」
+        （``specs/005-weighted-fusion/data-model.md:27``）—— 那条由
+        ``test_subset_of_routes_accepted`` 与 ``test_empty_mapping_accepted`` 守着。
+        缺失与拼错是两件事：前者是刻意不配，后者是想配却配错了。
+        """
+        with pytest.raises(SettingsError, match="Unknown route name"):
+            _validate_fusion_settings(
+                RetrievalSettings(
+                    fusion_weights={"dense": 1.0, "sparse": 1.0, "future": 0.5}
+                )
+            )
 
     def test_empty_mapping_accepted(self) -> None:
         """空映射合法 —— 所有路径按缺省 1.0 处理,等价于等权。"""
@@ -156,6 +182,72 @@ class TestBackwardCompatibility:
         assert settings.retrieval.rrf_k == 60
         assert settings.retrieval.fusion_weights == {"dense": 1.0, "sparse": 1.0}
         validate_settings(settings)
+
+
+class TestFusionRouteNameValidation:
+    """``fusion_weights`` 的键名必须是已知路径 —— 拼错的键**静默不生效**。
+
+    此前校验只看值(类型 / 非负 / 非全零),**完全不看键名**。于是
+    ``sparce: 0.75`` 会顺利通过,而 ``Fusion.weight_for()`` 查不到 ``sparse``
+    就回落 ``DEFAULT_ROUTE_WEIGHT``(1.0)—— 校准出来的权重被悄悄作废、
+    sparse 回到等权,系统照常运行、不报错、指标只是变差。
+
+    ⚠️ ``tests/unit/test_no_dead_settings.py`` 那个守卫**抓不到这一类** ——
+    它守的是 dataclass 字段有没有读取点,而这里错的是**字典的键**。
+    两个守卫覆盖的是不同的失效面。
+    """
+
+    def test_misspelled_route_rejected(self) -> None:
+        with pytest.raises(SettingsError, match="Unknown route name"):
+            _validate_fusion_settings(
+                RetrievalSettings(fusion_weights={"dense": 1.0, "sparce": 0.75})
+            )
+
+    def test_trailing_underscore_rejected(self) -> None:
+        """``sparse_`` 这种「看起来对」的拼错最危险 —— 肉眼极难发现。"""
+        with pytest.raises(SettingsError, match="Unknown route name"):
+            _validate_fusion_settings(
+                RetrievalSettings(fusion_weights={"dense": 1.0, "sparse_": 0.75})
+            )
+
+    def test_future_multi_query_route_rejected_for_now(self) -> None:
+        """``sparse_q0`` 目前也被拒 —— 这是**刻意**的。
+
+        引入多路检索时这里要与 ``Fusion.weight_for()`` **同时**放宽成路径族判定。
+        只改一处会重新打开静默失效的口子,所以现在先让它硬失败,
+        逼下一个变更两处一起动。
+        """
+        with pytest.raises(SettingsError, match="Unknown route name"):
+            _validate_fusion_settings(
+                RetrievalSettings(fusion_weights={"dense": 1.0, "sparse_q0": 0.5})
+            )
+
+    def test_error_lists_valid_routes(self) -> None:
+        with pytest.raises(SettingsError) as exc:
+            _validate_fusion_settings(
+                RetrievalSettings(fusion_weights={"bogus": 1.0})
+            )
+        for name in VALID_FUSION_ROUTES:
+            assert name in str(exc.value)
+
+    def test_known_routes_accepted(self) -> None:
+        _validate_fusion_settings(
+            RetrievalSettings(fusion_weights={"dense": 1.0, "sparse": 0.75})
+        )
+
+    def test_subset_of_routes_accepted(self) -> None:
+        """只配一路是合法的 —— 缺失的路走缺省权重。"""
+        _validate_fusion_settings(RetrievalSettings(fusion_weights={"dense": 1.0}))
+
+    def test_constant_matches_types_module(self) -> None:
+        """``VALID_FUSION_ROUTES`` 必须与 ``types.py`` 的路径名常量一致。
+
+        settings.py 刻意不 import types(保持它无内部依赖),所以两处一致性
+        只能靠这条用例守 —— 否则两份字面量可以各自漂移,而漂移是静默的。
+        """
+        from src.core.types import ROUTE_DENSE, ROUTE_SPARSE
+
+        assert VALID_FUSION_ROUTES == frozenset({ROUTE_DENSE, ROUTE_SPARSE})
 
 
 class TestRealConfigWiring:

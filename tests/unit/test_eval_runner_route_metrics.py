@@ -256,6 +256,119 @@ class TestUnmeasuredIsNotZero:
 # ---------------------------------------------------------------------------
 
 
+class TestScoringFailureIsNotZeroFilled:
+    """打分抛异常时,分母按**实际参与条数**算,不补零。
+
+    **这条守的是一个我们自己犯过的矛盾**(2026-08-25 修):``_score_routes`` 的
+    注释写着「不静默补零 —— 那样这一路会被记成全未命中」,而聚合处却照样
+    ``/ total``。于是打分失败的 case 虽然没写键,聚合仍按全样本取均值 ——
+    **在聚合层等于补了零**,均值被压低且无任何标记。
+
+    这与 ``metric_integrity`` 确立的规约直接冲突:**分母被收缩时必须披露,
+    不能悄悄换掉分子。**
+
+    注意要区分两种「没有数」:
+    - 该路检索到空结果 → 计零值,**正常参与分母**(那是真实的检索表现)
+    - 打分本身抛异常 → 不参与分母,并记账
+    """
+
+    class _FlakyEvaluator(CustomEvaluator):
+        """对指定 query 的打分抛错,其余正常。"""
+
+        def __init__(self, settings, fail_on: str) -> None:
+            super().__init__(settings)
+            self._fail_on = fail_on
+
+        def evaluate_retrieval_only(self, query, retrieved_ids, golden_ids):
+            if query == self._fail_on:
+                raise RuntimeError("boom")
+            return super().evaluate_retrieval_only(
+                query=query, retrieved_ids=retrieved_ids, golden_ids=golden_ids
+            )
+
+    def _two_case_setup(self, tmp_path):
+        outcomes = {
+            "q1": SearchOutcome(
+                results=[_r("a")], routes={ROUTE_DENSE: [_r("a")], ROUTE_SPARSE: [_r("a")]}
+            ),
+            "q2": SearchOutcome(
+                results=[_r("b")], routes={ROUTE_DENSE: [_r("b")], ROUTE_SPARSE: [_r("b")]}
+            ),
+        }
+        path = _golden(
+            tmp_path,
+            [{"query": "q1", "expected": ["a"]}, {"query": "q2", "expected": ["b"]}],
+        )
+        return outcomes, path
+
+    def test_mean_uses_participating_count_not_total(self, tmp_path) -> None:
+        """两条 case 全命中、其中一条打分失败 → 均值应为 1.0,不是 0.5。
+
+        补零会给出 0.5 —— 一个看起来像「一半没命中」的数,而真相是
+        「一条算不出来」。这两件事的处置完全不同。
+        """
+        outcomes, path = self._two_case_setup(tmp_path)
+        settings = load_settings()
+
+        report = _run(
+            _runner(
+                StubSearchWithRoutes(outcomes),
+                evaluator=self._FlakyEvaluator(settings, fail_on="q1"),
+            ),
+            path,
+        )
+
+        for route in (ROUTE_DENSE, ROUTE_SPARSE):
+            assert report.aggregate_metrics_by_route[route]["mrr"] == pytest.approx(1.0), (
+                "分母用了 total 而不是实际参与条数 —— 相当于给失败的 case 补了零"
+            )
+
+    def test_incomplete_denominator_is_disclosed(self, tmp_path) -> None:
+        """分母不足必须在报告里**留痕** —— 否则「2 条的均值」与「1 条的均值」
+        长得一模一样。"""
+        outcomes, path = self._two_case_setup(tmp_path)
+        settings = load_settings()
+
+        report = _run(
+            _runner(
+                StubSearchWithRoutes(outcomes),
+                evaluator=self._FlakyEvaluator(settings, fail_on="q1"),
+            ),
+            path,
+        )
+
+        assert report.aggregate_metrics_by_route[ROUTE_DENSE]["_incomplete_cases"] == 1.0
+
+    def test_no_marker_when_all_cases_participate(self, tmp_path) -> None:
+        """全员参与时不输出该标记 —— 健康运行上不制造噪声。"""
+        outcomes, path = self._two_case_setup(tmp_path)
+
+        report = _run(_runner(StubSearchWithRoutes(outcomes)), path)
+
+        assert "_incomplete_cases" not in report.aggregate_metrics_by_route[ROUTE_DENSE]
+
+    def test_empty_route_still_counts_toward_denominator(self, tmp_path) -> None:
+        """空结果与打分失败必须区别对待:空结果照样计入分母。"""
+        outcomes = {
+            "q1": SearchOutcome(
+                results=[_r("a")], routes={ROUTE_DENSE: [_r("a")], ROUTE_SPARSE: []}
+            ),
+            "q2": SearchOutcome(
+                results=[_r("b")], routes={ROUTE_DENSE: [_r("b")], ROUTE_SPARSE: [_r("b")]}
+            ),
+        }
+        path = _golden(
+            tmp_path,
+            [{"query": "q1", "expected": ["a"]}, {"query": "q2", "expected": ["b"]}],
+        )
+
+        report = _run(_runner(StubSearchWithRoutes(outcomes)), path)
+
+        # sparse:q1 空(0.0)+ q2 命中(1.0),分母 2 → 0.5,且**没有**不足标记
+        assert report.aggregate_metrics_by_route[ROUTE_SPARSE]["mrr"] == pytest.approx(0.5)
+        assert "_incomplete_cases" not in report.aggregate_metrics_by_route[ROUTE_SPARSE]
+
+
 class TestSingleRouteEqualsFused:
     """只留一路时，该路的分路径指标必须**等于**此时的融合后指标。
 

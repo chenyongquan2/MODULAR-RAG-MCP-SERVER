@@ -686,6 +686,14 @@ VALID_RERANK_BACKENDS: frozenset[str] = frozenset({"none", "cross_encoder", "llm
 #: 完整的检索意图。那是接口变更,不是加一个枚举值。
 VALID_QUERY_REWRITE_STRATEGIES: frozenset[str] = frozenset({"none", "synonym"})
 
+#: 合法的融合路径名 —— ``retrieval.fusion_weights`` 的键必须取自这里。
+#:
+#: 值刻意与 :data:`src.core.types.ROUTE_DENSE` / ``ROUTE_SPARSE`` 一致。
+#: 这里不 import 那两个常量是为了不让 ``src/core/settings.py`` 依赖 ``types``
+#: (本模块被极早 import,保持它无内部依赖);由
+#: ``tests/unit/test_settings_retrieval.py`` 的用例守住两处一致。
+VALID_FUSION_ROUTES: frozenset[str] = frozenset({"dense", "sparse"})
+
 
 @dataclass
 class MCPServerSettings:
@@ -1236,6 +1244,30 @@ def _validate_fusion_settings(retrieval: RetrievalSettings) -> None:
             "Every fused score would collapse to 0 and ordering would become "
             "arbitrary, with no error raised at runtime. "
             "Set at least one route to a positive weight"
+        )
+
+    # 键名必须是已知路径 —— 拼错的键**静默不生效**。
+    #
+    # 2026-08-25 补:此前这里只校验值(类型 / 非负 / 非全零),**完全不看键名**。
+    # 于是 `sparce: 0.75` 或 `sparse_: 0.75` 会顺利通过校验,而
+    # `Fusion.weight_for()` 查不到 "sparse" 就回落 DEFAULT_ROUTE_WEIGHT(1.0)——
+    # 结果是校准出来的权重被悄悄作废、sparse 回到等权,系统照常运行、不报错、
+    # 指标只是变差。这正是本项目的招牌病,而且是配置层最容易中的一种。
+    #
+    # 注意 tests/unit/test_no_dead_settings.py 那个守卫**抓不到这一类** ——
+    # 它守的是 dataclass 字段有没有读取点,而这里错的是**字典的键**。
+    #
+    # ⚠️ 引入多路检索(Multi-Query)时这里要放宽成「路径族」判定
+    #    (`sparse_q0` 属于 `sparse` 族),与 `Fusion.weight_for()` 的改动配套 ——
+    #    两处必须同时改,只改一处会重新打开这个静默失效的口子。
+    unknown_routes = sorted(set(weights) - VALID_FUSION_ROUTES)
+    if unknown_routes:
+        raise SettingsError(
+            f"Unknown route name(s) in retrieval.fusion_weights: {unknown_routes}. "
+            f"Expected one of: {sorted(VALID_FUSION_ROUTES)}. "
+            "A misspelled route name would pass validation silently and then fall "
+            "back to the default weight (1.0) at fusion time - voiding the "
+            "calibrated value with no error and no log."
         )
 
 

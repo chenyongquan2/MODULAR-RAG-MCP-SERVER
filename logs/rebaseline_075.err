@@ -40,3 +40,105 @@
 2026-08-25 14:24:55 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
 2026-08-25 14:24:56 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
 2026-08-25 14:24:56 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.6s (avg 567.3ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:18<00:56, 18.96s/it]2026-08-25 14:26:11 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:26:12 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:26:12 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.9s (avg 882.2ms per text)
+2026-08-25 14:26:12 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:26:12 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:26:12 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.4s (avg 116.7ms per text)
+Evaluating:  50%|█████     | 2/4 [01:04<01:08, 34.38s/it]Evaluating:  75%|███████▌  | 3/4 [01:42<00:36, 36.25s/it]Exception raised in Job[0]: TimeoutError()
+Evaluating: 100%|██████████| 4/4 [03:00<00:00, 52.50s/it]Evaluating: 100%|██████████| 4/4 [03:00<00:00, 45.00s/it]
+2026-08-25 14:28:27 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:28:34 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:28:34 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 6.1s (avg 6101.7ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:11<00:35, 11.74s/it]2026-08-25 14:29:49 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:29:50 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:29:50 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.9s (avg 862.0ms per text)
+2026-08-25 14:29:50 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:29:50 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:29:50 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.5s (avg 160.8ms per text)
+Evaluating:  50%|█████     | 2/4 [00:54<00:59, 29.87s/it]Evaluating:  75%|███████▌  | 3/4 [01:22<00:29, 29.02s/it]Evaluating: 100%|██████████| 4/4 [02:51<00:00, 52.74s/it]Evaluating: 100%|██████████| 4/4 [02:51<00:00, 42.85s/it]
+2026-08-25 14:31:52 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:31:53 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:31:53 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.6s (avg 628.0ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:38<01:56, 38.90s/it]2026-08-25 14:33:42 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:33:43 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:33:43 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.3s (avg 1286.0ms per text)
+2026-08-25 14:33:43 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:33:44 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:33:44 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.6s (avg 210.6ms per text)
+Evaluating:  50%|█████     | 2/4 [01:43<01:47, 53.83s/it]Evaluating: 100%|██████████| 4/4 [02:37<00:00, 37.21s/it]Evaluating: 100%|██████████| 4/4 [02:37<00:00, 39.46s/it]
+2026-08-25 14:34:43 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:34:43 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:34:43 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 523.2ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]No statements were generated from the answer.
+Evaluating:  25%|██▌       | 1/4 [00:21<01:04, 21.55s/it]2026-08-25 14:35:37 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:35:39 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:35:39 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.6s (avg 1584.5ms per text)
+2026-08-25 14:35:39 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:35:39 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:35:39 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.5s (avg 158.0ms per text)
+Evaluating:  50%|█████     | 2/4 [00:44<00:44, 22.39s/it]Evaluating:  75%|███████▌  | 3/4 [00:44<00:12, 12.29s/it]Evaluating: 100%|██████████| 4/4 [02:20<00:00, 45.27s/it]Evaluating: 100%|██████████| 4/4 [02:20<00:00, 35.16s/it]
+2026-08-25 14:37:20 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:37:25 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:37:25 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 4.9s (avg 4887.2ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:18<00:55, 18.44s/it]2026-08-25 14:38:31 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:38:32 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:38:32 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.6s (avg 637.6ms per text)
+2026-08-25 14:38:32 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:38:32 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:38:32 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.2s (avg 80.5ms per text)
+Evaluating:  50%|█████     | 2/4 [00:49<00:52, 26.09s/it]Evaluating:  75%|███████▌  | 3/4 [01:29<00:32, 32.10s/it]Evaluating: 100%|██████████| 4/4 [01:53<00:00, 28.85s/it]Evaluating: 100%|██████████| 4/4 [01:53<00:00, 28.25s/it]
+2026-08-25 14:39:40 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:39:41 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:39:41 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.4s (avg 431.2ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:10<00:30, 10.14s/it]2026-08-25 14:40:44 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:40:45 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:40:45 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.9s (avg 937.0ms per text)
+2026-08-25 14:40:45 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:40:45 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:40:45 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.2s (avg 60.2ms per text)
+Evaluating:  50%|█████     | 2/4 [00:51<00:57, 28.74s/it]Evaluating:  75%|███████▌  | 3/4 [01:22<00:29, 29.54s/it]Evaluating: 100%|██████████| 4/4 [02:36<00:00, 46.99s/it]Evaluating: 100%|██████████| 4/4 [02:36<00:00, 39.03s/it]
+2026-08-25 14:42:34 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:42:35 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:42:35 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.6s (avg 621.2ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]2026-08-25 14:43:33 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:43:34 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:43:34 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.0s (avg 1023.2ms per text)
+2026-08-25 14:43:34 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:43:34 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:43:34 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.2s (avg 75.6ms per text)
+Evaluating:  25%|██▌       | 1/4 [00:49<02:28, 49.60s/it]No statements were generated from the answer.
+Evaluating:  75%|███████▌  | 3/4 [00:55<00:14, 14.90s/it]Exception raised in Job[2]: TimeoutError()
+Evaluating: 100%|██████████| 4/4 [03:00<00:00, 52.97s/it]Evaluating: 100%|██████████| 4/4 [03:00<00:00, 45.00s/it]
+2026-08-25 14:45:57 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:45:57 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:45:57 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 494.6ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:09<00:29,  9.73s/it]2026-08-25 14:46:30 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:46:31 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:46:31 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 549.5ms per text)
+2026-08-25 14:46:31 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:46:31 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:46:31 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.2s (avg 57.8ms per text)
+Evaluating:  50%|█████     | 2/4 [00:27<00:28, 14.37s/it]Evaluating:  75%|███████▌  | 3/4 [00:33<00:10, 10.53s/it]Evaluating: 100%|██████████| 4/4 [01:52<00:00, 37.47s/it]Evaluating: 100%|██████████| 4/4 [01:52<00:00, 28.02s/it]
+2026-08-25 14:48:00 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:48:01 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:48:01 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 496.1ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:09<00:29,  9.97s/it]2026-08-25 14:48:33 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:48:33 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:48:33 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 492.7ms per text)
+2026-08-25 14:48:33 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:48:34 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:48:34 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.2s (avg 60.2ms per text)
+Evaluating:  50%|█████     | 2/4 [00:24<00:25, 12.57s/it]Evaluating:  75%|███████▌  | 3/4 [00:41<00:14, 14.74s/it]Evaluating: 100%|██████████| 4/4 [01:09<00:00, 19.82s/it]Evaluating: 100%|██████████| 4/4 [01:09<00:00, 17.32s/it]
+2026-08-25 14:49:23 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:49:23 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:49:23 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 527.9ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:14<00:43, 14.39s/it]No statements were generated from the answer.
+Evaluating:  50%|█████     | 2/4 [00:16<00:14,  7.17s/it]2026-08-25 14:50:09 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 14:50:10 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 14:50:10 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.0s (avg 1022.9ms per text)
+2026-08-25 14:50:10 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 14:50:10 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 14:50:10 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.3s (avg 96.8ms per text)
+Evaluating:  75%|███████▌  | 3/4 [00:37<00:13, 13.61s/it]

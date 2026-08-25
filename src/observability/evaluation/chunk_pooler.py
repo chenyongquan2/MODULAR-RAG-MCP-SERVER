@@ -48,9 +48,17 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-# 三条召回路径的名字。作为 contributed_by 的取值域,集中定义以免各处散落字面量。
-ROUTE_DENSE = "dense"
-ROUTE_SPARSE = "sparse"
+# 三条召回路径的名字。作为 contributed_by 的取值域。
+#
+# ⚠️ dense / sparse 从 src.core.types 导入,**不在这里另写一份字面量**。
+# 2026-08-25 修:此前这里有独立的 `ROUTE_DENSE = "dense"`,而 types.py 也有一份 ——
+# 两份定义同一批字符串,可以各自漂移,而漂移的后果是静默的:池化记的
+# contributed_by 与融合用的路径名对不上,统计看起来正常但语义已经错位。
+#
+# rerank 只在池化侧有意义(它不是一条能扩大候选池的检索路径,构造上只能重新
+# 标记已在池中的 chunk),所以留在这里。
+from src.core.types import ROUTE_DENSE, ROUTE_SPARSE  # noqa: E402  (见上方说明)
+
 ROUTE_RERANK = "rerank"
 
 

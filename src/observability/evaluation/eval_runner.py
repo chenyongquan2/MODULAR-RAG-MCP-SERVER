@@ -432,14 +432,45 @@ class EvalRunner:
                         route_names.append(name)
             for name in route_names:
                 sums: dict[str, float] = {}
+                counts: dict[str, int] = {}
                 for case_result in results:
                     per_case = case_result.route_metrics.get(name, {})
                     for metric_name, value in per_case.items():
                         sums[metric_name] = sums.get(metric_name, 0.0) + float(value)
-                if total:
-                    aggregate_metrics_by_route[name] = {
-                        metric_name: value / total for metric_name, value in sums.items()
-                    }
+                        counts[metric_name] = counts.get(metric_name, 0) + 1
+                # 分母用**该指标实际参与的条数**,不是 total。
+                #
+                # 2026-08-25 修:此前这里除以 total,与 _score_routes 的注释
+                # (「不静默补零 —— 那样这一路会被记成全未命中」)**直接矛盾** ——
+                # 打分抛异常时那条 case 不写键,但聚合仍按全样本取均值,
+                # **在聚合层等于补了零**,均值被压低且无任何标记。
+                #
+                # 这正是本项目招牌病的形态,而且是在一个专门为消灭它而立的变更里
+                # 犯的。同一份报告里 metric_integrity 早就确立了正确做法:
+                # **分母被收缩时必须披露,不能悄悄换掉分子**。
+                for metric_name, value in sums.items():
+                    n = counts[metric_name]
+                    aggregate_metrics_by_route.setdefault(name, {})[metric_name] = (
+                        value / n
+                    )
+                # 有 case 没参与时显式记账 —— 缺失必须能被看见,否则「41 条的均值」
+                # 与「37 条的均值」长得一模一样。
+                missing = {
+                    metric_name: total - n
+                    for metric_name, n in counts.items()
+                    if n < total
+                }
+                if missing:
+                    logger.warning(
+                        "分路径聚合分母不足 route=%s:%s(总 %d 条)—— "
+                        "均值按实际参与条数算,不补零",
+                        name,
+                        missing,
+                        total,
+                    )
+                    aggregate_metrics_by_route.setdefault(name, {})[
+                        "_incomplete_cases"
+                    ] = float(max(missing.values()))
 
         # FR-015: by-tag 切片聚合 (content_type / difficulty 两维)
         aggregate_metrics_by_tag = self._aggregate_by_tag(
@@ -744,8 +775,13 @@ class EvalRunner:
     ) -> dict[str, dict[str, float]]:
         """对每一路各打一次分,复用与融合后指标**同一套**公式。
 
-        某一路无结果时按「未命中」计零值 —— 不跳过该 case,否则该路的分母会
-        悄悄变小、均值被幸存者偏差抬高。
+        两种「没有数」要严格区分:
+
+        - **该路检索到空结果** —— 按「未命中」计零值,正常参与分母。
+          这是真实的检索表现,跳过它会让分母悄悄变小、均值被幸存者偏差抬高。
+        - **打分本身抛异常** —— 不写该路的键。聚合处会按**实际参与条数**取均值
+          并记账(见 ``run()`` 里的分路径聚合),**不补零**。补零会把
+          「算不出来」伪装成「全未命中」,比缺失更容易被误读。
         """
         scored: dict[str, dict[str, float]] = {}
         for name, items in routes.items():

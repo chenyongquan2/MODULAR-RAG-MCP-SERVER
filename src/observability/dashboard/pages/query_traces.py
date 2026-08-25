@@ -70,7 +70,13 @@ def render() -> None:
     # 准备数据表格
     table_data = []
     for trace in traces:
-        query_text = trace.get_stage_data("query_processing", {}).get("query", "-")
+        # get_stage_data 只接受一个参数,且未命中时返回 None ——
+        # 此前这里多传了一个 {} 当默认值,直接抛 TypeError。
+        # 2026-08-25 修:该行在 traces 非空时必经,也就是说这个页面
+        # **只要有 trace 就打不开**,而没人报过 —— 它坏在 Streamlit 的
+        # 异常边界里,页面显示报错而不是进程崩掉。
+        _qp = trace.get_stage_data("query_processing") or {}
+        query_text = _qp.get("query", "-")
         truncated_query = _truncate_text(query_text, max_len=40)
 
         table_data.append({
@@ -97,7 +103,11 @@ def render() -> None:
     st.subheader("📊 详细分析")
 
     # 选择要查看的记录
-    trace_options = [f"{t.trace_id[:8]}... - {t.get_stage_data('query_processing', {}).get('query', 'N/A')}" for t in traces]
+    trace_options = [
+        f"{t.trace_id[:8]}... - "
+        f"{(t.get_stage_data('query_processing') or {}).get('query', 'N/A')}"
+        for t in traces
+    ]
     selected_idx = st.selectbox(
         "选择要查看的记录",
         range(len(trace_options)),
