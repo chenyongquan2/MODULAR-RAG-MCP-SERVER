@@ -85,6 +85,13 @@ class EvalCaseResult:
     # 失败原因(``DegradationReason`` 的值)。只对 NaN 的 metric 有条目;
     # 未被 evaluator 上报原因的 NaN 在聚合时回落为 ``unknown``。
     degradation_reasons: dict[str, str] = field(default_factory=dict)
+    # change per-route-metrics-and-synonym-rewrite:该 case 上**每一路各自**的
+    # 纯计算类检索指标(路径名 -> 指标名 -> 值)。
+    #
+    # 为什么需要它:融合后的指标量不出单路的改善。sparse 的生效权重只有 dense
+    # 的十分之一,只作用于 sparse 的改进在融合后几乎看不见 —— 会得出「没有效果」
+    # 的错误结论,而改善其实真的发生了,只是被融合口径量丢了。
+    route_metrics: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典(tags 为 None 时不输出该字段)。"""
@@ -96,6 +103,10 @@ class EvalCaseResult:
         # metric_integrity 才是恒在字段,case 级没必要每条都带个空壳)
         if not result.get("degradation_reasons"):
             result.pop("degradation_reasons", None)
+        # 未测量分路径时不输出空壳 —— 报告级的 aggregate_metrics_by_route 才是
+        # 「这次到底有没有测分路径」的判据。
+        if not result.get("route_metrics"):
+            result.pop("route_metrics", None)
         return result
 
 
@@ -155,6 +166,15 @@ class EvalReport:
     # 记一次),回答不了「faithfulness 这个 0.8887 是几条算出来的」——
     # metric_integrity 才能。两者并存:前者向后兼容,后者是新的真相来源。
     metric_integrity: dict[str, MetricIntegrity] = field(default_factory=dict)
+    # change per-route-metrics-and-synonym-rewrite:按**检索路径**分别披露的
+    # 纯计算类指标(路径名 -> 指标名 -> 聚合值)。
+    #
+    # 与 metric_integrity 是同一类要求的两个维度:那个防止**分母**被静默收缩,
+    # 这个防止**某一路的改善**被融合口径静默稀释。
+    #
+    # 空字典 = 本次没有测分路径(检索引擎未暴露分路径通道,或评估后端不支持
+    # 纯计算类打分)。刻意不填零值 —— 那会让「没测」和「测了但全零」长得一样。
+    aggregate_metrics_by_route: dict[str, dict[str, float]] = field(default_factory=dict)
     aggregate_metrics_by_tag: dict[str, dict[str, dict[str, Optional[float]]]] = field(
         default_factory=dict
     )
@@ -205,6 +225,8 @@ class EvalReport:
         result["metric_integrity"] = {
             name: integrity.to_dict() for name, integrity in self.metric_integrity.items()
         }
+        if self.aggregate_metrics_by_route:
+            result["aggregate_metrics_by_route"] = self.aggregate_metrics_by_route
         if self.aggregate_metrics_by_tag:
             result["aggregate_metrics_by_tag"] = self.aggregate_metrics_by_tag
         # 仅在 baseline 信息存在时才输出 delta 字段,保持向后兼容
@@ -305,6 +327,11 @@ class EvalRunner:
         # (configurable via settings.evaluation.chunk_id_validation,默认开启)
         self._validate_chunk_ids_exist(cases, filters)
 
+        # 分路径指标要同时具备两个条件:检索引擎能交出各路结果、评估后端能只凭
+        # 有序 id 打分。任一不满足就**不产出**分路径指标(而不是填零值)——
+        # 「没测」和「测了但全零」必须长得不一样,这是本项目反复踩过的坑。
+        route_capable = self._detect_route_capability()
+
         results: list[EvalCaseResult] = []
         # 维护三组聚合状态:
         # 1. all_metric_keys:所有 case 中出现过的 metric key 全集
@@ -327,17 +354,27 @@ class EvalRunner:
 
         for case in cases:
             try:
-                retrieval_results = self._hybrid_search.search(
-                    query=case.query,
-                    top_k=effective_top_k,
-                    filters=filters,
-                )
+                if route_capable:
+                    outcome = self._hybrid_search.search_with_routes(
+                        query=case.query,
+                        top_k=effective_top_k,
+                        filters=filters,
+                    )
+                    retrieval_results = outcome.results
+                    routes = outcome.routes
+                else:
+                    retrieval_results = self._hybrid_search.search(
+                        query=case.query,
+                        top_k=effective_top_k,
+                        filters=filters,
+                    )
+                    routes = {}
             except Exception as exc:
                 raise RuntimeError(
                     f"failed to run retrieval for query '{case.query}': {exc}"
                 ) from exc
 
-            case_result = self._evaluate_case(case, retrieval_results)
+            case_result = self._evaluate_case(case, retrieval_results, routes=routes)
             results.append(case_result)
 
             if case_result.hit:
@@ -380,6 +417,29 @@ class EvalRunner:
             aggregate_metrics[metric_name] = (
                 (sum(values) / len(values)) if values else float("nan")
             )
+
+        # 分路径聚合:对每一路把各 case 的指标取均值。
+        #
+        # 分母恒为**全部 case 数** —— 某一路在某条 case 上无结果时按「未命中」
+        # 计入(零值),不跳过。跳过会让分母悄悄变小、均值被幸存者偏差抬高,
+        # 正是 RAGAS 降级那个坑的形态。
+        aggregate_metrics_by_route: dict[str, dict[str, float]] = {}
+        if route_capable:
+            route_names: list[str] = []
+            for case_result in results:
+                for name in case_result.route_metrics:
+                    if name not in route_names:
+                        route_names.append(name)
+            for name in route_names:
+                sums: dict[str, float] = {}
+                for case_result in results:
+                    per_case = case_result.route_metrics.get(name, {})
+                    for metric_name, value in per_case.items():
+                        sums[metric_name] = sums.get(metric_name, 0.0) + float(value)
+                if total:
+                    aggregate_metrics_by_route[name] = {
+                        metric_name: value / total for metric_name, value in sums.items()
+                    }
 
         # FR-015: by-tag 切片聚合 (content_type / difficulty 两维)
         aggregate_metrics_by_tag = self._aggregate_by_tag(
@@ -427,6 +487,7 @@ class EvalRunner:
             acceptance_status=acceptance_status,
             degraded_case_count=degraded_case_count,
             metric_integrity=metric_integrity,
+            aggregate_metrics_by_route=aggregate_metrics_by_route,
             aggregate_metrics_by_tag=aggregate_metrics_by_tag,
         )
 
@@ -641,10 +702,76 @@ class EvalRunner:
     # 单 case 评估
     # ------------------------------------------------------------------
 
+    def _detect_route_capability(self) -> bool:
+        """本次运行能否产出分路径指标。
+
+        两个条件缺一不可:
+        1. 检索引擎提供 ``search_with_routes()``(能交出各路各自的结果);
+        2. 评估后端支持只凭有序 id 打分(纯计算类指标)。
+
+        任一不满足就返回 False,报告里**不出现**分路径字段 —— 刻意不填零值,
+        因为那会让「没测」和「测了但全零」长得一模一样。日志会说明缺的是哪一半,
+        这样「它没生效的时候我怎么会知道」这个问题有答案。
+
+        ⚠️ 能力探测一律用 ``is True`` 严格判断:测试里的 ``Mock()`` 对任何方法
+        调用都返回真值 Mock,普通真值判断会把替身误判成「支持」。
+        """
+        has_routes = callable(getattr(self._hybrid_search, "search_with_routes", None))
+        probe = getattr(self._evaluator, "supports_retrieval_only", None)
+        evaluator_ok = False
+        if probe is not None:
+            try:
+                evaluator_ok = probe() is True
+            except Exception:
+                evaluator_ok = False
+
+        if not has_routes:
+            logger.info(
+                "分路径指标未产出:检索引擎 %s 没有 search_with_routes()",
+                type(self._hybrid_search).__name__,
+            )
+        elif not evaluator_ok:
+            logger.info(
+                "分路径指标未产出:评估后端 %s 不支持只凭有序 id 打分",
+                type(self._evaluator).__name__,
+            )
+        return has_routes and evaluator_ok
+
+    def _score_routes(
+        self,
+        case: EvalCase,
+        routes: dict[str, list[RetrievalResult]],
+    ) -> dict[str, dict[str, float]]:
+        """对每一路各打一次分,复用与融合后指标**同一套**公式。
+
+        某一路无结果时按「未命中」计零值 —— 不跳过该 case,否则该路的分母会
+        悄悄变小、均值被幸存者偏差抬高。
+        """
+        scored: dict[str, dict[str, float]] = {}
+        for name, items in routes.items():
+            ids = [r.chunk_id for r in items]
+            try:
+                scored[name] = {
+                    key: float(value)
+                    for key, value in self._evaluator.evaluate_retrieval_only(
+                        query=case.query,
+                        retrieved_ids=ids,
+                        golden_ids=case.expected_chunk_ids,
+                    ).items()
+                }
+            except Exception as exc:
+                # 分路径指标是观测手段,不该让整轮评估失败。但也不静默补零 ——
+                # 那样这一路会被记成「全未命中」,比缺失更容易被误读。
+                logger.warning(
+                    "分路径打分失败 route=%s query=%r: %s", name, case.query, exc
+                )
+        return scored
+
     def _evaluate_case(
         self,
         case: EvalCase,
         retrieval_results: list[RetrievalResult],
+        routes: Optional[dict[str, list[RetrievalResult]]] = None,
     ) -> EvalCaseResult:
         """评估单条测试用例并返回结果对象。
 
@@ -718,6 +845,7 @@ class EvalRunner:
             ground_truth=case.ground_truth,
             tags=case.tags,
             degradation_reasons=degradation_reasons,
+            route_metrics=self._score_routes(case, routes) if routes else {},
         )
 
     def _collect_degradation_reasons(self, metrics: dict[str, float]) -> dict[str, str]:

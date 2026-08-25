@@ -132,6 +132,50 @@ class CompositeEvaluator(BaseEvaluator):
                 merged[key] = 0.0
         return merged
 
+    def _retrieval_only_backend(self) -> Optional[BaseEvaluator]:
+        """挑出第一个支持「只凭有序 id 打分」的子评估器,没有则 None。
+
+        ⚠️ 用 ``is True`` **严格判断**,不是普通真值判断:测试里常用 ``Mock()``,
+        而 ``Mock()`` 的任何方法调用都返回真值 Mock —— 普通判断会把替身误判成
+        「支持该能力」,接着在下游炸成降级。本项目为此让 6 个既有用例全红过一次。
+        """
+        for evaluator in self._evaluators:
+            probe = getattr(evaluator, "supports_retrieval_only", None)
+            if probe is None:
+                continue
+            try:
+                if probe() is True:
+                    return evaluator
+            except Exception:  # 后端探测本身出错不应让整次评估失败
+                continue
+        return None
+
+    def supports_retrieval_only(self) -> bool:
+        """只要有一个子评估器支持,组合就支持。"""
+        return self._retrieval_only_backend() is not None
+
+    def evaluate_retrieval_only(
+        self,
+        query: str,
+        retrieved_ids: list[str],
+        golden_ids: list[str],
+    ) -> dict[str, float]:
+        """转发给第一个支持该能力的子评估器。
+
+        **不加评估器前缀** —— 分路径指标的外层键已经是路径名(``dense`` /
+        ``sparse``),再套一层 ``custom__`` 只是冗余。而且这里天然只有一个后端
+        在出数,不存在 key 冲突。
+        """
+        backend = self._retrieval_only_backend()
+        if backend is None:
+            raise NotImplementedError(
+                "no configured evaluator supports retrieval-only scoring; "
+                "check supports_retrieval_only() before calling."
+            )
+        return backend.evaluate_retrieval_only(
+            query=query, retrieved_ids=retrieved_ids, golden_ids=golden_ids
+        )
+
     def get_last_degradation_reasons(self) -> dict[str, str]:
         """汇总各子评估器最近一次的降级原因,并加上与 metric 一致的前缀。
 

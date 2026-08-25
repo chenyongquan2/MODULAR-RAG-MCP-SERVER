@@ -20,6 +20,56 @@ def _log2(x: float) -> float:
     """
     return _math.log2(x) if x > 1.0 else 1.0
 
+
+def _compute_retrieval_metrics(
+    retrieved_ids: list[str], golden_ids: list[str]
+) -> dict[str, float]:
+    """四项纯计算类检索指标 —— **全项目唯一的一份公式**。
+
+    抽成模块级纯函数是为了让 :meth:`CustomEvaluator.evaluate` 与
+    :meth:`CustomEvaluator.evaluate_retrieval_only`(分路径打分用)共用同一份实现。
+    两个入口各写一份的话必然漂移,而这种漂移是**静默的** —— 融合后指标与分路径
+    指标对不上,但谁都不会报错,只会让人以为是检索行为的差异。
+
+    Args:
+        retrieved_ids: 检索结果的 chunk_id,**顺序即名次**。
+        golden_ids: 金标的期望 chunk_id(非空,由调用方保证)。
+
+    Returns:
+        ``hit_rate`` / ``mrr`` / ``recall`` / ``ndcg`` 四项。
+    """
+    golden_set = set(golden_ids)
+    retrieved_set = set(retrieved_ids)
+
+    # Hit Rate: 1.0 if any overlap, 0.0 otherwise
+    hit_rate = 1.0 if (golden_set & retrieved_set) else 0.0
+
+    # MRR: Find first golden ID in retrieved list
+    mrr = 0.0
+    for rank, chunk_id in enumerate(retrieved_ids, start=1):
+        if chunk_id in golden_set:
+            mrr = 1.0 / rank
+            break
+
+    # Recall@K：命中的 golden IDs 占全部 golden IDs 的比例
+    # 衡量"应该召回的是否都召回了"，是 RAG 最核心的检索指标之一
+    recall = len(golden_set & retrieved_set) / len(golden_set)
+
+    # NDCG@K：Normalized Discounted Cumulative Gain
+    # 在 Hit Rate 基础上进一步考虑相关文档的排名位置：排名越靠前得分越高
+    # DCG = Σ rel_i / log2(rank_i + 1)，其中 rel_i=1 表示该位置为相关文档
+    dcg = sum(
+        1.0 / _log2(rank + 1)
+        for rank, chunk_id in enumerate(retrieved_ids, start=1)
+        if chunk_id in golden_set
+    )
+    # Ideal DCG：假设所有 golden IDs 都在最靠前的位置
+    ideal_hits = min(len(golden_set), len(retrieved_ids))
+    ideal_dcg = sum(1.0 / _log2(rank + 1) for rank in range(1, ideal_hits + 1))
+    ndcg = (dcg / ideal_dcg) if ideal_dcg > 0.0 else 0.0
+
+    return {"hit_rate": hit_rate, "mrr": mrr, "recall": recall, "ndcg": ndcg}
+
 if TYPE_CHECKING:
     from src.core.settings import Settings
     from src.core.trace.trace_context import TraceContext
@@ -112,43 +162,44 @@ class CustomEvaluator(BaseEvaluator):
             self._add_trace_metadata(trace, "query", query)
 
         # Calculate metrics
-        golden_set = set(golden_ids)
-        retrieved_set = set(retrieved_ids)
-
-        # Hit Rate: 1.0 if any overlap, 0.0 otherwise
-        hit_rate = 1.0 if (golden_set & retrieved_set) else 0.0
-
-        # MRR: Find first golden ID in retrieved list
-        mrr = 0.0
-        for rank, chunk_id in enumerate(retrieved_ids, start=1):
-            if chunk_id in golden_set:
-                mrr = 1.0 / rank
-                break
-
-        # Recall@K：命中的 golden IDs 占全部 golden IDs 的比例
-        # 衡量"应该召回的是否都召回了"，是 RAG 最核心的检索指标之一
-        recall = len(golden_set & retrieved_set) / len(golden_set)
-
-        # NDCG@K：Normalized Discounted Cumulative Gain
-        # 在 Hit Rate 基础上进一步考虑相关文档的排名位置：排名越靠前得分越高
-        # DCG = Σ rel_i / log2(rank_i + 1)，其中 rel_i=1 表示该位置为相关文档
-        dcg = sum(
-            1.0 / _log2(rank + 1)
-            for rank, chunk_id in enumerate(retrieved_ids, start=1)
-            if chunk_id in golden_set
-        )
-        # Ideal DCG：假设所有 golden IDs 都在最靠前的位置
-        ideal_hits = min(len(golden_set), len(retrieved_ids))
-        ideal_dcg = sum(1.0 / _log2(rank + 1) for rank in range(1, ideal_hits + 1))
-        ndcg = (dcg / ideal_dcg) if ideal_dcg > 0.0 else 0.0
-
-        metrics = {"hit_rate": hit_rate, "mrr": mrr, "recall": recall, "ndcg": ndcg}
+        metrics = _compute_retrieval_metrics(retrieved_ids, golden_ids)
 
         # Add trace metadata for results
         if trace:
             self._add_trace_metadata(trace, "metrics", metrics)
 
         return metrics
+
+    def supports_retrieval_only(self) -> bool:
+        """本后端是纯计算类,只凭有序 id 就能打分。"""
+        return True
+
+    def evaluate_retrieval_only(
+        self,
+        query: str,
+        retrieved_ids: list[str],
+        golden_ids: list[str],
+    ) -> dict[str, float]:
+        """只凭有序的检索结果 id 打分(分路径指标用)。
+
+        与 :meth:`evaluate` **共用同一份公式**(``_compute_retrieval_metrics``),
+        因此分路径指标与融合后指标天然同口径 —— 这正是「只留一路时两者应当相等」
+        那条自检能成立的前提。
+
+        与 :meth:`evaluate` 的唯一区别是对**空检索结果**的处理:这里返回零值而不是
+        抛错。分路径场景下「某一路没检索到东西」是正常情形(例如 sparse 对某条
+        query 无命中),必须按未命中计入分母,**不能跳过这条 case** ——
+        跳过会让分母悄悄变小、均值被幸存者偏差抬高,正是本项目在 RAGAS 降级上
+        踩过的那个坑。
+        """
+        if not golden_ids:
+            raise ValueError(
+                "Missing required field: golden_ids cannot be empty. "
+                "Please provide at least one golden chunk ID."
+            )
+        if not retrieved_ids:
+            return self.zero_metrics()
+        return _compute_retrieval_metrics(retrieved_ids, golden_ids)
 
     def zero_metrics(self) -> dict[str, float]:
         """返回空检索时的零值模板，保证所有 case_results 的 metric key 保持一致。
