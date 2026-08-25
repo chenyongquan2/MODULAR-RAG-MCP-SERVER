@@ -1,0 +1,36 @@
+> 全部命令在 `.venv` 下运行，**脚本一律加 `-u`**（stdout 管道下全缓冲会伪装成卡死）。
+> 每条任务 = 一次 `pytest tests/unit -v` 全绿的提交，commit message 引用任务号（如 `refs T-1.1`）。
+>
+> **顺序不可调**：§1 是 §2 的度量前提。先实现改写再补指标，等于用一把量不出它的尺子去验它 —— 那正是本变更要消灭的失败模式。
+
+## 1. 分路径评估口径（硬前置）
+
+- [ ] 1.1 `HybridSearch` 新增返回「融合结果 + 各路原始有序结果」的通道，`search()` 原样保留并转调它（design D1）。**不改 `search()` 的签名与返回类型** —— MCP 与 `scripts/query.py` 都在用。配套单测：两路都有结果 / 某一路为空 / 两路皆空，且断言 `search()` 的返回与改造前逐条相同（这条是防回归的关键）
+
+- [ ] 1.2 `EvalRunner` 消费上述通道，为每一路复用**同一套**指标函数产出 `hit_rate` / `mrr` / `ndcg` / `recall`，写进报告（design D2）。**不得为分路径另写一套打分公式** —— 两套必然漂移且漂移是静默的。某一路在某条 case 上无结果时按「未命中」计入，分母仍是全部用例数。配套单测覆盖：分路径与融合后指标并存且可区分、空路径不被跳过、字段在只启用纯计算类指标时照常产出
+
+- [ ] 1.3 **自检用例（本组的验收判据）**：把 `fusion_weights` 配成只留一路（其余为 0），断言该路的分路径指标**等于**此时的融合后指标。这是它们在定义上应当相等的情形 —— 没有这条，分路径指标算错了也没人会知道
+
+- [ ] 1.4 用当前生产配置（`strategy` 尚未引入，`sparse=0.1`）在 `golden_test_set_en_v2.json` 上跑一次，**记录 dense 单路与 sparse 单路的四项基准数**。这是 §2 唯一的对照基线。跑法：`--lang en --no-generate-answers` + `backends: [custom]`（纯检索改动，带答案生成会把耗时推到小时级并引入无关方差）
+
+## 2. 同义词/术语扩展改写
+
+- [ ] 2.1 `src/core/settings.py` 新增 `QueryRewriteSettings`（`strategy` / `synonym_dict`），`load_settings()` 校验：策略取值合法、`strategy != none` 时词表存在且可解析且值为列表。违规抛 **`SettingsError`**（本模块既有约定，**不是 `ValueError`**）。`config/settings.yaml` 写入并注释清楚「刻意不设隐式默认值」的理由。配套单测覆盖通过与四种拒绝（未知策略 / 词表路径为空 / 文件不存在 / 内容不可解析），且「未启用时不校验词表」必须有用例
+
+- [ ] 2.2 按既有可插拔模式新增改写器基类 + 工厂 + `synonym` 实现（硬约束 1：`src/core/` 不得 import 具体实现、不得出现 `if strategy == ...`）。词表双向展开（design D5）。配套单测：命中术语 / 命中缩写 / 命中大小写变体 / 未命中任何词 / 空词表
+
+- [ ] 2.3 挂载到 `QueryProcessor.process()`，位置在 `_extract_keywords()` **之后**（design D3）。扩展词与原关键词**一起过 `src/core/text/tokenizer.py`** —— 禁止另起一套切分。**只改 `keywords`（sparse 的输入），不改喂给 dense 的 `original_query`**。让既有死字段 `ProcessedQuery.rewritten_query` 变活，不新增平行字段。配套单测：扩展词确实经过统一切分（与索引端逐条对齐）、`strategy: none` 时 `ProcessedQuery` 与改造前逐条相同
+
+- [ ] 2.4 改写留痕打到既有的显式 `trace` 参数上：本次生效的策略名 + 改写前后的查询词。**未改写时同样留痕**（省略会让「没启用」与「启用了但没匹配到词」无法区分）。配套单测覆盖两种情形
+
+- [ ] 2.5 **两条守线用例**（规格硬要求，不是可选）：① 零成本策略执行检索时**不发起任何生成模型调用** —— 靠断言而非人工审查；② **「改了词表，结论就该变」** —— 同一 query 在两份不同词表下产出不同的 `keywords`。死配置的判据正是「改了它什么都不变」
+
+- [ ] 2.6 手写种子词表 `config/synonyms_zh.yaml` / `synonyms_en.yaml`：从语料里挑高频 MT4/MT5 术语的中英/缩写对（止损·SL·stop loss、点差·spread 等）。**规模控制在几十条** —— 本次目的是验证「同义词扩展对这份语料到底有没有用」，不是做词表工程
+
+## 3. 验收与文档
+
+- [ ] 3.1 A/B：`strategy: none` vs `synonym`，英文 41 条，`--no-generate-answers` + `backends: [custom]`。**主判据是 `sparse` 单路的 `MRR` / `nDCG`**（本变更唯一直接作用的对象）；融合后指标只看有无显著倒退，且**看 `MRR` / `nDCG` 不看 `recall` / `hit_rate`**（后两者结构性偏向 dense）。中文 6 条只跑一次确认无明显倒退，**其 delta 按噪声处理，不作判定依据**
+
+- [ ] 3.2 写 `acceptance.md`：如实记录分路径基准、A/B 前后的 sparse 单路四项、词表条数与命中率、以及**负面结果**。⚠️ **零提升或负提升是合法结论** —— 说明这份语料的 query 与文档用词本就一致，而这个结论此前无法被看见。更新 `CLAUDE.md` 与 `openspec/config.yaml` § 已知陷阱
+
+- [ ] 3.3 在 `fusion.py` 留一条注释指向权重查表陷阱：`weight_for()` 查不到路径名会静默回落 `1.0`，**引入多路检索（Multi-Query）的那个变更必须改成按路径族查找并配单测**。本变更不新增路径名故不触发（design D4），但下一个会 —— 把风险留在代码里，别只留在 BACKLOG

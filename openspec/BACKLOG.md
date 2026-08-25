@@ -279,7 +279,13 @@ C10 **已被本次实测确认**：中文 6 条那份 run 的 `delta_comparable`
 
 # 梯队二 · 尺子校正完就做
 
-## [ ] C4 · Query Rewriting（agentic 路线图位置①）　`大 · 走 SDD`
+## [~] C4 · Query Rewriting（agentic 路线图位置①）　`大 · 走 SDD`　🚧 2026-08-25 已立项
+
+> **第一刀已开 change**：`openspec/changes/per-route-metrics-and-synonym-rewrite/`
+> （4/4 产物齐、`openspec validate` 通过，**尚未实现**）。范围 = 策略笔记 §8 的
+> **阶段 0（分路径评估口径，唯一硬前置）+ 阶段 1（同义词/术语扩展）**。
+> Multi-Query（阶段 2）、`fusion_weights` 重校准（阶段 3）、HyDE（阶段 4，判定为**不对症**）
+> 留作后续变更。词表来源已拍板：**人工种子表**，先验证「同义词扩展对这份语料有没有用」。
 
 > ### ⚠️ 开工前必读：两条 C4 的硬约束 + 一份已经量好的权重曲线
 >
