@@ -1,0 +1,415 @@
+# Modular RAG MCP Server - 主配置文件
+#
+# 敏感信息通过环境变量注入，格式: ${ENV_VAR_NAME}
+# 首次使用请复制 .env.example 为 .env 并填入真实值
+
+# LLM 配置
+llm:
+  provider: glm             # glm | azure | openai | ollama | deepseek
+  # 2026-08-09：z-ai/glm-4.7 已从网关下架（503 model_not_found），切到直系
+  # 后继 z-ai/glm-5.2。judge_llm(minimax/minimax-m2.7) 与
+  # screening_llm(z-ai/glm-5.2-free) 未受影响，仍在网关上。
+  # 注意：本模型负责答案生成，会影响 RAGAS 的 faithfulness / answer_relevancy，
+  # 跨此变更的评估报告不宜直接比。
+  model: z-ai/glm-5.2       # 上游 finpoints 代理的 model id 需要 z-ai/ 前缀;查 ${GLM_BASE_URL}/models 可列出所有可用值
+  api_key: ${GLM_API_KEY}
+  base_url: ${GLM_BASE_URL}
+  # 批量评估（42 条金标 × 答案生成）对瞬时故障很敏感：评估器遇首个失败即
+  # fail-fast，一次网关抖动就让整轮白跑。给足超时与重试。
+  request_timeout_sec: 180
+  max_retries: 4
+
+# Embedding 配置（使用 OpenAI 兼容接口，可接入 Qwen/其他兼容 API）
+embedding:
+  provider: openai
+  # 2026-08-09 切换：text-embedding-3-small 已从网关整体下架（503
+  # model_not_found），实测 Qwen 网关 embedding 类只剩 text-embedding-v4，
+  # GLM 官方端点零个 embedding 模型。
+  #
+  # ⚠️ 该模型是 **1024 维**，而 data/db/chroma 现存 52,919 条向量是
+  # 1536 维（旧模型建的）。**在全量重嵌完成前，dense 检索不可用** ——
+  # 会以维度不匹配报错，这是刻意的（不静默降级）。
+  # 重嵌命令见 scripts/reembed_corpus.py
+  model: qwen/text-embedding-v4
+  api_key: ${QWEN_EMBEDDING_API_KEY}
+  base_url: ${QWEN_EMBEDDING_BASE_URL}
+
+# Vision LLM 配置
+vision_llm:
+  provider: azure           # azure
+  model: gpt-4o
+
+# 向量存储配置
+vector_store:
+  backend: chroma           # chroma
+  persist_path: ./data/db/chroma
+  # dense 与 sparse 两路共用这一个真源：dense 用它决定打开哪个物理 collection，
+  # sparse 用它决定加载哪个关键词索引文件。切换语料只改这一个值。
+  # 2026-08-09 起指向重嵌后的集合（1024 维，与 qwen/text-embedding-v4 匹配）。
+  # 旧的 default / mt5_docs_* 是 1536 维，模型已下架、无法再产出匹配的查询
+  # 向量，仅作归档保留。
+  collection_name: default_text-embedding-v4
+  bm25_index_path: ./data/db/bm25
+  # 关键词索引磁盘格式版本。加载时严格校验，不匹配立即抛 ValueError 而非静默降级。
+  # 理由：Feature-004 修复的三个缺陷全部属于「静默失效」——不报错、不告警，只是
+  # 结果悄悄变空。若这里留一条静默降级路径，等于在刚修好的地方重新埋雷。
+  # 格式契约见 specs/004-retrieval-infra-fix/contracts/bm25_index.schema.md
+  bm25_index_format_version: 2
+
+# 文档加载配置
+loader:
+  provider: pdf                  # 向后兼容字段（实际由 LoaderFactory 按扩展名路由）
+  extract_images: true           # 是否提取 PDF 中的图片
+  enable_ocr: false              # 是否启用 OCR（扫描版 PDF 需开启，速度约慢 5x）
+  enable_table_structure: true   # 是否识别表格结构并输出 Markdown 表格语法
+
+# 文本切分配置
+splitter:
+  strategy: recursive       # recursive | semantic | fixed
+  chunk_size: 500           # chunk 大小
+  chunk_overlap: 150        # overlap 大小
+
+# 检索配置
+retrieval:
+  sparse_backend: bm25      # 启用 BM25 稀疏检索
+  fusion_algorithm: rrf     # rrf
+  # 融合平滑参数。此前硬编码在 Fusion.DEFAULT_K，Fusion() 构造时不读配置 ——
+  # 属宪法原则二禁止的硬编码可调参数，feature-005 补正。
+  # 默认值刻意保持 60（原硬编码值），确保升级后行为逐条不变。
+  # 必须 > 0：k=0 时第 1 名得分 1/1、第 2 名 1/2，衰减过陡，第 1 名几乎压过
+  # 其后全部结果之和，融合退化为「谁排第一谁赢」。
+  rrf_k: 60
+  # 各检索路径在融合中的相对分量。**只有相对比例有意义** ——
+  # {dense: 1.0, sparse: 0.5} 与 {dense: 2.0, sparse: 1.0} 排序完全相同。
+  # 缺失的路径缺省 1.0；单条设 0 合法，等价于关闭该路；全部为 0 会被启动期拒绝。
+  #
+  # 当前值由 feature-005 在英文金标(42 条)上校准得出，中文金标(6 条)验证不倒退。
+  # 相比纯语义检索：两个语种的 MRR 与 nDCG 均提升、recall 均持平，代价是英文
+  # 42 条里 1 条丢了唯一命中。完整扫描曲线见
+  # specs/005-weighted-fusion/acceptance.md
+  #
+  # ⚠️ 权重是**语料相关的**，换语料必须重新校准
+  #    （同「换 Judge 需重新校准阈值」）：
+  #      python scripts/calibrate_fusion_weights.py --build-cache --lang en
+  #      python scripts/calibrate_fusion_weights.py --sweep --lang en
+  #
+  # ⚠️ 另需知道：金标的 expected_chunk_ids 是 backfill_chunk_ids.py 用**纯
+  #    dense 检索**回填的（scripts/backfill_chunk_ids.py 直接调 vector_store
+  #    .query()）。因此 recall / hit_rate 这两项结构性地偏向 dense ——
+  #    任何 sparse 贡献挤掉一条 dense 命中就只能拉低它们。解读校准结果时，
+  #    MRR / nDCG 比 recall / hit_rate 更可信。
+  fusion_weights:
+    dense: 1.0
+    sparse: 0.1
+  top_k_dense: 20           # dense 召回数量
+  top_k_sparse: 20          # sparse 召回数量
+  top_k_final: 10           # 最终返回数量
+
+# 查询响应配置（MCP 工具 query_knowledge_hub 返回组装行为）
+query:
+  max_images_per_response: 10   # 单次响应附带图片数上限（正整数；超出时按命中 chunk 顺序取前 N 张）
+
+# 重排配置
+#
+# 重排是混合检索的第二阶段：dense/sparse 融合出候选后，用更贵但更准的模型
+# 对候选做精细重新排序。与召回用的 bi-encoder 不同，cross-encoder 把 query
+# 与文档拼接后一起过 Transformer，精度更高但无法预计算 —— 所以只能对少量
+# 候选实时打分，这正是 top_m 存在的理由。
+#
+# ⚠️ 默认关闭。开启前先 pip install -e ".[rerank]"（cross_encoder 后端需要），
+#    否则启动期会直接报错并给出安装命令（不会静默降级成不重排）。
+rerank:
+  backend: none             # none | cross_encoder | llm
+  # backend != none 时必填，刻意没有隐式默认值 —— 此前的兜底默认值
+  # cross-encoder/ms-marco-MiniLM-L-6-v2 是纯英文模型，对中文语料完全无效
+  # 且不报错，属于「看起来可配、实际取默认值」那类静默失效。
+  #
+  # cross_encoder 推荐：BAAI/bge-reranker-base
+  #   中英双语 / 278M 参数 / 权重约 1.08 GB
+  #   **本地推理，零 token 消耗**（与 llm 后端的成本模型完全相反）
+  #   首次加载需能访问 HuggingFace 下载权重，国内设 HF_ENDPOINT=https://hf-mirror.com
+  #   落盘后完全离线可用
+  #
+  #   ⚠️ 延迟实测（AMD Zen 3 CPU、真实语料 chunk 中位 428 字符、batch_size=8）：
+  #      每候选 121-147 ms → 40 条候选约 5.2 秒、50 条约 7.3 秒。
+  #      重排会让查询延迟涨一个数量级，开启前先想清楚是否接受。
+  #      注意别拿短文本的微基准数字（约 25 ms/pair）做规划 —— cross-encoder
+  #      的开销随 token 数走，真实 chunk 比测试样本长得多。
+  #
+  # llm 后端：复用 llm.provider 的网关配置，**每条候选一次独立串行调用**，
+  #   慢且贵（top_m=50 时单次查询约 5-8 万输入 token）。仅作对照用。
+  model: ""
+  top_m: 50                 # 送入重排的候选上限；超出部分按原名次追加在结果之后，
+                            # 不参与重排但也不丢弃。这是 llm 后端唯一能约束调用
+                            # 次数与 token 消耗的旋钮
+  timeout_sec: 30.0         # 单次重排总耗时上限（秒）。超时保留已评分部分的排序，
+                            # 未评分部分保持原名次追加 —— 不抛异常、不丢候选
+  batch_size: 8             # 分批推理的批大小，同时决定超时检查的粒度。
+                            # 批越大超时判定越粗（最坏会超出 timeout_sec 一个批次）
+
+# 摄取管道配置
+ingestion:
+  chunk_refiner:
+    use_llm: false
+  metadata_enricher:
+    use_llm: false
+  image_captioner:
+    enabled: true
+    use_fallback: true
+
+# 评估配置 (Feature-001 RAG 质量验收)
+# 详细 schema: specs/001-rag-acceptance/contracts/settings.evaluation.schema.md
+evaluation:
+  _schema_version: 1
+
+  # 启用的评估后端 (custom 永久启用, ragas 视场景启用)
+  backends:
+    - custom
+    - ragas              # 启用 RAGAS 4 项指标 (需配置下方 judge_llm)
+
+  # 占位金标 (US1 阶段使用)
+  golden_test_set: ./tests/fixtures/golden_test_set.json
+
+  # 中英分语种金标。
+  #
+  # 2026-08-24 起指向 **第二代标注**(`_labeling_method: pooled-llm-judged`) ——
+  # 由 label_golden_chunks.py 用 query 从 dense/sparse/rerank 三路池化取并集、
+  # 再让 LLM 判 0-3 分级相关度产出。
+  #
+  # 为什么必须切:第一代(`dense-top-k`)的 expected_chunk_ids 是拿 ground_truth
+  # 查纯 dense top-5 回填的,标准答案本身就是「embedding 认为最像答案的那几条」。
+  # 这把尺子会给出**方向相反**的结论 —— 同一个重排模型、同一份语料、同一套指标,
+  # 第一代量出 MRR -0.1246,第二代量出 +0.0764。任何「敢改变名次」的改进
+  # (重排 / 查询改写 / HyDE)在第一代金标下都会被结构性地惩罚。
+  #
+  # ⚠️ 跨代分数不可比,报告会标 delta_comparable: false。第二代每 case 均值
+  # 12.0(zh) / 15.4(en) 条标签,第一代恒为 5 条 —— hit_rate 变高主要是
+  # 「标签变多了更容易命中」,不是检索变好了。切换后必须重标基线。
+  #
+  # ⚠️ 中文仍只有 6 条(一条 case 值 16.7%),中文侧 delta 一律按噪声处理。
+  # 扩容需绕开 RAGAS 的 adapt(实测三个模型全部产出 0.0% 中文且不抛异常),
+  # 见 openspec/BACKLOG.md 梯队三 C1。
+  #
+  # 旧的第一代金标保留作历史参照,不要删 —— 它是「第一代 vs 第二代」这组
+  # 消融数据的另一半。
+  golden_test_sets_by_lang:
+    zh: ./tests/fixtures/golden_test_set_zh_v2.json   # 6 条,pooled-llm-judged
+    en: ./tests/fixtures/golden_test_set_en_v2.json   # 41 条,pooled-llm-judged
+
+  # Judge LLM (仅 ragas backend 启用时必须填)
+  # 复用 LLMFactory 的 5 个 provider: glm/azure/openai/ollama/deepseek
+  # FR-016: 切换 Judge 不需修改代码,仅改本配置后重启
+  # 默认与项目顶层 llm.* 对齐 (z-ai/glm-4.7 + 同一 GLM_API_KEY/GLM_BASE_URL),
+  # 这样 production 答案生成与 evaluation 判分用同一可用上游
+  judge_llm:
+    provider: glm
+    # 2026-04-27 切换:z-ai/glm-4.7 对 RAGAS 英文 JSON schema 遵从差(T029 yield 仅 ~13%),
+    # 改用 minimax/minimax-m2.7。注意 FR-013 默认阈值在新 Judge 下需重新校准
+    # (spec.md § Assumptions § Judge 切换与阈值校准)。
+    # 2026-04-28 已知限制:minimax 无法完成 RAGAS adapt(中文 prompt 翻译需返 valid JSON),
+    # 中文金标合成被 deferred 到下个 feature(见 Feature-004 follow-up)。en 不受影响。
+    model: minimax/minimax-m2.7
+    api_key: ${GLM_API_KEY}
+    base_url: ${GLM_BASE_URL}
+    temperature: 0.0          # Judge 推荐 0.0 提高判分稳定性
+    request_timeout_sec: 60
+
+  # 金标精修的预筛 LLM (Feature-003, 仅 refine_testset.py --auto-mode 时使用)
+  # FR-002: MUST 与上方 judge_llm 异源 —— 合成端用的就是 judge_llm,同源会带来
+  #         相同的盲点,预筛等于自己批自己的作业。判据是完整标识串
+  #         "<provider>:<model>" 不相等,不是 provider 不相等
+  #         (实测 judge 标识为 "glm:minimax/minimax-m2.7":provider 名义是 glm
+  #          但模型经 OpenAI 兼容端点路由到 minimax;只比 provider 会把真正异源的
+  #          glm:glm-4.6 误判为同源)
+  # 默认留空 = 未启用。留空时不影响任何既有用法(默认交互模式不读本节),
+  # 但带 --auto-mode 运行会以退出码 2 快速失败并提示配置(宪法 § III)
+  #
+  # 当前配置:z-ai/glm-5.2-free(公司免费额度)。
+  # 标识 "glm:z-ai/glm-5.2-free" ≠ judge 的 "glm:minimax/minimax-m2.7" → 异源 ✅
+  screening_llm:
+    provider: glm
+    model: z-ai/glm-5.2-free
+    api_key: ${GLM_API_KEY}
+    base_url: ${GLM_BASE_URL}
+    temperature: 0.0            # 判定应尽量确定,与 Judge 同取 0.0
+    request_timeout_sec: 60
+
+    # 路由与门控阈值。注意:不同模型的置信度标度不可互换,换预筛模型后
+    # 必须重新校准(与 FR-013「换 Judge 后阈值失效」是同一回事)。
+    # 下列默认值是初始猜测,需按首轮真实运行的 borderline_ratio 校准。
+    # 2026-08-08 校准(z-ai/glm-5.2-free,zh.json 47 条实测扫描):
+    #   0.80 → borderline 4.3%   太松,几乎全自动
+    #   0.90 → borderline 10.6%  ← 落进预期 10-20% 区间,取此值
+    #   0.95 → borderline 29.8%  偏严,接近 40% 告警线
+    # 换预筛模型后须重新扫描 —— 置信度标度不可跨模型互换。
+    keep_threshold: 0.90        # keep 判定且置信度 ≥ 此值 → 自动保留
+    drop_threshold: 0.80        # drop 判定且置信度 ≥ 此值 → 自动丢弃
+    borderline_ratio_warn: 0.40 # borderline 占比超此值告警(FR-011,预期区间 10-20%)
+    sample_ratio: 0.10          # 抽样自检比例(FR-006, 源自 Feature-001 SC-002)
+    compliance_gate: 0.90       # 抽样合规率门控(FR-007, 源自 SC-002)
+
+  # ─── 金标标注 (change retriever-agnostic-golden-labels) ───
+  #
+  # 本节控制「哪些 chunk 算作某个问题的正确答案」这个基准是怎么造出来的。
+  #
+  # ⚠️ 为什么需要它:第一代金标的 expected_chunk_ids 由 backfill_chunk_ids.py
+  #    把 ground_truth 编码后查 dense top-5 回填 —— **标准答案就是 embedding
+  #    认为最像答案的那几条**。后果是所有召回类指标都锚定在 dense 一路上。
+  #    2026-08-13 重排 A/B 实测:MRR 从 0.4914 掉到 0.3668,而同一模型在集成
+  #    测试里每次都能把故意放在末位的相关段落提到首位 —— 模型在做正确的事,
+  #    指标却在跌。因为重排的全部工作就是不同意第一阶段的排序,而标准答案
+  #    正是第一阶段的输出。
+  #
+  #    新做法:多路召回各取 top-N 取并集(池化)+ LLM 逐条判定分级相关度。
+  #    没有任何一路能垄断标准答案。
+  labeling:
+    # 各路召回取多少条进候选池。**至少两路必须 > 0** —— 只配一路会让那条路径
+    # 永远「全对」,等于把新方法静默退化成第一代做法,启动期会直接拒绝。
+    # 三路并集去重后每 case 约 25-40 个候选。
+    pool_top_n_dense: 20
+    pool_top_n_sparse: 20
+    pool_top_n_rerank: 0        # 0 = 不启用重排路(重排依赖是 optional extra
+                                # `.[rerank]`,默认置 0 保证核心安装即可标注)
+
+    # 分级相关度 >= 此值纳入 expected_chunk_ids
+    # 分级:0 无关 / 1 沾边 / 2 部分支撑 / 3 直接回答
+    # ⚠️ 不同判定模型的标度不可互换,换 labeling_llm 后必须重新校准 ——
+    #    与「换 Judge 后 acceptance_thresholds 失效」是同一回事
+    relevance_threshold: 2
+
+    # 单次标注的判定调用上限。达到即停止并写出部分结果,元数据记录被跳过的
+    # 候选数 —— **不静默截断**。中英金标 48 条 case 约需 1200-1900 次调用。
+    max_judgements: 2000
+
+    # 判定失败(LLM 输出无法解析)比例超此值告警。与「模型整体不可用」严格
+    # 区分 —— 后者显式失败(退出码 3),不是告警。
+    judge_failure_warn_ratio: 0.10
+
+    # 产出与「纯 dense top-5」的 Jaccard 超此值告警,提示池化或判定疑似未生效。
+    # 这守的是「新方法到底有没有起作用」。
+    dense_overlap_warn: 0.90
+
+    # 人工抽检一致率低于此值告警。
+    # ⚠️ 0.80 是初始猜测,需跑一轮看分布再校准(同 screening_llm 的阈值)
+    human_agreement_warn: 0.80
+
+  # ─── 金标候选合成 (change expand-chinese-golden-set) ───
+  #
+  # ⚠️ 本节只有一个目的:让「合成出的是另一种语言」这种失效**无法静默发生**。
+  #
+  #    2026-08-14 实测:RAGAS 的 adapt(language=chinese) 在**不抛任何异常**的
+  #    情况下返回了未翻译的英文提示词,并被写进磁盘缓存永久固化 ——
+  #    logs/ragas_adapt_cache/chinese/ 下五个「中文」文件 CJK 字符数全为 0。
+  #    后果:第一代中文金标 47 条候选里 33 条(70%)因语种不符被丢,只活下来 6 条。
+  #    现有 fail-fast 只捕获异常,对这种形态完全无效 ——「没报错」不等于「做对了」。
+  synthesis:
+    # 适配产物中目标语言字符的占比下限。低于此值判定为「未翻译」,失败且**不写缓存**。
+    # ⚠️ 实测未翻译时恒为 0.0%;翻译后的提示词仍含大量 JSON schema 与英文字段名,
+    #    所以这个值应远低于「纯中文」的水平。0.05 是初值,需按首轮实测校准。
+    adapt_language_ratio_min: 0.05
+    # 合成候选中「问题语种与目标语言不一致」的比例上限,超过即告警。
+    # 第一代实测 70%(33/47) —— 那是适配未生效的典型信号。
+    question_language_mismatch_warn: 0.20
+
+  # 金标标注的判定 LLM (仅 label_golden_chunks.py 使用)
+  # MUST 与上方 judge_llm 异源 —— ground_truth 是 judge_llm 合成的,用同一个
+  # 模型判断「哪些 chunk 支撑我自己写的答案」是自我确认。判据同 screening_llm:
+  # 完整标识串 "<provider>:<model>" 不相等,不是 provider 不相等。
+  #
+  # 刻意**不复用 screening_llm**:两者异源对象相同,但阈值标度不同 ——
+  # 预筛问「这条 case 该不该留」,标注问「这个 chunk 相关到什么程度」。
+  # 共用一份配置会让两处校准互相干扰。
+  #
+  # 默认留空 = 未启用,不影响任何既有用法;跑标注时留空会以退出码 2 快速失败。
+  labeling_llm:
+    provider: glm
+    # 标识 "glm:z-ai/glm-5.2-free" ≠ judge 的 "glm:minimax/minimax-m2.7" → 异源 ✅
+    # 选它的理由:异源成立 + 走公司免费额度(标注要发上千次判定调用,成本是
+    # 本变更最大的实际约束)。换模型后 relevance_threshold 必须重新校准。
+    model: z-ai/glm-5.2-free
+    api_key: ${GLM_API_KEY}
+    base_url: ${GLM_BASE_URL}
+    temperature: 0.0            # 判定应尽量确定,便于复现
+    request_timeout_sec: 60
+    max_retries: 3              # 标注要发上千次调用,网关实测常态性超时
+    # ⚠️ 不要调小。此前硬编码 200,在真实语料上几乎全军覆没 —— 2026-08-13 实测
+    #    (z-ai/glm-5.2-free、真实 chunk):301 字符截断在 JSON 中间,367 与 430
+    #    字符直接返回**空响应**,于是每条都标 judge_failed。表现像「模型不会遵从
+    #    JSON 格式」,真实原因是没给它写完的余量。800 下全部完整且解析成功。
+    #
+    # 2026-08-16 800 → 3000:机制查清了 —— 本模型是**推理型**,不可见的推理段
+    #    占 completion token 的 85-90%(探针 scripts/dev/probe_structured_output.py
+    #    实测:一次中性提示词 out=786 其中 reason_tok=703,可见内容仅 83)。
+    #    所以 200 那次不是「余量不够写完」,是**推理段吃光了预算、可见内容一个字
+    #    都没轮到**,故返回彻底的空串而非半截 JSON。
+    #    而 800 在可比任务上实测已用到 786(98% 利用率)—— 不是安全值,是刚好卡住。
+    #    max_tokens 是**上限不是配额**,调高不产生额外成本,没有理由卡在 98%。
+    #    详见 docs/learning/structured-output/00-prerequisites.md § 4
+    max_tokens: 3000
+
+  # 评估流程使用的 embedding (默认全空 = 复用顶层 settings.embedding)
+  # FR-017: 评估流程所有 embedding 环节 MUST 用同一配置 (避免 train-eval skew)
+  embedding:
+    provider: ""              # 空 = 复用顶层 embedding.provider
+    model: ""                 # 空 = 复用顶层 embedding.model
+    api_key: ""
+    base_url: null
+
+  # 8 项主聚合指标的 pass/fail 阈值 (FR-013 业界参考值, 2026-04-25 clarify 决议)
+  # 切换 Judge LLM 后建议重新校准 (见 spec.md § Assumptions § Judge 切换与阈值校准)
+  acceptance_thresholds:
+    ragas__context_recall: 0.70
+    ragas__context_precision: 0.65
+    ragas__faithfulness: 0.85
+    ragas__answer_relevancy: 0.75
+    custom__hit_rate: 0.60
+    custom__mrr: 0.55
+    custom__recall: 0.70
+    custom__ndcg: 0.55
+
+  # ─── 评估运行完整性 (change evaluation-degradation-governance) ───
+  #
+  # 「降级」= judge LLM 没能产出可解析的判定结果,该 case 的该指标记 NaN 且
+  # **不计入均值分母**。排除策略本身是对的(NaN 参与平均会污染整列),问题在于
+  # 它让样本流失变得静默 —— 2026-08-15 复核 run 80a82405:公布的
+  # faithfulness=0.8887 其实是 27 条的均值而非 42 条,context_precision 0.7643
+  # 是 31 条;degraded_case_count 高达 23/42 = 54.8%,是 SC-006 门槛的 11 倍,
+  # 而这个字段一直躺在报告 JSON 里没人读到。
+  degradation:
+    # 降级率门槛。超过即 acceptance_status=fail(--exit-on-fail 退出码非零)。
+    # 0.05 源自 Feature-001 SC-006,不是新拍的数。
+    # ⚠️ 需要分阶段收口时可临时放宽,阈值会进报告快照,不会丢失痕迹。
+    max_ratio: 0.05
+    # 兜底原因("unknown")占全部降级的比例超此值即告警。
+    # 它与「降级多」是两回事 —— 这个量的是**归因能力**本身有没有盲区。
+    unknown_reason_warn: 0.10
+
+  # by-tag 切片维度 (MVP 仅支持 content_type / difficulty)
+  by_tag_dimensions:
+    - content_type
+    - difficulty
+
+  # 切片样本量下限 (< 此值的切片在报告中标 null + _skipped_reason)
+  tag_slice_min_samples: 5
+
+  # 评估报告归档目录
+  report_archive_dir: ./logs/evaluation_reports
+
+  # 基线标记单文件
+  baseline_store_path: ./logs/baselines.json
+
+  # FR-007: expected_chunk_ids 在 vector store 中的存在性校验 (调试时可临时关闭)
+  chunk_id_validation: true
+
+# 可观测性配置
+observability:
+  enabled: true
+  log_file: ./logs/traces.jsonl
+
+# MCP Server 传输配置
+mcp_server:
+  transport: stdio         # stdio | sse
+  host: 127.0.0.1          # 仅 transport=sse 生效
+  port: 8000               # 仅 transport=sse 生效
+  sse_path: /sse           # SSE 连接端点（GET）
+  message_path: /messages/ # 消息上行端点（POST）
