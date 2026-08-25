@@ -1,0 +1,41 @@
+ 0 Why is it recommended to perform group operations separately for each trading account?
+ 1 What triggers the MT_RET_ERR_NOTFOUND error?
+ 2 How does the IMTServerAPI::PositionGetByLoginsSymbol function retrieve open positions?
+ 3 What does TickHistoryGet do?
+ 4 What does the IMTServerAPI::DealSubscribe method do?
+ 5 What actions can you perform with the internal mail system of MetaTrader 5 using the Server API
+ 6 What does IMTServerAPI::CommentGetByClient do?
+ 7 What does the  date in seconds since 01.01.1970  indicate for the *from* and *to* parameters?
+ 8 What does the TradeUnsubscribe method do in relation to trade requests?
+ 9 What do the response codes (MT_RET_OK and MT_RET_ERR_PARTIAL) indicate about the status of orde
+10 What is the purpose of IMTServerAPI::CommonSubscribe?
+11 What does the MT_RET_OK response code indicate?
+12 What is the purpose of the IMTPosition object in the IMTServerAPI::PositionGet function?
+13 Which method must be called to delete the object created by IMTServerAPI::NewsCreate?
+14 What does the  pos  parameter represent in the IMTServerAPI::AutomationShift function?
+15 What is the purpose of the `IMTServerAPI::DealGetByGroup` function?
+16 What is the purpose of the IMTServerAPI::KYCDelete function, and what does it return on success
+17 What does HolidayCreate do in the IMTServerAPI?
+18 What is the purpose of the IMTOrderArray parameter in the OrderGetByGroupSymbol function?
+19 What is the role of IMTConRoute::Name() according to the documentation?
+20 What is the purpose of the KYCGroupCreate function?
+21 What response code indicates a successful completion of the MessengerVerifyPhone operation?
+22 Under what circumstances does a plugin off the main trade server receive MT_RET_ERR_NOTMAIN whe
+23 Adding deals directly to a client s TH what s the effect on bal/pos, and what inconsistency doe
+24 IMTServerAPI::VPSCreate returns? Which method releases it?
+25 What does GrpAdd do to a grp config, and how does it differ from GrpCreate?
+26 Which IMTSrvAPI method ret UINT gives tot srv configs?
+27 What s the purpose of the sink param IMTConRouteSink in RouteUnsubscribe vs IMTConPluginSink in
+28 MTE+TS: which two prohibited practices custom sync primitives on server threads & DB API calls 
+29 IMTServerAPI::ManagerShift: how does it reorder the mgr config list, and what are pos and shift
+30 IMTServerAPI::NetServerGet   purpose & ID(in)/config(out) params?
+31 What codes signal failure and when?
+32 Which interface does sink need for IMTServeAPI::MailSubscribe to hook mail DB changes?
+33 IMTServerAPI::NetServerCreate object's interface & which Release frees it?
+34 When does MT_RET_ERR_DUPLICATE trigger, and which op requires sink mem pers?
+35 FeederAdd's dual effect on a feed cfg?
+36 Which IMTAccount field holds the actual balance, and what do docs say about its uniqueness?
+37 Which events/hooks does IMTServerAPI::ClientUnsubscribe deactivate?
+38 IMTServerAPI::CommentSubscribe hooks which evts?
+39 What does HistoryAddBatch do w/ closed orders?
+40 What releases IMTCon from Spread?

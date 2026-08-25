@@ -1,0 +1,46 @@
+abbrev           docs | full                 docs | 判定
+--------------------------------------------------------------
+mgr                 0 | manager             13698 | **强** 缩写零信号
+evt                 0 | event                1080 | **强** 缩写零信号
+evts                0 | events                824 | **强** 缩写零信号
+bal                 0 | balance               734 | **强** 缩写零信号
+resp                0 | response             5929 | **强** 缩写零信号
+sym                 0 | symbol               4031 | **强** 缩写零信号
+tot                 0 | total                2951 | **强** 缩写零信号
+imtsrvapi           0 | imtserverapi         2988 | **强** 缩写零信号
+grp                13 | group                3426 | 强 缩写极稀有
+req                17 | request              3704 | 强 缩写极稀有
+func                7 | function             1486 | 强 缩写极稀有
+th                  5 | history              1250 | 强 缩写极稀有
+del                 2 | delete               2135 | 强 缩写极稀有
+srv                60 | server               6478 | 强 缩写极稀有
+acc                22 | account              2493 | 强 缩写极稀有
+acct                2 | account              2493 | 强 缩写极稀有
+db                 24 | database             2403 | 强 缩写极稀有
+msg                24 | message               191 | 中
+iface               4 | interface            3874 | 强 缩写极稀有
+cfg               222 | config               6216 | 中
+param             695 | parameter            1692 | 跳过(缩写本身常见,扩展易加噪)
+params            434 | parameters           8428 | 中
+mem                79 | memory                340 | 跳过(缩写本身常见,扩展易加噪)
+sync              141 | synchronization       404 | 跳过(缩写本身常见,扩展易加噪)
+admin             241 | administrator        1273 | 中
+app               407 | application           606 | 跳过(缩写本身常见,扩展易加噪)
+ret             11859 | return              10268 | 跳过(缩写本身常见,扩展易加噪)
+pos              2435 | position             4025 | 跳过(缩写本身常见,扩展易加噪)
+conf               13 | config               6216 | 强 缩写极稀有
+svr                 0 | server               6478 | **强** 缩写零信号
+mngr                0 | manager             13698 | **强** 缩写零信号
+num                 4 | number               3233 | 强 缩写极稀有
+idx                 2 | index                1779 | 强 缩写极稀有
+err              1868 | error                4880 | 跳过(缩写本身常见,扩展易加噪)
+info              135 | information           598 | 跳过(缩写本身常见,扩展易加噪)
+desc                3 | description          2469 | 强 缩写极稀有
+auth              104 | authentication        297 | 跳过(缩写本身常见,扩展易加噪)
+addr                4 | address               660 | 强 缩写极稀有
+attr                0 | attribute               5 | **强** 缩写零信号
+val                27 | value               11595 | 强 缩写极稀有
+impl                0 | implementation        294 | **强** 缩写零信号
+init               13 | initialize             67 | 中
+proc                0 | process               142 | **强** 缩写零信号
+repo                4 | repository             13 | 跳过(缩写本身常见,扩展易加噪)
