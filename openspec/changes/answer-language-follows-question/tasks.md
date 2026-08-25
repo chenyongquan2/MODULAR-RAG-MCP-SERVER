@@ -4,7 +4,7 @@
 
 ## 1. 先让语言一致性可见
 
-- [ ] 1.1 语言判定 helper：给定文本返回 `zh` / `non-zh` / `undetermined`，判定用 `language_check.language_char_ratio(text, "zh")` 的 CJK 占比，阈值取 `evaluation.synthesis.adapt_language_ratio_min`（design D2/D3）。**不新写字符集规则、不新增配置项**。在 `language_check` 与 `settings` 两处各加注释指明这次复用（否则后来者会以为该阈值只服务合成）。配套单测：纯中文 / 纯英文 / 中英混合（含「中文句子 + 大量 API 标识符」这个真实形态）/ 空串 / 只有标点数字 / 纯代码块
+- [x] 1.1 语言判定 helper：给定文本返回 `zh` / `non-zh` / `undetermined`，判定用 `language_check.language_char_ratio(text, "zh")` 的 CJK 占比，阈值取 `evaluation.synthesis.adapt_language_ratio_min`（design D2/D3）。**不新写字符集规则、不新增配置项**。在 `language_check` 与 `settings` 两处各加注释指明这次复用（否则后来者会以为该阈值只服务合成）。配套单测：纯中文 / 纯英文 / 中英混合（含「中文句子 + 大量 API 标识符」这个真实形态）/ 空串 / 只有标点数字 / 纯代码块
 
 - [ ] 1.2 `StructuredContent` 增可选语言元数据（问题语言 / 答案语言 / 是否一致 / `measured`），`ResponseBuilder.build()` 填充它，并把同一份数据写进**既有的** `trace` 参数（design D4）。无法判定时 `measured: false` 且**不给** `consistent` 字段 —— 回落成「一致」会让「没测」与「测过且没问题」长得一样（design D5）。配套单测：一致 / 不一致 / 未判定三条路径，且断言 `trace` 与 `StructuredContent` 两处的值相同
 

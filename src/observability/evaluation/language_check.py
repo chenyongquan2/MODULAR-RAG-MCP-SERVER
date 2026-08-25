@@ -176,3 +176,107 @@ def summarize_language(
         "mismatch_ratio": mismatch_ratio(items, language, threshold),
         "threshold": threshold,
     }
+
+
+# ---------------------------------------------------------------------------
+# 文本的语言归类(change answer-language-follows-question T-1.1)
+# ---------------------------------------------------------------------------
+#
+# ⚠️ 这**不是**通用语言识别,是「中文 vs 非中文」的二分。
+#
+# 为什么只做到这一步:本项目语料是中英双语,二分够用;而声称更多就是过度承诺 ——
+# 一段法文会被判成 `non-zh`,而我们不会知道。所以返回值刻意叫 `non-zh` 而不是
+# `en`:前者是我们真的知道的事,后者是猜的。
+#
+# 为什么不给 `en` 登记字符集:拉丁字母在中文技术文本里也大量出现(API 标识符、
+# 代码片段),按占比判 `en` 会与按占比判 `zh` 互相矛盾 —— 同一段文本可能两边
+# 都「达标」。**二分只能有一个基准语言。**
+
+#: 判为中文。
+LANGUAGE_ZH = "zh"
+
+#: 判为非中文。刻意不叫 `en` —— 见上方说明。
+LANGUAGE_NON_ZH = "non-zh"
+
+#: 无法判定 —— 文本里没有承载语言信号的字符(纯数字/标点/空白)。
+#:
+#: **必须与「判为非中文」区分开。** 回落成任一具体语言会让「没测出来」与
+#: 「测过且是那个语言」长得一模一样,而本项目已因这种回落栽过多次。
+LANGUAGE_UNDETERMINED = "undetermined"
+
+
+def _has_language_signal(text: str) -> bool:
+    """文本里是否有承载语言信号的字符(字母或 CJK)。
+
+    纯数字、纯标点、纯空白都判为没有 —— 那种文本无法归类,
+    调用方应记 :data:`LANGUAGE_UNDETERMINED`。
+    """
+    for ch in text or "":
+        if ch.isalpha():
+            return True
+    return False
+
+
+def classify_language(text: str, threshold: float) -> str:
+    """把文本归类为中文 / 非中文 / 无法判定。
+
+    Args:
+        text: 待归类文本。
+        threshold: CJK 字符占比下限,达到即判中文。调用方从配置读
+            (本模块保持纯函数,不 import settings)。
+
+    Returns:
+        :data:`LANGUAGE_ZH` / :data:`LANGUAGE_NON_ZH` / :data:`LANGUAGE_UNDETERMINED`。
+
+    Example:
+        >>> classify_language("How to configure LLM?", 0.05)
+        'non-zh'
+        >>> classify_language("怎么配置 LLM?", 0.05)
+        'zh'
+        >>> classify_language("123 !!!", 0.05)
+        'undetermined'
+    """
+    if not text or not text.strip():
+        return LANGUAGE_UNDETERMINED
+    if not _has_language_signal(text):
+        return LANGUAGE_UNDETERMINED
+    ratio, _counted = language_char_ratio(text, LANGUAGE_ZH)
+    return LANGUAGE_ZH if ratio >= threshold else LANGUAGE_NON_ZH
+
+
+def compare_languages(question: str, answer: str, threshold: float) -> Dict[str, object]:
+    """问答两端的语言归类与一致性结论,可直接写进元数据或 trace。
+
+    **为什么需要这个结论被显式记下来**:答案语言错了与答案质量差,在最终指标上
+    表现相同 —— 两者都只是分数变低。没有这个字段就无法区分这两件事,而它们的
+    处置完全不同(改提示词 / 改检索或模型)。本项目的这个缺陷存在了数月而无人
+    发现,正是因为没有任何地方直接说出「这次答错语言了」。
+
+    Args:
+        question: 用户的问题。
+        answer: 生成的答案。
+        threshold: CJK 占比下限,见 :func:`classify_language`。
+
+    Returns:
+        含 ``measured`` / ``question_language`` / ``answer_language`` /
+        ``threshold`` 的字典。**只有 ``measured`` 为真时才有 ``consistent``** ——
+        任一端无法判定时不给这个键,回落成 ``True`` 会让「没测」与
+        「测过且一致」无法区分。
+    """
+    q_lang = classify_language(question, threshold)
+    a_lang = classify_language(answer, threshold)
+    result: Dict[str, object] = {
+        "question_language": q_lang,
+        "answer_language": a_lang,
+        "threshold": threshold,
+    }
+    if LANGUAGE_UNDETERMINED in (q_lang, a_lang):
+        result["measured"] = False
+        result["reason"] = (
+            "cannot classify language: no alphabetic or CJK characters in "
+            + ("question" if q_lang == LANGUAGE_UNDETERMINED else "answer")
+        )
+        return result
+    result["measured"] = True
+    result["consistent"] = q_lang == a_lang
+    return result
