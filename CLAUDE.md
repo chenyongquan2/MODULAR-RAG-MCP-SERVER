@@ -260,7 +260,9 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 
 ### ⚠️ 先读这条:本项目的招牌病是「看起来生效、实际没生效、而且不报错」
 
-排一排事故:`rerank.top_m` 死配置(全仓只有定义,从未截断过候选)、`--collection` 死参数(塞进 `filters` 做融合后过滤,没真正切集合)、`labeling_llm.max_tokens=200` 饿死判定(367 字符 chunk 就返回空响应,表现得像「模型不遵从 JSON」)、CJK 全链路 ASCII-only、chunk_id 两端不相交、RAGAS `adapt()` 静默不翻译、磁盘缓存固化坏产物、`synthesis.question_language_mismatch_warn` 只被校验从不被读、`_labeling_method` 从未流到报告 —— **九次事故同一个病。九次里有六次都有日志,只是日志说的是「成功」。**
+排一排事故:`rerank.top_m` 死配置(全仓只有定义,从未截断过候选)、`--collection` 死参数(塞进 `filters` 做融合后过滤,没真正切集合)、`labeling_llm.max_tokens=200` 饿死判定(367 字符 chunk 就返回空响应,表现得像「模型不遵从 JSON」)、CJK 全链路 ASCII-only、chunk_id 两端不相交、RAGAS `adapt()` 静默不翻译、磁盘缓存固化坏产物、`synthesis.question_language_mismatch_warn` 只被校验从不被读、`_labeling_method` 从未流到报告、`query_rewrite` 段从未接进 `load_settings()` —— **十次事故同一个病。十次里有六次都有日志,只是日志说的是「成功」。**
+
+  **第十例是第九例的翻版,而且发生在「已经知道这个病」之后**(2026-08-25):`QueryRewriteSettings` 加了、校验函数写了并挂进 `validate_settings`、`settings.yaml` 也写了 —— **但 `load_settings()` 构造 `Settings(...)` 时漏了 `query_rewrite=` 那一行**,无论 YAML 写什么运行时都是默认值。发现它时,该变更已有 100+ 条用例全绿,**包括一整个专门守「改了配置结论就该变」的文件** —— 它们全都直接构造 dataclass,**绕过了 YAML 加载这一段**。真正撞见它是改完配置顺手打印了一下。**新增配置项时,必须有一条用例写一份临时 `settings.yaml` 走真实 `load_settings()`**,而不是构造 dataclass;并且要**验证拆掉接线它会红** —— 抓不到 bug 的回归测试等于没有
 
   **第九例最狠:它连单测都有**(2026-08-24 修)。`eval_runner._load_test_cases` 构造 meta 时只拷了三个键,**没拷 `_labeling_method`** —— 而它是金标代次的唯一代码判据。于是 `labeling_method` **恒回落成 `dense-top-k`**,文档里那条「跨代 delta 会被标 `delta_comparable: false`」在标注方式这一维上**从未生效过**(实证:归档报告 `97743b41` / `d08e540d` 跑的是 `pooled-llm-judged` 的 `en_v2`,报告里却都写着 `dense-top-k`)。⚠️ **重排翻转结论不受影响** —— 那次 A/B 两臂用的是同一份正确金标,错的只是报告上的标签。**教训在于既有单测的形状**:`TestLabelingMethodField` 测的是「`EvalReport` 收到值后会不会序列化」,**从没测过这个值有没有被读出来** —— 单测测的是终点,没人测那条线。**「有单测」不等于「接上了」**;要守的是**端到端那条线**(文件写 X,报告就必须是 X),不是端点行为
 
@@ -329,6 +331,12 @@ The dashboard is fully dynamic - component names displayed are read from trace l
   - ⚠️ **LLM 判定不等于人工级 ground truth**。它去掉了检索器锚定,但引入了判定模型自身的偏好。`--export-sample` / `--import-sample` 的人工抽检是校准手段
   - ⚠️ **`pooled-llm-judged` 金标的校准是「跨模型」而非「人工」**(2026-08-14):24 条三元组由 `anthropic:claude-opus-5` 盲评,与 `glm:z-ai/glm-5.2-free` 一致率 **95.8%(23/24)**,唯一分歧那条复盘为原判定更正确。元数据里记的是 `cross_judge_agreement_rate`,**`human_agreement_rate` 是 `null`** —— 两个判定方都是 LLM,**可能共享人类会发现的盲点**。**上面那条重排翻转结论正是建立在这个前提上的**;若它(或任何依赖第二代金标的结论)被质疑,**第一件该做的事是补真人抽检,而不是先去改检索代码**:审阅表在 `tests/fixtures/labeling_review_zh.md`,可直接对照两方分歧。做交叉判定务必**盲评**(先藏掉原判定与理由),否则第二判定方会附和,算出的一致率没有校准价值
   - `labeling_llm.max_tokens` **不要调小**。此前硬编码 200,真实语料上 367 字符的 chunk 就返回**空响应**,导致每条都标 `judge_failed` —— 表现得像「模型不遵从 JSON 格式」,真实原因是没给它写完的余量。默认 800
+- **⚠️ 融合后的指标会把单路的变化藏起来 —— 增益和伤害都会**(2026-08-25,change `per-route-metrics-and-synonym-rewrite`):`fusion_weights.sparse = 0.1` 意味着只作用于 sparse 的改动,在融合后指标上几乎不可见。实测:同义词扩展让 sparse 单路 MRR 掉了 **0.061**,而**融合后只动了 0.0006** —— 光看融合后指标会读成「没效果」,实际是明确的伤害。**任何只作用于单路的改动(查询改写、分词策略、BM25 参数)必须看分路径指标判定**,报告里的 `aggregate_metrics_by_route` 就是为此加的(`EvalRunner` 经 `HybridSearch.search_with_routes()` 拿两路各自结果,复用同一套指标函数打分)
+  - **分路径基准**(英文 41 条 `pooled-llm-judged`,`sparse=0.1`,run `0147ce03`):dense 单路 `0.9756 / 0.7793 / 0.6835 / 0.4584`,sparse 单路 `0.9024 / 0.8104 / 0.6342 / 0.3925`(hit_rate / MRR / nDCG / recall)
+  - ⚠️ **「瓶颈在 sparse」这个说法要分维度**:`recall`(0.3925 vs 0.4584)与 `hit_rate`(0.9024 vs 0.9756)上确实成立,但**排序质量上 sparse 反而更强**(MRR 0.8104 > dense 0.7793),而它的权重只有 0.1。这与「权重 0.1→0.75 让融合后 MRR 上升」互相印证
+  - 正确性有两重佐证:①只留一路时该路的分路径指标**等于**融合后指标(定义上应当相等,有参数化用例守);②dense 单路 MRR 与 `calibrate_fusion_weights.py --sweep` 的「1:0 纯语义」一行**逐位相同**(两条独立实现)
+- **⚠️ 给 BM25 选同义词扩展,判据是「扩展目标够不够**稀有**」,不是「够不够常见」**(同上变更,反直觉且是当次翻车的直接原因):一个词在语料里越常见,对 BM25 的判别力越低(IDF 越小)。按「缩写零信号、全称大量存在」选出的词表实测**有害** —— `manager` 占语料 **26.3%**、IDF 仅 **1.030**,而它替换掉的 `grp` IDF 是 **8.257**。扩展等于往高区分度查询里塞一个匹配四分之一语料的词,BM25 逐词求和,噪声压过真命中。按 IDF ≥ 3.0 重筛后伤害减半但**未翻转符号** —— 这份语料是 API 参考文档,sparse 的判别力集中在罕见标识符(IDF 8~10),**任何普通英文词汇的扩展都在稀释它**。**结论:同义词扩展在本语料上不适用,`query_rewrite.strategy` 保持 `none`**(能力本身已落地并可配,见 `config/synonyms.yaml` 的构建方法与 [acceptance.md](openspec/changes/archive/2026-08-25-per-route-metrics-and-synonym-rewrite/acceptance.md))
+  - ⚠️ 词表若要重做,**按 IDF(语料先验统计)筛,不要按 A/B 结果筛** —— 后者在 41 条样本上就是对测试集过拟合
 - **`scripts/evaluate.py` 与 `scripts/query.py` 都不写 query trace** —— 只有 MCP server 路径写 `logs/traces.jsonl`。想量某个阶段的真实耗时得写专门的基准脚本,别指望从 trace 里捞
 - **跑 Python 脚本调试时务必加 `-u`** —— stdout 在管道下是全缓冲的,不加会看到空输出并误判成「进程卡死」。本项目的日志走 stderr、进度条走 stdout,两者混在一起时尤其容易误判
 - **Image Handling**: Images extracted from PDFs are captioned using Vision LLM and stored separately. 自 feature-002 起，查询命中含图 chunk 时，`query_knowledge_hub` 工具会通过 `MultimodalAssembler` 同时返回文本与图片（MCP `ImageContent`，base64），两种模式（`use_llm=true/false`）策略一致。返图数量上限由 `query.max_images_per_response` 配置（默认 10）

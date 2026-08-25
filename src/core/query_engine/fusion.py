@@ -97,7 +97,26 @@ class Fusion:
         return dict(self._weights)
 
     def weight_for(self, route: str) -> float:
-        """取某路径的生效权重；未配置的路径返回缺省值。"""
+        """取某路径的生效权重；未配置的路径返回缺省值。
+
+        ⚠️ **给引入多路检索的下一个变更**（Multi-Query / RAG-Fusion 之类）：
+
+        这里查不到路径名会**静默回落 `DEFAULT_ROUTE_WEIGHT`（1.0）**，不报错。
+        当前只有 ``dense`` / ``sparse`` 两路，且路径名由
+        :data:`src.core.types.ROUTE_DENSE` / :data:`~src.core.types.ROUTE_SPARSE`
+        统一提供，与 ``settings.retrieval.fusion_weights`` 的键一一对应，所以不会
+        落空。
+
+        但**一旦把改写出的多个 query 各自当作一路**（例如命名成 ``sparse_q0`` /
+        ``sparse_q1``），查表就会全部落空 —— 每一路都拿到 1.0，而不是 Feature-005
+        在英文金标上校准出来的 ``sparse: 0.1``。后果是：**校准好的权重被悄悄作废、
+        sparse 回到等权，而系统照常运行、不报错、指标只是变差。**
+
+        正确做法是按**路径族**查找（从 ``sparse_q0`` 剥出 ``sparse`` 再查表），
+        并配一条「改了配置结论就该变」的单测固定住。
+        **本变更刻意不实现它** —— 现在没有多路路径名，为不存在的需求做设计只会
+        变成又一个 ``rerank.top_m``（写了、有文档、从未生效）。
+        """
         return float(self._weights.get(route, DEFAULT_ROUTE_WEIGHT))
 
     def fuse(

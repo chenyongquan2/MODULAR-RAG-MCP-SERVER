@@ -127,47 +127,112 @@ class TestDeliberateExclusions:
         assert offenders == [], f"词表里混进了单复数对：{offenders}"
 
 
+class TestIdfCriterion:
+    """扩展目标必须**足够稀有** —— 这是第二版词表的核心判据。
+
+    **第一版为此翻过车**：判据是「缩写零信号、全称大量存在」，看着合理 ——
+    那个词原本对 BM25 贡献为 0。但**「大量存在」恰恰是 BM25 里最没用的性质**：
+    BM25 逐词求和、每词按 IDF 加权，词越常见判别力越低。
+
+    实测第一版把 ``mgr`` 扩成 ``manager``（占语料 **26.3%**、IDF **1.030**），
+    而被替换的 ``grp`` IDF 是 **8.257** —— 等于往高区分度查询里塞一个匹配四分之一
+    语料的词。A/B 结果：sparse 单路 MRR 0.8104 → 0.7311。
+
+    ⚠️ 这条用例查的是**语料先验统计**，与金标标签无关，因此不构成对测试集的过拟合。
+    """
+
+    IDF_MIN = 3.0
+    INDEX_PATH = "data/db/bm25/default_text-embedding-v4.json"
+
+    @pytest.fixture(scope="class")
+    def idf_table(self):
+        import json
+
+        path = Path(self.INDEX_PATH)
+        if not path.exists():
+            pytest.skip(f"BM25 索引不在:{path}（换语料或未建索引时跳过）")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {term: entry["idf"] for term, entry in data["index"].items()}
+
+    def test_every_expansion_target_is_selective(self, raw, idf_table) -> None:
+        from src.core.text.tokenizer import tokenize
+
+        offenders = []
+        for key, values in raw.items():
+            for value in values:
+                tokens = tokenize(str(value))
+                if not tokens:
+                    continue
+                worst = min(idf_table.get(t, 0.0) for t in tokens)
+                if worst < self.IDF_MIN:
+                    offenders.append((key, value, round(worst, 3)))
+
+        assert offenders == [], (
+            f"这些扩展目标在语料里太常见（IDF < {self.IDF_MIN}），"
+            f"加进查询是净加噪：{offenders}"
+        )
+
+    def test_the_check_can_actually_fail(self, idf_table) -> None:
+        """自检：一个已知过于常见的词必须被这条判据拒绝。
+
+        否则「IDF 表读空了」和「全部通过」长得一模一样 —— 又一个静默失效。
+        """
+        assert idf_table.get("manager", 0.0) < self.IDF_MIN, (
+            "前提检查失败：manager 本应是低 IDF 的反面教材"
+        )
+
+
 class TestExpansionActuallyFires:
-    """拿金标 query 里真实出现过的缩写走一遍，确认能扩开。
+    """拿词表里真实存在的条目走一遍，确认能扩开。
 
     没有这条，一份「格式全对但一个词都命中不了」的词表也能通过上面全部检查 ——
     那正是本项目的招牌病形态。
     """
 
-    @pytest.mark.parametrize(
-        "abbrev,expected",
-        [
-            ("grp", "group"),
-            ("mgr", "manager"),
-            ("cfg", "config"),
-            ("srv", "server"),
-            ("bal", "balance"),
-            ("sym", "symbol"),
-            ("req", "request"),
-            ("resp", "response"),
-            ("evts", "events"),
-            ("imtsrvapi", "imtserverapi"),
-        ],
-    )
-    def test_known_abbreviation_expands(self, abbrev: str, expected: str) -> None:
-        rewriter = SynonymQueryRewriter(settings=None, synonym_dict=DICT_PATH)
+    def test_every_entry_expands(self, raw) -> None:
+        """遍历词表**全部**条目，逐条确认扩展真的发生。
 
-        result = [w.lower() for w in rewriter.rewrite_keywords([abbrev])]
-
-        assert expected in result, f"{abbrev!r} 没有扩展出 {expected!r}"
-
-    def test_multiword_entry_is_tokenized(self) -> None:
-        """``th: [trade history]`` 这种多词写法必须被切开。
-
-        索引里不存在「trade history」这个整体词条。
+        比写死几个样例更稳：换词表时不需要同步改测试，而覆盖面反而更全。
         """
         rewriter = SynonymQueryRewriter(settings=None, synonym_dict=DICT_PATH)
 
-        result = [w.lower() for w in rewriter.rewrite_keywords(["th"])]
+        for key, values in raw.items():
+            result = [w.lower() for w in rewriter.rewrite_keywords([key])]
+            assert len(result) > 1, f"{key!r} 没有扩展出任何新词"
+            for value in values:
+                from src.core.text.tokenizer import tokenize
 
-        assert "trade" in result
-        assert "history" in result
-        assert "trade history" not in result
+                for token in tokenize(str(value)):
+                    assert token in result, f"{key!r} 没有扩展出 {token!r}"
+
+    def test_expansion_is_bidirectional(self, raw) -> None:
+        """从全称也要能扩回缩写 —— 用户两种写法都可能用。"""
+        rewriter = SynonymQueryRewriter(settings=None, synonym_dict=DICT_PATH)
+
+        key, values = next(iter(raw.items()))
+        result = [w.lower() for w in rewriter.rewrite_keywords([str(values[0])])]
+
+        assert key in result
+
+    def test_multiword_entries_are_tokenized(self, raw) -> None:
+        """多词写法必须被切开 —— 索引里不存在整体词条。
+
+        当前词表可能一条多词条目都没有（第二版全是单词），那样这条自动跳过。
+        """
+        from src.core.text.tokenizer import tokenize
+
+        multiword = [
+            (k, v) for k, vs in raw.items() for v in vs if len(tokenize(str(v))) > 1
+        ]
+        if not multiword:
+            pytest.skip("当前词表没有多词条目")
+
+        rewriter = SynonymQueryRewriter(settings=None, synonym_dict=DICT_PATH)
+        for key, value in multiword:
+            result = [w.lower() for w in rewriter.rewrite_keywords([key])]
+            assert str(value).lower() not in result
+            for token in tokenize(str(value)):
+                assert token in result
 
     def test_unrelated_query_is_untouched(self) -> None:
         rewriter = SynonymQueryRewriter(settings=None, synonym_dict=DICT_PATH)
