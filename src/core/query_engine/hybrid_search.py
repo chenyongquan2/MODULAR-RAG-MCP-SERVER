@@ -205,14 +205,23 @@ class HybridSearch:
         keywords = processed_query.keywords
 
         if trace is not None:
-            trace.finish_stage(
-                "query_processing",
-                {
-                    "method": "query_processor",
-                    "query": query,
-                    "keywords": keywords,
-                },
-            )
+            payload: Dict[str, Any] = {
+                "method": "query_processor",
+                "query": query,
+                "keywords": keywords,
+            }
+            # 改写留痕(change per-route-metrics-and-synonym-rewrite T-2.4)。
+            #
+            # 为什么非记不可:改写**没生效**与改写**生效但无收益**,在最终指标
+            # 上可能表现完全相同。没有痕迹就无法区分这两件事,而它们的处置
+            # 完全相反 —— 前者去查配置,后者去改词表。
+            #
+            # 未改写时**同样记录**(strategy: none / added_count: 0),省略会让
+            # 「没启用」与「启用了但一个词都没匹配上」在数据上无法区分。
+            rewrite_info = getattr(processed_query, "rewrite_info", None)
+            if rewrite_info:
+                payload["rewrite"] = dict(rewrite_info)
+            trace.finish_stage("query_processing", payload)
 
         dense_results: List[RetrievalResult] = []
         sparse_results: List[RetrievalResult] = []
