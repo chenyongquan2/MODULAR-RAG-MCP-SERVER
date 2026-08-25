@@ -263,8 +263,15 @@ class TestFactory:
     def test_registers_both_builtin_strategies(self) -> None:
         assert QueryRewriterFactory.list_providers() == ["none", "synonym"]
 
-    def test_creates_none_by_default(self) -> None:
+    def test_creates_none_when_disabled(self) -> None:
+        """``strategy: none`` → ``NoneQueryRewriter``。
+
+        刻意**显式设置** strategy 而不是依赖仓库里 ``settings.yaml`` 的当时取值 ——
+        测试断言的是「工厂按配置给对东西」，不是「仓库当前配的是什么」。
+        后者会让这条用例在有人临时改配置跑实验时无故变红。
+        """
         settings = load_settings()
+        settings.query_rewrite = QueryRewriteSettings(strategy="none")
 
         rewriter = QueryRewriterFactory.create(settings)
 
@@ -277,6 +284,7 @@ class TestFactory:
         代码路径，少一个分支就少一处漂移的可能。
         """
         settings = load_settings()
+        settings.query_rewrite = QueryRewriteSettings(strategy="none")
 
         assert QueryRewriterFactory.create(settings) is not None
 
