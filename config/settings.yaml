@@ -83,24 +83,46 @@ retrieval:
   # {dense: 1.0, sparse: 0.5} 与 {dense: 2.0, sparse: 1.0} 排序完全相同。
   # 缺失的路径缺省 1.0；单条设 0 合法，等价于关闭该路；全部为 0 会被启动期拒绝。
   #
-  # 当前值由 feature-005 在英文金标(42 条)上校准得出，中文金标(6 条)验证不倒退。
-  # 相比纯语义检索：两个语种的 MRR 与 nDCG 均提升、recall 均持平，代价是英文
-  # 42 条里 1 条丢了唯一命中。完整扫描曲线见
-  # specs/005-weighted-fusion/acceptance.md
+  # 当前值 sparse=0.75 由 2026-08-25 在**第二代金标**(golden_test_set_en_v2.json,
+  # 41 条 pooled-llm-judged)上重新校准得出。
   #
-  # ⚠️ 权重是**语料相关的**，换语料必须重新校准
-  #    （同「换 Judge 需重新校准阈值」）：
+  # ⚠️ 上一个值 0.1 是在**第一代金标**(dense-top-k)上校准的,而那把尺子已被实测
+  #    证明会给出方向相反的结论(重排 A/B:第一代 MRR -0.1246、第二代 +0.0764)。
+  #    第一代的 expected_chunk_ids 是拿 ground_truth 查纯 dense top-5 回填的,
+  #    **标准答案本身就是「embedding 认为最像答案的那几条」** —— 于是任何 sparse
+  #    贡献挤掉一条 dense 命中都会被记为退步,校准过程被系统性地压向低 sparse 权重。
+  #    换句话说 0.1 不是「会随语料过时」,而是**当时就偏低**。
+  #
+  # 重校准实测(英文 41 条,端到端跑真实管线,--no-generate-answers + backends:[custom]):
+  #
+  #   sparse   hit_rate     MRR     nDCG   recall
+  #   0.10       0.9756  0.8585   0.7140   0.4584   <- 旧值
+  #   0.25       0.9756  0.8585   0.7157   0.4584
+  #   0.50       0.9756  0.8707   0.7177   0.4584
+  #   0.75       0.9756  0.8748   0.7184   0.4584   <- 新值(最优)
+  #   1.00       0.9756  0.8726   0.7027   0.4483   <- nDCG/recall 开始掉
+  #
+  # 离线扫描(calibrate_fusion_weights.py --sweep)独立给出同一推荐。
+  # 零延迟、零 token —— 它只是 RRF 里的一个系数。
+  #
+  # ⚠️ 别拿离线扫描的**绝对值**外推到管线:扫描在 top-20 上打分给出 +0.051 MRR,
+  #    端到端(top_k_final=10)只有 +0.0163。扫描是选权重的排序工具,不是增益预测器。
+  #
+  # ⚠️ 权重是**语料相关的**,换语料必须重新校准
+  #    (同「换 Judge 需重新校准阈值」):
   #      python scripts/calibrate_fusion_weights.py --build-cache --lang en
   #      python scripts/calibrate_fusion_weights.py --sweep --lang en
+  #    缓存自 v2 起记录金标来源,换了金标会直接拒绝加载而不是拿旧标签算。
   #
-  # ⚠️ 另需知道：金标的 expected_chunk_ids 是 backfill_chunk_ids.py 用**纯
-  #    dense 检索**回填的（scripts/backfill_chunk_ids.py 直接调 vector_store
-  #    .query()）。因此 recall / hit_rate 这两项结构性地偏向 dense ——
-  #    任何 sparse 贡献挤掉一条 dense 命中就只能拉低它们。解读校准结果时，
-  #    MRR / nDCG 比 recall / hit_rate 更可信。
+  # ⚠️ 解读校准结果时看 MRR / nDCG,不看 recall / hit_rate —— 后两项在第一代金标下
+  #    结构性偏向 dense。第二代按 query 池化多路后这个偏向已大幅减轻,但 sparse 贡献
+  #    挤掉 dense 命中仍会拉低它们,所以判定依据仍用 MRR / nDCG。
+  #
+  # ⚠️ 若将来启用 query_rewrite 或引入多路检索(Multi-Query),sparse 的信噪比会变,
+  #    这个值必须再校准一次 —— 它是**语料相关且路径质量相关**的。
   fusion_weights:
     dense: 1.0
-    sparse: 0.1
+    sparse: 0.75
   top_k_dense: 20           # dense 召回数量
   top_k_sparse: 20          # sparse 召回数量
   top_k_final: 10           # 最终返回数量

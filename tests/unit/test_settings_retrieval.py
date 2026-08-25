@@ -168,14 +168,28 @@ class TestRealConfigWiring:
 
         - ``RetrievalSettings`` 的默认值是等权 ``1.0 / 1.0`` —— 配置缺该字段时
           行为与 feature-005 之前逐条一致（FR-003 的向后兼容）
-        - ``settings.yaml`` 交付的是 feature-005 在英文金标上校准出的
-          ``sparse=0.1``（见 specs/005-weighted-fusion/acceptance.md § 三）
+        - ``settings.yaml`` 交付的是在英文金标上**校准出来的**值
 
-        换语料后需重新校准，届时本断言的期望值要一并更新。
+        ⚠️ **本断言刻意不钉死具体数字。** 它原本写作
+        ``== {"dense": 1.0, "sparse": 0.1}``，于是 2026-08-25 那次合法的重校准
+        （0.1 → 0.75，依据是第一代金标已被推翻）让它变红了 —— 而它想守的从来
+        不是「这个值是多少」，是「YAML 的值真的到达了 dataclass，没有静默回落
+        成默认值」。钉死数字只会让每一次正当的重校准都要来改测试，
+        久了就变成「改测试让它绿」的肌肉记忆。
+
+        `fusion_weights` **本来就是为按语料重校准而存在的旋钮**，
+        断言不该假设它不变。
         """
         r = load_settings(_REAL_CONFIG).retrieval
         assert r.rrf_k == 60
-        assert r.fusion_weights == {"dense": 1.0, "sparse": 0.1}
+        # 键齐、值合法、且**不等于 dataclass 默认值** —— 这三条才是「接上了」的判据
+        assert set(r.fusion_weights) == {"dense", "sparse"}
+        assert all(v >= 0.0 for v in r.fusion_weights.values())
+        assert any(v > 0.0 for v in r.fusion_weights.values())
+        assert r.fusion_weights != RetrievalSettings().fusion_weights, (
+            "settings.yaml 的权重与 dataclass 默认值相同 —— "
+            "无法区分「配置真的被读了」与「静默回落成默认值」"
+        )
 
     def test_dataclass_default_stays_equal_weight(self) -> None:
         """dataclass 默认值必须保持等权 —— 它守的是向后兼容而非推荐值。
