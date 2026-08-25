@@ -165,7 +165,7 @@ query_rewrite:
   #
   # ⚠️ 未知取值会在启动期直接报错，**不静默回落 none** —— 回落会让「配置写错了」
   #    与「刻意关闭」表现完全相同，而两者的处置完全相反。
-  strategy: synonym
+  strategy: none
 
   # strategy: synonym 时**必填**。刻意没有隐式默认值 —— 参照重排那次的教训：
   # 兜底成一个对语料无效的默认值（当时是纯英文 ms-marco 模型），会让配错了
@@ -180,7 +180,7 @@ query_rewrite:
   #
   # ⚠️ 词表是**语料相关的**，换语料需重新维护 —— 与 fusion_weights、
   #    acceptance_thresholds 同属这一类。
-  synonym_dict: ./config/synonyms.yaml
+  synonym_dict: ""
 
 # 摄取管道配置
 ingestion:
@@ -200,8 +200,7 @@ evaluation:
   # 启用的评估后端 (custom 永久启用, ragas 视场景启用)
   backends:
     - custom
-  # TEMP(T-3.1 A/B,跑完还原): 纯检索改动不需要 judge
-  #  - ragas              # 启用 RAGAS 4 项指标 (需配置下方 judge_llm)
+    - ragas              # 启用 RAGAS 4 项指标 (需配置下方 judge_llm)
 
   # 占位金标 (US1 阶段使用)
   golden_test_set: ./tests/fixtures/golden_test_set.json

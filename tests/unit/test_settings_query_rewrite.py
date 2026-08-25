@@ -18,6 +18,7 @@ change: per-route-metrics-and-synonym-rewrite
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 import yaml
@@ -201,6 +202,59 @@ class TestWiredIntoLoadSettings:
         assert "_validate_query_rewrite_settings" in source, (
             "校验函数没有挂进 validate_settings —— 写了但没接上，等于没写"
         )
+
+    def test_yaml_section_is_actually_read(self, tmp_path) -> None:
+        """YAML 里的 ``query_rewrite:`` 段必须真的被读进 dataclass。
+
+        **这条是补一个真实事故**（2026-08-25，本变更实施途中）：dataclass 加了、
+        校验加了、``settings.yaml`` 也写了 —— 但 ``load_settings()`` 里
+        **忘了把这一段接进 ``Settings(...)``**，于是无论 YAML 写什么，
+        运行时拿到的都是 dataclass 默认值 ``strategy='none'``。
+
+        更值得记的是：**当时本文件其余 17 条用例全绿**。因为它们都直接构造
+        ``QueryRewriteSettings(...)``，**绕过了 YAML 加载这一段**。
+        这正是 ``_labeling_method`` 那次的翻版 —— 测了端点，没测那条线。
+        """
+        import yaml as _yaml
+
+        from src.core.settings import load_settings as _load
+
+        base = _yaml.safe_load(
+            (Path("config/settings.yaml")).read_text(encoding="utf-8")
+        )
+        syn = tmp_path / "syn.yaml"
+        syn.write_text("grp: [group]", encoding="utf-8")
+        base["query_rewrite"] = {
+            "strategy": "synonym",
+            "synonym_dict": str(syn),
+        }
+        cfg = tmp_path / "settings.yaml"
+        cfg.write_text(_yaml.safe_dump(base, allow_unicode=True), encoding="utf-8")
+
+        settings = _load(str(cfg))
+
+        assert settings.query_rewrite.strategy == "synonym", (
+            "YAML 写的是 synonym 但读出来是默认值 —— "
+            "query_rewrite 段没有接进 load_settings()"
+        )
+        assert settings.query_rewrite.synonym_dict == str(syn)
+
+    def test_missing_section_falls_back_to_defaults(self, tmp_path) -> None:
+        """YAML 里没有这一段时用默认值（关闭），且不报错 —— 向后兼容。"""
+        import yaml as _yaml
+
+        from src.core.settings import load_settings as _load
+
+        base = _yaml.safe_load(
+            (Path("config/settings.yaml")).read_text(encoding="utf-8")
+        )
+        base.pop("query_rewrite", None)
+        cfg = tmp_path / "settings.yaml"
+        cfg.write_text(_yaml.safe_dump(base, allow_unicode=True), encoding="utf-8")
+
+        settings = _load(str(cfg))
+
+        assert settings.query_rewrite.strategy == "none"
 
     def test_real_config_loads(self) -> None:
         """仓库里的 config/settings.yaml 必须能通过校验。"""

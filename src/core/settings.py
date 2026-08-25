@@ -989,6 +989,9 @@ def load_settings(path: str = "config/settings.yaml") -> Settings:
         rerank=_build_sub_settings(
             raw.get("rerank"), RerankSettings, "rerank"
         ),
+        query_rewrite=_build_sub_settings(
+            raw.get("query_rewrite"), QueryRewriteSettings, "query_rewrite"
+        ),
         splitter=_build_sub_settings(
             raw.get("splitter"), SplitterSettings, "splitter"
         ),
