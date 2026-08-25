@@ -86,7 +86,7 @@ class ResponseBuilder:
 
         # 4. 调用 LLM 生成响应
         messages: List[Dict[str, str]] = [
-            {"role": "system", "content": "你是一个专业的知识助手，能够基于提供的上下文回答用户的问题。"},
+            {"role": "system", "content": self._system_prompt()},
             {"role": "user", "content": prompt},
         ]
         response_text: str = self.llm.chat(messages=messages, trace=trace, **kwargs)
@@ -191,18 +191,60 @@ class ResponseBuilder:
         # 使用模板构建提示词
         return self.prompt_template.format(query=query, context=context)
 
+    @staticmethod
+    def _system_prompt() -> str:
+        """系统提示词 —— **中英并列书写**。
+
+        ## 为什么必须双语
+
+        此前这里是一句纯中文(「你是一个专业的知识助手…」),模板也全是中文,
+        且**没有任何一句提到输出语言**。模型看到一屋子中文指令,就据此推断
+        应当用中文回答 —— 英文提问也一样。
+
+        实测后果(run `728a77ab`,英文金标 41 条):**61% 的英文问题得到含中文的
+        答案**。而这不只是评估口径问题,是**产品缺陷** —— 用户用英文问、拿到
+        中文答案。
+
+        ## 为什么不「按检测到的语言动态换整份提示词」
+
+        那要维护 N 份模板,而模板漂移是**静默的**:中文版改了英文版没改,
+        只有英文提问才会暴露,而那条路径本来就是出问题的那条。
+        一份双语提示词只有一处真相。
+
+        ## 为什么不「只加一句英文要求、其余保持中文」
+
+        模型的语言倾向来自指令的**整体**而非单句。一屋子中文里插一句
+        "reply in English" 仍然在把它往中文推。
+        """
+        return (
+            "You are a professional knowledge assistant. Answer the user's "
+            "question strictly based on the provided context.\n"
+            "**Reply in the same language as the question.** If the question is "
+            "in English, answer in English, even when the context is in another "
+            "language.\n\n"
+            "你是一个专业的知识助手，仅基于所提供的上下文回答用户的问题。\n"
+            "**请用提问所使用的语言回答。** 如果问题是中文，就用中文回答；"
+            "如果问题是英文，就用英文回答 —— 即使上下文是另一种语言。"
+        )
+
     def _load_default_prompt(self) -> str:
-        """加载默认的 RAG 提示词模板。
+        """加载默认的 RAG 提示词模板 —— **中英并列书写**,理由见 :meth:`_system_prompt`。
 
         Returns:
             提示词模板字符串，包含 {query} 和 {context} 占位符
         """
-        return """请基于以下上下文回答用户的问题。如果上下文中没有相关信息，请明确说明。
+        return """Answer the question below using only the context provided. If the context does not contain the relevant information, say so explicitly.
+**Reply in the same language as the question**, even if the context is in a different language.
+Cite your sources inline with [1], [2] markers.
 
-上下文：
+请仅基于以下上下文回答问题。如果上下文中没有相关信息，请明确说明。
+**请用提问所使用的语言回答**，即使上下文是另一种语言。
+请在回答中使用 [1], [2] 等引用标记指出信息来源。
+
+---
+Context / 上下文：
 {context}
 
-问题：
+Question / 问题：
 {query}
-
-请提供准确、清晰的回答，并在回答中使用 [1], [2] 等引用标记指出信息来源。"""
+"""
