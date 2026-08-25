@@ -39,7 +39,7 @@
 
 - [x] 2.2 按既有可插拔模式新增改写器基类 + 工厂 + `synonym` 实现（硬约束 1：`src/core/` 不得 import 具体实现、不得出现 `if strategy == ...`）。词表双向展开（design D5）。配套单测：命中术语 / 命中缩写 / 命中大小写变体 / 未命中任何词 / 空词表
 
-- [ ] 2.3 挂载到 `QueryProcessor.process()`，位置在 `_extract_keywords()` **之后**（design D3）。扩展词与原关键词**一起过 `src/core/text/tokenizer.py`** —— 禁止另起一套切分。**只改 `keywords`（sparse 的输入），不改喂给 dense 的 `original_query`**。让既有死字段 `ProcessedQuery.rewritten_query` 变活，不新增平行字段。配套单测：扩展词确实经过统一切分（与索引端逐条对齐）、`strategy: none` 时 `ProcessedQuery` 与改造前逐条相同
+- [x] 2.3 挂载到 `QueryProcessor.process()`，位置在 `_extract_keywords()` **之后**（design D3）。扩展词与原关键词**一起过 `src/core/text/tokenizer.py`** —— 禁止另起一套切分。**只改 `keywords`（sparse 的输入），不改喂给 dense 的 `original_query`**。让既有死字段 `ProcessedQuery.rewritten_query` 变活，不新增平行字段。配套单测：扩展词确实经过统一切分（与索引端逐条对齐）、`strategy: none` 时 `ProcessedQuery` 与改造前逐条相同
 
 - [ ] 2.4 改写留痕打到既有的显式 `trace` 参数上：本次生效的策略名 + 改写前后的查询词。**未改写时同样留痕**（省略会让「没启用」与「启用了但没匹配到词」无法区分）。配套单测覆盖两种情形
 

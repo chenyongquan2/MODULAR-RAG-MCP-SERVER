@@ -55,15 +55,25 @@ class QueryProcessor:
         self,
         config: Optional[QueryProcessorConfig] = None,
         stopwords: Optional[frozenset[str]] = None,
+        query_rewriter: Optional[Any] = None,
     ) -> None:
         """初始化 QueryProcessor。
 
         Args:
             config: 处理器配置，默认使用 QueryProcessorConfig()
             stopwords: 停用词集合，默认使用 DEFAULT_STOPWORDS
+            query_rewriter: 查询改写器，默认「不改写」。
+                注意默认值是 ``NoneQueryRewriter`` 实例而**不是 None** ——
+                这样 ``process()`` 里不必写 ``if self._rewriter is not None``，
+                关闭与启用走同一条代码路径，少一个分支就少一处漂移的可能。
         """
         self.config = config or QueryProcessorConfig()
         self.stopwords = stopwords or DEFAULT_STOPWORDS
+        if query_rewriter is None:
+            from src.libs.query_rewriter.base_query_rewriter import NoneQueryRewriter
+
+            query_rewriter = NoneQueryRewriter()
+        self._query_rewriter = query_rewriter
 
     def process(
         self,
@@ -89,12 +99,39 @@ class QueryProcessor:
 
         keywords = self._extract_keywords(original_query)
 
+        # 改写发生在**关键词提取之后**（design D3）。
+        #
+        # 顺序不能颠倒：作用在原始文本上的话，扩展会命中本该被停用词过滤掉
+        # 的词，把噪音带进 BM25 查询 —— 而这不会报错，只会让 sparse 更吵。
+        #
+        # 只改 keywords，不改 original_query：稠密路吃的是原始查询，它的
+        # embedding 本就对同义词鲁棒，往那边塞同义词只是稀释语义信号。
+        expanded_keywords = list(
+            self._query_rewriter.rewrite_keywords(keywords, query=original_query)
+        )
+        strategy = self._query_rewriter.get_strategy_name()
+        added = [w for w in expanded_keywords if w not in keywords]
+
+        # 未改写时同样留痕 —— 省略会让「没启用」与「启用了但没匹配到任何词」
+        # 在数据上无法区分，而这两件事的处置完全相反。
+        rewrite_info = {
+            "strategy": strategy,
+            "original_keywords": list(keywords),
+            "expanded_keywords": list(expanded_keywords),
+            "added_count": len(added),
+        }
+        # rewritten_query 只在真的产生了新词时才填 —— 它表示「稀疏路实际用的
+        # 查询」，没变化时留 None，保持与改写前逐条相同的序列化形态。
+        rewritten_query = " ".join(expanded_keywords) if added else None
+
         parsed_filters = self._parse_filters(filters)
 
         return ProcessedQuery(
             original_query=original_query,
-            keywords=keywords,
+            keywords=expanded_keywords,
             filters=parsed_filters,
+            rewritten_query=rewritten_query,
+            rewrite_info=rewrite_info,
         )
 
     def _tokenize_shared(self, query: str) -> List[str]:

@@ -291,7 +291,25 @@ class ProcessedQuery:
         original_query: 原始查询文本
         keywords: 提取的关键词列表 (用于 BM25 稀疏检索)
         filters: 过滤条件字典 (可选，如 collection、doc_type 等)
-        rewritten_query: 改写后的查询 (可选，如 query expansion)
+        rewritten_query: 改写后的**稀疏路查询**——扩展后的关键词按空格拼接。
+            ``None`` 表示未改写（``query_rewrite.strategy: none``，或策略生效
+            但一个词都没匹配上）。
+
+            ⚠️ 注意它**不是**给稠密路用的。稠密路吃的是 ``original_query`` ——
+            embedding 本就对同义词鲁棒，往它的输入里塞同义词只会把干净的语义
+            信号稀释成一串并列词。改写只作用于 ``keywords``。
+
+            该字段自 feature-002 起就定义在这里，但**一直没有任何生产路径读写
+            它**（定义了、有文档、``from_dict`` 会读，就是没人用）—— 它是当初
+            为查询改写预留的钩子，change per-route-metrics-and-synonym-rewrite
+            让它变活。
+        rewrite_info: 改写的**来源信息**（可选）：生效策略、改写前后的关键词、
+            新增词数。与 ``rewritten_query`` 的分工是「产物 vs 出处」。
+
+            为什么需要单独记：改写**不生效**与改写**生效但无收益**，在最终指标
+            上可能表现完全相同。没有痕迹就无法区分这两件事，而它们的处置完全
+            相反（前者去查配置，后者去改词表）。策略为 ``none`` 时同样记录，
+            省略会让「没启用」与「启用了但没匹配到任何词」在数据上无法区分。
 
     说明：
         用于 QueryProcessor 的输出，作为 HybridSearch 的输入。
@@ -300,6 +318,7 @@ class ProcessedQuery:
     keywords: List[str] = field(default_factory=list)
     filters: Dict[str, Any] = field(default_factory=dict)
     rewritten_query: Optional[str] = None
+    rewrite_info: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """序列化为字典 (过滤 None 值)。"""
@@ -313,7 +332,8 @@ class ProcessedQuery:
             original_query=data["original_query"],
             keywords=data.get("keywords", []),
             filters=data.get("filters", {}),
-            rewritten_query=data.get("rewritten_query")
+            rewritten_query=data.get("rewritten_query"),
+            rewrite_info=data.get("rewrite_info"),
         )
 
 

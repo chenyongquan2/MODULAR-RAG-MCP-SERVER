@@ -71,7 +71,18 @@ class HybridSearch:
         else:
             from src.core.query_engine.query_processor import QueryProcessor, QueryProcessorConfig
             config = QueryProcessorConfig()
-            self._query_processor = QueryProcessor(config=config)
+            # 查询改写器由工厂按配置创建（宪法原则一:不 import 具体实现）。
+            # settings 为 None 时（纯替身构造的测试场景）走「不改写」。
+            query_rewriter = None
+            if settings is not None:
+                from src.libs.query_rewriter.query_rewriter_factory import (
+                    QueryRewriterFactory,
+                )
+
+                query_rewriter = QueryRewriterFactory.create(settings)
+            self._query_processor = QueryProcessor(
+                config=config, query_rewriter=query_rewriter
+            )
 
         if dense_retriever is not None:
             self._dense_retriever = dense_retriever
