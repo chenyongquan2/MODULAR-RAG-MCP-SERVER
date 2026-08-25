@@ -1,0 +1,9 @@
+collection        : default_text-embedding-v4
+labeling_method   : pooled-llm-judged
+acceptance_status : fail
+retrieval_mode    : (未标注)
+corpus_validity   : (未标注)
+当前基线          : 57259cb6-cbd3-4f1a-b267-700a6a350195
+  → 会被降级进 history,不会删除
+
+[dry-run] 未写入 baselines.json

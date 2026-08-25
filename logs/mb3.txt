@@ -1,0 +1,10 @@
+collection        : default_text-embedding-v4
+labeling_method   : pooled-llm-judged
+acceptance_status : fail
+retrieval_mode    : (未标注)
+corpus_validity   : (未标注)
+当前基线          : 57259cb6-cbd3-4f1a-b267-700a6a350195
+  → 会被降级进 history,不会删除
+2026-08-25 16:08:07 [INFO] src.observability.evaluation.baseline_manager: Marked baseline: collection=default_text-embedding-v4 report_id=728a77ab-5755-460c-b088-0c1bd82396b4 status=fail (old baseline moved to history)
+
+[OK] marked as baseline: 728a77ab-5755-460c-b088-0c1bd82396b4 (marked_by=fusion-sparse-0.75-en-2026-08-25)

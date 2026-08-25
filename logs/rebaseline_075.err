@@ -426,4 +426,26 @@ Exception raised in Job[2]: TimeoutError()
 2026-08-25 16:01:49 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
 2026-08-25 16:01:49 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
 2026-08-25 16:01:49 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.2s (avg 65.4ms per text)
-Evaluating:  50%|█████     | 2/4 [00:29<00:30, 15.35s/it]Evaluating:  75%|███████▌  | 3/4 [00:38<00:12, 12.66s/it]
+Evaluating:  50%|█████     | 2/4 [00:29<00:30, 15.35s/it]Evaluating:  75%|███████▌  | 3/4 [00:38<00:12, 12.66s/it]Evaluating: 100%|██████████| 4/4 [02:16<00:00, 46.27s/it]Evaluating: 100%|██████████| 4/4 [02:16<00:00, 34.20s/it]
+2026-08-25 16:03:41 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 16:03:42 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 16:03:42 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 466.7ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:14<00:42, 14.27s/it]No statements were generated from the answer.
+Evaluating:  50%|█████     | 2/4 [00:27<00:27, 13.74s/it]2026-08-25 16:04:37 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 16:04:39 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 16:04:39 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.4s (avg 1360.4ms per text)
+2026-08-25 16:04:39 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 16:04:39 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 16:04:39 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.4s (avg 149.0ms per text)
+Evaluating:  75%|███████▌  | 3/4 [00:48<00:16, 16.81s/it]Exception raised in Job[2]: TimeoutError()
+Evaluating: 100%|██████████| 4/4 [03:00<00:00, 62.25s/it]Evaluating: 100%|██████████| 4/4 [03:00<00:00, 45.00s/it]
+2026-08-25 16:07:06 [WARNING] src.observability.evaluation.eval_runner: baseline delta has denominator mismatch on 3 metric(s): ['ragas__answer_relevancy', 'ragas__context_precision', 'ragas__faithfulness']
+2026-08-25 16:07:06 [INFO] src.observability.evaluation.eval_runner: Attached baseline delta: baseline_id=57259cb6-cbd3-4f1a-b267-700a6a350195,主聚合 delta keys=['custom__hit_rate', 'custom__mrr', 'custom__ndcg', 'custom__recall', 'ragas__answer_relevancy', 'ragas__context_precision', 'ragas__context_recall', 'ragas__faithfulness']
+2026-08-25 16:07:06 [INFO] src.observability.evaluation.eval_runner: Archived evaluation report: run_id=728a77ab-5755-460c-b088-0c1bd82396b4 acceptance_status=fail
+降级率: 41.5% (17/41 条用例至少有一项指标判定失败)
+  ⚠️ 超过门槛 5.0% —— 聚合指标的分母已被静默收缩,绝对值偏高且跨运行不可比
+  按指标:
+    ragas__context_precision     有效 33 / 降级 8 (19.5%) —— 该项均值实为 33 条算出
+        unparseable              8
+    ragas__faithfulness          有效 27 / 降级 14 (34.1%) —— 该项均值实为 27 条算出
+        unparseable              14
