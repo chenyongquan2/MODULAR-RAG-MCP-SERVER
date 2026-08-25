@@ -1,108 +1,54 @@
-# 同义词 / 术语扩展词表
+# 同义词 / 术语扩展词表（IDF 筛选版）
 #
-# 用途：query_rewrite.strategy: synonym 时，把查询关键词展开成整组等价词面，
-#       提升 BM25（sparse）路的命中率。**双向展开** —— 命中组内任一词都展开全组。
-#
-# ⚠️ 这份词表是**语料相关的**。当前语料是 MT5 Server API 开发文档
-#    （collection: default_text-embedding-v4）。换语料必须重新构建 ——
-#    与 fusion_weights、acceptance_thresholds 同属这一类。
+# ⚠️ **本表是第二版。第一版（32 组，保留在 logs/synonyms_v1_broad.yaml）在 A/B 上
+#    明确有害** —— sparse 单路 MRR 0.8104 → 0.7311（−0.0793），四项全跌。
 #
 # ---------------------------------------------------------------------------
-# 为什么是这些词条（构建方法，别凭印象加）
+# 第一版错在哪：选词判据用反了
 # ---------------------------------------------------------------------------
 #
-# 词条不是想出来的，是**量出来的**。方法：
+# 第一版的判据是「缩写在语料里近乎零信号、全称大量存在」，看上去很合理 ——
+# 那个词原本对 BM25 贡献为 0，扩展后才第一次有分。
 #
-#   1. 看金标 query 里实际出现的缩写（`grp` / `mgr` / `evts` / `bal` / `TH` …）——
-#      这批 query 由 RAGAS 的 compress_question 演化而来，天然带大量缩写与改写，
-#      而文档里写的是全称。
-#   2. 到 BM25 索引里查这两种写法各自覆盖多少 chunk
-#      （data/db/bm25/<collection>.json 的 index[<term>].postings）。
-#   3. **只收「缩写近乎零信号、全称大量存在」的组** —— 那种情况下扩展几乎是纯增益：
-#      原本这个词对 BM25 的贡献是 0，扩展后才第一次有分。
+# **但「大量存在」恰恰是 BM25 里最没用的性质。** BM25 逐词求和，每个词的贡献
+# 按 IDF（逆文档频率）加权：一个词出现在越多文档里，它的区分度越低。实测：
 #
-# 实测（2026-08-25，collection default_text-embedding-v4，共 52,069 个 chunk）：
+#   扩展目标        占语料      IDF
+#   manager         26.3%      1.030      <- 匹配四分之一的语料
+#   value           22.3%      1.250
+#   server          12.4%      1.951
+#   config          11.9%      1.998
 #
-#   缩写        含该缩写的 chunk    全称              含全称的 chunk
-#   mgr                      0     manager                  13698
-#   evts                     0     events                     824
-#   bal                      0     balance                    734
-#   resp                     0     response                  5929
-#   sym                      0     symbol                    4031
-#   tot                      0     total                     2951
-#   imtsrvapi                0     imtserverapi              2988
-#   grp                     13     group                     3426
-#   req                     17     request                   3704
-#   func                     7     function                  1486
+# 而被它们「补充」的缩写，在存在时 IDF 极高（grp 8.257 / func 8.845 / idx 9.944）。
+# 于是扩展做的事是：**在一个高区分度的查询里，塞进一个匹配全语料四分之一的词**。
+# 那个词会把几千个弱相关文档拉进候选，把真命中挤下去。
 #
 # ---------------------------------------------------------------------------
-# 刻意**没有**收进来的两类
+# 第二版的判据
 # ---------------------------------------------------------------------------
 #
-# 1. **缩写本身在语料里也很常见的组**，例如 `ret`(11859) / `return`(10268)、
-#    `pos`(2435) / `position`(4025)、`err`(1868) / `error`(4880)。
-#    这类扩展带来的增益有限，却会实打实地加长 BM25 查询、稀释权重 ——
-#    而且 `ret` / `pos` 在 API 文档里常是**参数名**，与「返回」「持仓」不是一回事，
-#    扩展等于引入语义漂移。
+# 两条同时满足才收：
+#   1. 缩写在语料里近乎零信号（否则原查询本来就能命中，扩展是多余的）
+#   2. **扩展目标本身足够稀有**：IDF >= 3.0（约等于 df <= 5% 的语料）
 #
-# 2. **中文词条**。语料确实含大量中文（「服务」bigram 覆盖 4143 个 chunk），
-#    中英术语对照（服务器 ↔ server）看上去也合理 —— 但中文金标只有 6 条，
-#    **验证不了任何中文词条到底有没有用**。凭印象加中文条目就是在编证据。
-#    等中文金标扩容后（BACKLOG 梯队三 C1）再基于实测补。
+# 第 2 条是第一版缺的那一半。按它重筛，32 组只剩 12 组。
 #
-# 3. **单复数**（parameter 1692 / parameters 8428、method 5538 / methods 927 …）。
-#    缺口是真实的（tokenizer 不做词干还原，两者是独立词条），但它与缩写扩展
-#    是**两种不同机制**。混进同一次 A/B 会让结果无法归因 —— 分不清增益来自哪一边。
-#    留作独立后续变更，届时单独测。
+# ⚠️ 筛选依据是**语料的先验统计（IDF）**，不是 A/B 的结果 —— 前者与金标标签
+#    无关，后者才会造成对测试集的过拟合。这个区别很重要。
 #
-# ---------------------------------------------------------------------------
-# 格式
-# ---------------------------------------------------------------------------
+# ⚠️ 词表是**语料相关的**。换语料必须重新构建，且要重新算 IDF。
 #
-#   <任一词面>: [<其余等价词面>, ...]
+# 格式：<任一词面>: [<其余等价词面>, ...]，双向展开，多词写法会过 tokenizer 切分。
 #
-# 键与值合起来是**一组等价词面**，命中其中任何一个都展开出整组。
-# 多词写法（如 "trade history"）会自动过 tokenizer 切分后再进查询 ——
-# 索引端存的是切分后的词条，不切就是往查询里塞一个永远不会命中的词。
-
-# --- API 接口名（金标 query 里出现过的简写形式）---
-imtsrvapi: [imtserverapi]
-imtserveapi: [imtserverapi]   # 金标 query 32 里的实际拼写（原文如此）
-
-# --- 结构与配置 ---
-grp: [group]
-cfg: [config, configuration]
-conf: [config, configuration]
-srv: [server]
-svr: [server]
-mgr: [manager]
-mngr: [manager]
-
-# --- 领域对象 ---
-bal: [balance]
-sym: [symbol]
-acct: [account]
-acc: [account]
-th: [trade history]
-
-# --- 交互与消息 ---
-req: [request]
-resp: [response]
-msg: [message]
-evt: [event]
-evts: [events]
-
-# --- 代码结构 ---
-func: [function]
-iface: [interface]
-impl: [implementation]
-desc: [description]
-idx: [index]
-num: [number]
-tot: [total]
-val: [value]
-addr: [address]
-attr: [attribute]
-proc: [process]
-db: [database]
-del: [delete]
+bal: [balance]   # balance IDF 4.25
+msg: [message]   # message IDF 5.60
+evt: [event]   # event IDF 3.85
+evts: [events]   # events IDF 4.13
+func: [function]   # function IDF 3.53
+impl: [implementation]   # implementation IDF 5.17
+idx: [index]   # index IDF 3.34
+addr: [address]   # address IDF 4.35
+attr: [attribute]   # attribute IDF 9.16
+proc: [process]   # process IDF 5.90
+db: [database]   # database IDF 3.03
+del: [delete]   # delete IDF 3.15
