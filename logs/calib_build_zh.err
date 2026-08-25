@@ -1,0 +1,26 @@
+2026-08-25 11:54:52 [INFO] __main__: Building route cache for lang=zh
+2026-08-25 11:54:56 [INFO] src.libs.embedding.openai_embedding: Initialized OpenAI Embedding with model: qwen/text-embedding-v4, base_url: https://ai-api.finpoints.tech/v1
+2026-08-25 11:54:59 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 11:55:00 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 11:55:00 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.3s (avg 1330.1ms per text)
+2026-08-25 11:55:01 [INFO] __main__: Cached 1/6: dense=20 sparse=20
+2026-08-25 11:55:01 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 11:55:01 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 11:55:01 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.2s (avg 244.8ms per text)
+2026-08-25 11:55:01 [INFO] __main__: Cached 2/6: dense=20 sparse=20
+2026-08-25 11:55:01 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.2s (avg 187.9ms per text)
+2026-08-25 11:55:02 [INFO] __main__: Cached 3/6: dense=20 sparse=20
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.2s (avg 235.3ms per text)
+2026-08-25 11:55:02 [INFO] __main__: Cached 4/6: dense=20 sparse=20
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.2s (avg 173.7ms per text)
+2026-08-25 11:55:02 [INFO] __main__: Cached 5/6: dense=20 sparse=20
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 11:55:02 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.2s (avg 211.9ms per text)
+2026-08-25 11:55:02 [INFO] __main__: Cached 6/6: dense=20 sparse=20

@@ -62,7 +62,15 @@ except Exception:
     pass
 
 #: 缓存格式版本。结构变更须 bump，加载时不匹配即报错而非静默重放。
-CACHE_FORMAT_VERSION = 1
+#:
+#: v2（2026-08-24）：新增 ``golden_set`` / ``labeling_method`` 两个字段。
+#: 缓存把金标的 ``expected_chunk_ids`` **烤进去了**，而 v1 的过期检测只覆盖
+#: collection 与格式版本，**不覆盖金标本身**。于是 B1 把
+#: ``golden_test_sets_by_lang`` 从第一代切到第二代之后，``--sweep`` 会拿
+#: 第一代的 dense 锚定标签算出推荐权重、**照常成功、不报错** —— 又是本项目
+#: 那个招牌病。v1 缓存一律拒绝加载(它们必然是第一代标签，重建成本只是一轮
+#: embedding 调用)。
+CACHE_FORMAT_VERSION = 2
 
 #: 候选 sparse 权重。dense 固定 1.0 —— 权重只有相对比例有意义，
 #: 因此一维扫描已覆盖全部有意义的配置（见 data-model.md § 2）。
@@ -146,12 +154,19 @@ class Cache:
     collection: str
     lang: str
     cases: List[CachedCase]
+    #: 构建本缓存时所用金标的文件路径与标注方式。
+    #: **它们是 expected_chunk_ids 的来源** —— 换了金标，缓存里烤好的期望片段
+    #: 就作废了，而这件事不会以任何方式表现出来（重放照跑、指标照出）。
+    golden_set: str = ""
+    labeling_method: str = ""
 
     def to_json(self) -> Dict[str, Any]:
         return {
             "_format_version": CACHE_FORMAT_VERSION,
             "collection": self.collection,
             "lang": self.lang,
+            "golden_set": self.golden_set,
+            "labeling_method": self.labeling_method,
             "cases": [
                 {
                     "query": c.query,
@@ -164,7 +179,13 @@ class Cache:
         }
 
     @classmethod
-    def from_json(cls, data: Dict[str, Any], expected_collection: str) -> "Cache":
+    def from_json(
+        cls,
+        data: Dict[str, Any],
+        expected_collection: str,
+        expected_golden_set: str = "",
+        expected_labeling_method: str = "",
+    ) -> "Cache":
         version = data.get("_format_version")
         if version != CACHE_FORMAT_VERSION:
             raise ValueError(
@@ -180,9 +201,31 @@ class Cache:
                 "comparable across collections — re-run --build-cache."
             )
 
+        # 金标一致性 —— 缓存里的 expected_chunk_ids 是从金标烤进来的，
+        # 换了金标就等于换了尺子，重放出来的推荐权重不再适用。
+        # 这个检查是 v2 新增的：v1 只查 collection，而 collection 没变、
+        # 金标变了正是 2026-08-24 B1 造成的实际情形。
+        cached_golden = str(data.get("golden_set") or "")
+        if expected_golden_set and cached_golden != expected_golden_set:
+            raise ValueError(
+                f"Cache was built from golden set {cached_golden!r} but current "
+                f"config points at {expected_golden_set!r}. The cached "
+                "expected_chunk_ids come from the old set, so any recommendation "
+                "replayed on them measures the old ruler — re-run --build-cache."
+            )
+        cached_method = str(data.get("labeling_method") or "")
+        if expected_labeling_method and cached_method != expected_labeling_method:
+            raise ValueError(
+                f"Cache was labeled {cached_method!r} but the current golden set "
+                f"uses {expected_labeling_method!r}. Different generations define "
+                "'correct answer' differently — re-run --build-cache."
+            )
+
         return cls(
             collection=collection,
             lang=data.get("lang", ""),
+            golden_set=cached_golden,
+            labeling_method=cached_method,
             cases=[
                 CachedCase(
                     query=c["query"],
@@ -212,7 +255,10 @@ def build_cache(settings: Settings, lang: str, top_k: int) -> Cache:
     if not golden_path:
         raise ValueError(f"No golden test set configured for lang={lang!r}")
 
-    cases_raw = json.loads(Path(golden_path).read_text(encoding="utf-8"))["test_cases"]
+    golden_raw = json.loads(Path(golden_path).read_text(encoding="utf-8"))
+    cases_raw = golden_raw["test_cases"]
+    # 缺失即第一代 —— 与 eval_runner 的判据保持一致，别在这里另起一套。
+    labeling_method = str(golden_raw.get("_labeling_method") or "dense-top-k")
 
     processor = QueryProcessor()
     dense = DenseRetriever(settings)
@@ -240,6 +286,8 @@ def build_cache(settings: Settings, lang: str, top_k: int) -> Cache:
     return Cache(
         collection=settings.vector_store.collection_name,
         lang=lang,
+        golden_set=str(golden_path),
+        labeling_method=labeling_method,
         cases=cached,
     )
 
@@ -466,9 +514,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     try:
+        current_golden = str(
+            (settings.evaluation.golden_test_sets_by_lang or {}).get(args.lang) or ""
+        )
+        current_method = ""
+        if current_golden and Path(current_golden).exists():
+            current_method = str(
+                json.loads(Path(current_golden).read_text(encoding="utf-8")).get(
+                    "_labeling_method"
+                )
+                or "dense-top-k"
+            )
         cache = Cache.from_json(
             json.loads(path.read_text(encoding="utf-8")),
             expected_collection=settings.vector_store.collection_name,
+            expected_golden_set=current_golden,
+            expected_labeling_method=current_method,
         )
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)

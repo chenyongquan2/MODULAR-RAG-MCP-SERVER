@@ -41,6 +41,8 @@ def cache() -> cal.Cache:
     return cal.Cache(
         collection="test_collection",
         lang="en",
+        golden_set="./tests/fixtures/golden_test_set_en_v2.json",
+        labeling_method="pooled-llm-judged",
         cases=[
             _case("q1", ["a", "b"], dense=["a", "x", "y"], sparse=["b", "z", "a"]),
             _case("q2", ["c"], dense=["p", "c"], sparse=["q", "r"]),
@@ -184,6 +186,71 @@ class TestCacheIntegrity:
         for original, restored in zip(cache.cases, loaded.cases):
             assert restored.routes["dense"] == original.routes["dense"]
             assert restored.routes["sparse"] == original.routes["sparse"]
+
+
+class TestGoldenSetProvenance:
+    """缓存必须记住它的 ``expected_chunk_ids`` 是从哪份金标烤进来的。
+
+    **这组用例补的是一个真实的静默失效**(2026-08-24)：v1 缓存只校验
+    collection 与格式版本。而 2026-08-24 切换金标代次时 collection **没变**、
+    金标变了 —— 于是 ``--sweep`` 会拿第一代的 dense 锚定标签算出推荐权重，
+    **照常成功、不报错**。实测那把旧尺子给出的推荐是 ``sparse=0.1``，
+    换成第二代金标后变成 ``sparse=0.75``：**结论差了 7.5 倍。**
+
+    判据是本项目那句老话：**「它没生效的时候，我怎么会知道？」**
+    """
+
+    def test_golden_set_mismatch_raises(self, cache):
+        with pytest.raises(ValueError, match="golden set"):
+            cal.Cache.from_json(
+                cache.to_json(),
+                expected_collection="test_collection",
+                expected_golden_set="./tests/fixtures/golden_test_set_en.json",
+            )
+
+    def test_labeling_method_mismatch_raises(self, cache):
+        """标注方式不同 = 「正确答案」的定义不同,重放结果不可用。"""
+        with pytest.raises(ValueError, match="Different generations"):
+            cal.Cache.from_json(
+                cache.to_json(),
+                expected_collection="test_collection",
+                expected_labeling_method="dense-top-k",
+            )
+
+    def test_matching_provenance_loads(self, cache):
+        loaded = cal.Cache.from_json(
+            cache.to_json(),
+            expected_collection="test_collection",
+            expected_golden_set="./tests/fixtures/golden_test_set_en_v2.json",
+            expected_labeling_method="pooled-llm-judged",
+        )
+
+        assert loaded.golden_set == "./tests/fixtures/golden_test_set_en_v2.json"
+        assert loaded.labeling_method == "pooled-llm-judged"
+
+    def test_provenance_survives_roundtrip(self, cache):
+        """来源信息必须真的落盘 —— 只在内存里有等于没有。"""
+        assert cache.to_json()["golden_set"] == cache.golden_set
+        assert cache.to_json()["labeling_method"] == cache.labeling_method
+
+    def test_v1_caches_are_rejected(self, cache):
+        """v1 缓存必然是第一代标签,一律拒绝加载。
+
+        重建成本只是一轮 embedding 调用,而误用的代价是一个方向可能相反的
+        权重推荐 —— 不对称,所以选择拒绝而不是警告。
+        """
+        data = cache.to_json()
+        data["_format_version"] = 1
+        with pytest.raises(ValueError, match="Unsupported cache format"):
+            cal.Cache.from_json(data, expected_collection="test_collection")
+
+    def test_no_expectation_means_no_check(self, cache):
+        """不传期望值时不校验 —— 供只想看缓存内容的调用方使用。"""
+        loaded = cal.Cache.from_json(
+            cache.to_json(), expected_collection="test_collection"
+        )
+
+        assert len(loaded.cases) == 3
 
 
 class TestSelectionCriterion:
