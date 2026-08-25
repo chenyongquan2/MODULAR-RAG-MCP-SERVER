@@ -312,6 +312,8 @@ The dashboard is fully dynamic - component names displayed are read from trace l
   - 「答案过短」不是独立成因:4 条短答案全都同时是语言错乱,而语言错乱且答案 ≥100 字符的仍有 71% 降级
   - **两个能力悬殊的 judge 收敛到同一残余降级率**(sonnet-5 33%、glm-5.2-free 扣除限流后 33%),这是「病因在输入侧」的旁证
   - ⚠️ **用免费模型跑批时,限流会伪装成降级**:本次 21 条降级里 7 条实为 `upstream_error`,且集中在连续区间 idx 17/23-28(突发窗口,非 case 属性)。看归因结果先按 `upstream_error` 过滤一遍
+- **⚠️ `temperature=0` 不等于可复现 —— 冻结元组还不够**(2026-08-25 实测,change `answer-language-follows-question`):`context_recall` 只依赖 `(question, ground_truth, contexts)`,三者**逐字相同**、`judge_llm.temperature = 0.0`,判定仍在 **4/41(9.8%)** 条上翻转(0.5→0.0、1.0→0.0、0.5→1.0)。托管模型的批处理与内核非确定性都会引入抖动。**所以 RAGAS 的 ±0.05 级 delta 即使分母稳定也不可归因** —— 真要比较需多次重复取均值并给区间,不是拿单次两个数做减法。⚠️ 另注 `llm.temperature` **这个字段根本不存在**(答案生成用 provider 默认温度),所以答案每轮都不同:同一次对照里 `answer_relevancy` 在 **38/41** 条上都变了
+- **⚠️ 做「逐位不变」类回归判定前,先按 `ERROR` 过滤日志**(同上变更):一次 `OpenAI Embedding API call failed: Request timed out.` 就让一条 case 的 dense 路降级为空列表(`HybridSearch` 的既有设计,正确),该路四项归零,进而改变两项融合后指标 —— 看起来像代码回归。**重放该 case 后完全恢复**(dense 检索连跑三次逐位稳定、embedding 对同一文本两次调用逐位相同)。项目那句「检索侧完全可复现」是真的,**前提是网关不抖**。这与「限流会伪装成降级」是同一类陷阱的另一面
 - **judge 强度对四项 RAGAS 指标的影响不均等,不要笼统地说「换 judge 分数就不能比」**(2026-08-15 配对实验,42 条冻结元组,旧 `glm:minimax/minimax-m2.7` vs `glm:anthropic/claude-sonnet-5`,方法见下):
   - `faithfulness` **稳健**:配对子集 n=23 上 0.9085 → 0.9478(p=0.29,不显著),**方向与「弱 judge 漏检矛盾致虚高」的预期相反**。业界那条警告在本项目语料上未兑现,现有 faithfulness 结论可以照用
   - `context_precision` **对 judge 最敏感**:配对 n=30 上 0.7861 → 0.7037(**p=0.0013**,18 降/3 升),报告口径 0.7643(n=31) → 0.6498(n=40)。**幅度 0.08~0.11 远大于日常决策所依据的差异** —— 它此前的值是在弱 judge 下测的,换 judge 后必须重新校准基线。这条对重排评估尤其要紧:`context_precision` 是四项里唯一不锚定 `expected_chunk_ids` 的指标(因而是当前**唯一可能公正评判重排**的候选),但它同时也是最经不起 judge 漂移的

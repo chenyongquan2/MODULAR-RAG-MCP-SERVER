@@ -219,6 +219,16 @@ context: |
     (claude-sonnet-5 / glm-5.2-free)收敛到同一残余降级率 33%,佐证不是 judge 弱。
     **`max_tokens` 猜想已否证**(595 次成功调用零空响应),故 `JudgeLLMSettings`
     刻意不加该字段 —— 详见 change 的 `acceptance.md`。
+  - **`temperature=0` 不等于可复现**(2026-08-25)。`context_recall` 只依赖
+    (question, ground_truth, contexts),三者逐字相同、judge 温度 0.0,判定仍在
+    **4/41(9.8%)** 条上翻转。托管模型的批处理与内核非确定性都会抖。
+    **所以 RAGAS 的 ±0.05 级 delta 即使分母稳定也不可归因** —— 要比较就多次重复
+    取均值给区间,别拿单次两个数做减法。另注 `llm.temperature` 字段**不存在**,
+    答案生成用 provider 默认温度,所以 answer_relevancy 在 38/41 条上都会变。
+  - **做「逐位不变」回归判定前先按 `ERROR` 过滤日志**(同上)。一次 embedding
+    超时就让一条 case 的 dense 路降级为空(HybridSearch 的既有设计),该路四项归零,
+    进而改变融合后指标 —— 看起来像代码回归,重放后完全恢复。「检索侧完全可复现」
+    是真的,**前提是网关不抖**。
   - **判断 judge 是否"判不出来"要区分三件事**:①上游拒绝/限流 ②响应为空
     ③响应非空但结构不符。用免费模型跑批时**限流会伪装成降级** —— 实测 21 条
     降级里 7 条实为 `upstream_error`,且集中在连续 index 区间(突发窗口,不是
