@@ -261,10 +261,21 @@ class MetadataEnricherSettings:
 
 @dataclass
 class ImageCaptionerSettings:
-    """图片描述生成配置。"""
+    """图片描述生成配置。
+
+    ⚠️ 2026-08-25 移除了 ``use_fallback``。它**从未有过实现** —— 定义在这里、
+    写在 ``settings.yaml`` 里,零个读取点(招牌病第 12 例)。
+
+    它本该控制的行为是「caption 生成失败时标记 ``has_unprocessed_images`` 并继续,
+    而不是让整条摄取失败」。那个行为现在**无条件发生**
+    (``image_captioner._mark_unprocessed_images``),而且没有人会想关掉它 ——
+    为一张坏图中断整份 PDF 的摄取没有任何价值。
+
+    所以这里删掉而不是接上:**加一个不解决任何问题的配置项,就是第三个
+    ``rerank.top_m``**。真需要 fail-fast 的那天再加,届时它会有一个真实的调用方。
+    """
 
     enabled: bool = False
-    use_fallback: bool = True
 
 
 @dataclass

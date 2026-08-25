@@ -212,7 +212,8 @@ ingestion:
     use_llm: false
   image_captioner:
     enabled: true
-    use_fallback: true
+    # 注:use_fallback 已于 2026-08-25 移除 —— 它从未有过实现(零读取点)。
+    # 它本该控制的「caption 失败时标记并继续」现在无条件发生,而没人会想关掉。
 
 # 评估配置 (Feature-001 RAG 质量验收)
 # 详细 schema: specs/001-rag-acceptance/contracts/settings.evaluation.schema.md

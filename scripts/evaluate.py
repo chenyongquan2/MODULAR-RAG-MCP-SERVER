@@ -252,6 +252,7 @@ def main() -> int:
             degraded_case_count=report.degraded_case_count,
             total_cases=report.total_cases,
             max_ratio=settings.evaluation.degradation.max_ratio,
+            unknown_reason_warn=settings.evaluation.degradation.unknown_reason_warn,
         ),
         file=sys.stderr,
     )

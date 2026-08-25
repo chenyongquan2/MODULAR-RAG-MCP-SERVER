@@ -75,7 +75,11 @@ def base_settings():
     settings.ingestion = Mock(spec=IngestionSettings)
     settings.ingestion.image_captioner = Mock(spec=ImageCaptionerSettings)
     settings.ingestion.image_captioner.enabled = True
-    settings.ingestion.image_captioner.use_fallback = True
+    # 这里曾有一行 `use_fallback = True`。该字段已于 2026-08-25 移除 ——
+    # 它**从未被任何生产代码读取**(招牌病第 12 例)。
+    #
+    # 注意本文件的名字:回落行为本身是存在的、也一直被这些用例覆盖着,
+    # 只是它**无条件发生**,从来不受那个开关控制。所以删的是开关,不是行为。
     return settings
 
 

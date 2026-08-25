@@ -27,6 +27,7 @@ def format_degradation_summary(
     degraded_case_count: int,
     total_cases: int,
     max_ratio: Optional[float] = None,
+    unknown_reason_warn: Optional[float] = None,
 ) -> str:
     """把降级情况格式化成人读的摘要文本。
 
@@ -36,6 +37,13 @@ def format_degradation_summary(
         total_cases: 本次评估的用例总数。
         max_ratio: 配置的降级率门槛;传入时会在超标处显式点出门槛值。
             为 ``None`` 表示调用方不关心门槛(只要摘要)。
+        unknown_reason_warn: 兜底原因 ``unknown`` 占全部降级的比例上限,超过即告警。
+            为 ``None`` 表示不检查。
+
+            **它警告的不是「判定质量差」,而是「我们说不清为什么判不出来」** ——
+            归因大半落进 ``unknown`` 时,上游拒绝/限流、响应为空、响应非空但结构
+            不符这三种情形就被糊成了一团,而它们的处置完全不同(换网关 / 加
+            max_tokens / 修解析)。这个信号指向的是**归因逻辑不够用**,不是模型不行。
 
     Returns:
         多行文本(不含结尾换行)。无任何降级时返回单行说明 —— 不展开原因
@@ -84,5 +92,33 @@ def format_degradation_summary(
         )
         for reason in sorted(integrity.reasons):
             lines.append("        %-24s %d" % (reason, integrity.reasons[reason]))
+
+    # 兜底原因占比告警。
+    #
+    # 2026-08-25 补:``degradation.unknown_reason_warn`` 此前是**死配置** ——
+    # 定义了、有文档、被取值范围校验、连 ragas_evaluator 的 docstring 都提到它,
+    # 但没有任何代码读它来告警。这是本项目招牌病的第 11 例。
+    if unknown_reason_warn is not None:
+        total_degraded = sum(
+            sum(integrity.reasons.values()) for integrity in degraded_metrics.values()
+        )
+        unknown_count = sum(
+            integrity.reasons.get("unknown", 0)
+            for integrity in degraded_metrics.values()
+        )
+        if total_degraded > 0:
+            unknown_ratio = unknown_count / total_degraded
+            if unknown_ratio > unknown_reason_warn:
+                lines.append(
+                    "  ⚠️ 兜底原因占比 %.1f%% 超过上限 %.1f%% (%d/%d) —— "
+                    "说不清为什么判不出来,归因逻辑不够用。上游拒绝/限流、"
+                    "响应为空、结构不符这三种的处置完全不同,糊成一团就无法决定下一步"
+                    % (
+                        unknown_ratio * 100,
+                        unknown_reason_warn * 100,
+                        unknown_count,
+                        total_degraded,
+                    )
+                )
 
     return "\n".join(lines)
