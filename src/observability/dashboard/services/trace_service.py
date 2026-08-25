@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.core.trace.trace_context import TraceContext
+from src.observability.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class TraceRecord:
@@ -90,10 +93,11 @@ class TraceRecord:
         Returns:
             阶段耗时（毫秒），未找到返回 None
         """
-        for stage in self.stages:
-            if stage.get("name") == stage_name:
-                return stage.get("duration_ms")
-        return None
+        matches = [s for s in self.stages if s.get("name") == stage_name]
+        if not matches:
+            return None
+        self._warn_if_ambiguous(stage_name, len(matches))
+        return matches[0].get("duration_ms")
 
     def get_stage_data(self, stage_name: str) -> Optional[Dict[str, Any]]:
         """获取指定阶段的额外数据。
@@ -104,10 +108,38 @@ class TraceRecord:
         Returns:
             阶段的 data 字段内容
         """
-        for stage in self.stages:
-            if stage.get("name") == stage_name:
-                return stage.get("data")
-        return None
+        matches = [s for s in self.stages if s.get("name") == stage_name]
+        if not matches:
+            return None
+        self._warn_if_ambiguous(stage_name, len(matches))
+        return matches[0].get("data")
+
+    def _warn_if_ambiguous(self, stage_name: str, count: int) -> None:
+        """同名阶段多于一个时喊出来 —— 「只取第一个」不能是静默行为。
+
+        写入侧(``TraceContext.start_stage``)**允许**重名:它无条件 append,
+        ``finish_stage`` 逆序配对,所以嵌套的同名阶段能正常收尾、不报错。
+        而这里的读取侧一直是「命中即返回」—— 两端不对称。
+
+        2026-08-25 补:目前五个阶段名各不相同(实测最近 200 条 trace 零重名),
+        所以这是**潜伏态**而不是当下的 bug。但多路检索一上(N 个改写各产生一个
+        ``dense_retrieval``),面板就只会显示第 1 路的耗时与命中数,**其余静默丢失**
+        —— 而延迟分析恰恰是多路场景下最要紧的东西。
+
+        刻意**不实现**「返回全部同名阶段」:现在没有调用方需要它,为不存在的需求
+        做设计就是又一个 ``rerank.top_m``。这里只负责让信息丢失**可见** ——
+        真要引入多路时,这条 warning 会是第一个撞上的东西。
+        """
+        if count > 1:
+            logger.warning(
+                "trace %s 有 %d 个同名阶段 %r,读取侧只取第一个 —— "
+                "其余 %d 个的耗时与数据在面板上不可见。"
+                "若这是多路检索引入的,需先让阶段名可区分(例如带路径后缀)",
+                self.trace_id[:8],
+                count,
+                stage_name,
+                count - 1,
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典。"""

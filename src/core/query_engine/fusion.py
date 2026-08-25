@@ -37,10 +37,13 @@ from __future__ import annotations
 from typing import Dict, List, Mapping, Optional, Sequence
 
 from src.core.types import RetrievalResult
+from src.observability.logger import get_logger
 
 #: 路径未在权重配置中出现时的缺省分量。
 #:
 #: 取 1.0 而非报错，是为了让新增检索路径不必强制所有部署同步改配置。
+logger = get_logger(__name__)
+
 DEFAULT_ROUTE_WEIGHT = 1.0
 
 
@@ -86,6 +89,9 @@ class Fusion:
         """
         self._k = k if k is not None else self.DEFAULT_K
         self._weights: Dict[str, float] = dict(weights) if weights else {}
+        # 已警告过的未知路径名(见 weight_for)。只为抑制重复日志,
+        # 不参与任何计算 —— 融合本身仍是无状态的。
+        self._warned_routes: set[str] = set()
 
     @property
     def weights(self) -> Dict[str, float]:
@@ -117,7 +123,35 @@ class Fusion:
         **本变更刻意不实现它** —— 现在没有多路路径名，为不存在的需求做设计只会
         变成又一个 ``rerank.top_m``（写了、有文档、从未生效）。
         """
-        return float(self._weights.get(route, DEFAULT_ROUTE_WEIGHT))
+        if route in self._weights:
+            return float(self._weights[route])
+
+        # 回落到缺省权重 —— **必须喊出来**。
+        #
+        # 2026-08-25 补:此前这里是一句静默的 `.get(route, DEFAULT)`。
+        # 路径名由调用方在 `fuse()` 时决定、**不经配置**,所以配置层的键名校验
+        # 拦不住它 —— 有人把路径命名成 `dense_q0`,这里就悄悄给 1.0,
+        # Feature-005 校准出的 0.75 当场作废,而系统照常运行、不报错、
+        # 只是指标变差。
+        #
+        # 刻意**不实现**路径族查找:现在没有任何多路调用方,为不存在的需求做设计
+        # 就是又一个 `rerank.top_m`。这里只负责让违反变得**可见** ——
+        # 真要引入多路时,这条 warning 会是第一个撞上的东西。
+        #
+        # 每个未知路径名只警告一次(按实例记账),避免逐次查表刷日志。
+        if route not in self._warned_routes:
+            self._warned_routes.add(route)
+            logger.warning(
+                "融合路径 %r 不在权重表 %s 中,回落缺省权重 %.2f —— "
+                "校准出的权重对这一路**不生效**。若这是有意引入的新路径,"
+                "需同时更新 retrieval.fusion_weights 与 settings 的 "
+                "VALID_FUSION_ROUTES;若这是多路检索(如 Multi-Query)的变体路径,"
+                "还需先处理「相关路径得分成倍累加」(见本文件 fuse() 的说明)",
+                route,
+                sorted(self._weights),
+                DEFAULT_ROUTE_WEIGHT,
+            )
+        return float(DEFAULT_ROUTE_WEIGHT)
 
     def fuse(
         self,
