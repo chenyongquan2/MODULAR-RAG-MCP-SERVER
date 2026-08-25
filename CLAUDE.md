@@ -297,7 +297,17 @@ The dashboard is fully dynamic - component names displayed are read from trace l
 - **⚠️ RAGAS 聚合指标的分母是浮动的,报告里的数不是全样本均值**:judge 输出无法解析时该 case 的该指标记为 NaN,`eval_runner` 设计为**不计入分母**(见 [eval_runner.py:14](src/observability/evaluation/eval_runner.py#L14) 与 `degraded_case_count`),于是 42 条的金标可能只有 27 条参与了 faithfulness 的平均。2026-08-15 复核 run `80a82405`:`faithfulness` 15/42 降级(公布值 0.8887 实为 n=27 的均值)、`context_precision` 11/42 降级(0.7643 实为 n=31),`degraded_case_count: 23` = **54.8%,是 SC-006 所定 ≤ 5% 门槛的 11 倍**(⚠️ 那是**第一代金标**上的数;2026-08-24 在第二代 `en_v2` 41 条上重测为 **46.3%(19/41)**,仍是门槛的 9 倍。病灶集中在 `faithfulness`(**39.0%**,16/41 全部 `unparseable`),而 `context_recall` **零降级** —— 与「病因在输入侧的语言错乱、不是 judge 弱」这个既有归因一致。中文 6 条上 `faithfulness` 只有 **1 条**有效,那份报告里的 `1.0000` 是单条算出来的,**是「先读 `metric_integrity` 再读数」最好的教材**)。后果有二:①单次报告的绝对值被幸存者偏差抬高;②**两次运行若降级条数不同则严格不可比**(delta 会把「分母变了」读成「质量变了」)。看 RAGAS 指标前**先看 `degraded_case_count`** —— 这个字段在报告 JSON 里,不在聚合指标里,极易漏读。**已治理**(change `evaluation-degradation-governance`):报告新增按指标的 `metric_integrity`(`valid_count` / `degraded_count` / `reasons`),降级率进 `acceptance_status`(门槛 `evaluation.degradation.max_ratio`,默认 0.05),`scripts/evaluate.py` 结束时把摘要打到 stderr,`BaselineManager` 在分母不一致时标注该指标不可比
 - **降级的病因是「英文问题产出中文答案」,不是 judge 弱、不是 `max_tokens`**(2026-08-16 归因,42 条冻结元组,判定 `glm:z-ai/glm-5.2-free`,详见 [acceptance.md](openspec/changes/archive/2026-08-16-evaluation-degradation-governance/acceptance.md)):
   - **完全分离**:剔除网关限流干扰后的 14 条真实判定失败**全部**是「英文问题 + 中文答案」;语言一致的 14 条**零失败**。42 条里有 **28 条(66.7%)** 答案语言与问题不符
-  - 机制上讲得通:faithfulness 先把 answer 拆成 statements、再拿 contexts 逐条做 NLI。answer 中文而 contexts 英文时两步都在跨语言做,而 RAGAS 0.1.x 的内部 prompt 是英文写的
+  - ⚠️ **2026-08-25 修正了这条的机制表述**:此前写的是「answer 中文而 contexts 英文时两步都在跨语言做」——**跨语言配对不是判据**。在第二代金标 + 当前配置上按上下文分组实测(run `728a77ab`,英文 41 条):
+
+    | 上下文 | 答案 | n | 降级率 |
+    |---|---|---|---|
+    | en | en | 11 | **18%** |
+    | en | zh | 12 | 58% |
+    | **zh** | **en** | 5 | **0%** |
+    | zh | zh | 13 | 62% |
+
+    答案**匹配**上下文的组 42% 降级、**不匹配**的组 41% —— **没有区别**;而「中文上下文 + 英文答案」是 **0%**。所以真实判据是**答案是不是英文**,与上下文无关。机制:faithfulness 先把 answer 拆成 statements 再做 NLI,而 RAGAS 0.1.x 的内部 prompt 是英文写的 —— **它处理中文答案本身就不行**。(n 小,尤其那 5 条;方向明确但幅度别当精确值)
+  - ⚠️ **「答案跟问题同语言」不是充分条件,而且这条与 `adapt` 失败同根**:中文那轮(run `31f2ed71`,6 条)**6/6 语言一致**(中文问→中文答),仍 **5/6 降级**,`faithfulness` 只剩 1 条有效。合起来看:**`ragas==0.1.21` 实质只能工作在英文上,而让它支持中文的机制(`adapt(language=chinese)`,三个模型全部产出 0.0% 中文)是坏的** —— 这是同一句话的两面。**含义:RAGAS 在本项目的中文内容上永远不会好,而语料 81.4% 是中文。** 要解决那一半只有换掉 RAGAS 或绕开它,尚未立项
   - **`max_tokens` 猜想已否证**:595 次成功判定调用**零空响应**,最长响应 3378 字符。labeling 路径那个前科(硬编码 200 致空响应)**没有**在 judge 路径重演,所以 `JudgeLLMSettings` **刻意不加** `max_tokens` —— 加一个不解决任何问题的配置项就是第三个 `top_m`。限定:该否证只在 `glm-5.2-free` 上做过
   - 「答案过短」不是独立成因:4 条短答案全都同时是语言错乱,而语言错乱且答案 ≥100 字符的仍有 71% 降级
   - **两个能力悬殊的 judge 收敛到同一残余降级率**(sonnet-5 33%、glm-5.2-free 扣除限流后 33%),这是「病因在输入侧」的旁证
