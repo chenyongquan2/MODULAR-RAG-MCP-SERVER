@@ -1,0 +1,36 @@
+2026-08-25 17:21:22 [INFO] __main__: Overriding retrieval collection: default_text-embedding-v4 -> default_text-embedding-v4
+2026-08-25 17:21:26 [INFO] src.libs.embedding.openai_embedding: Initialized OpenAI Embedding with model: qwen/text-embedding-v4, base_url: https://ai-api.finpoints.tech/v1
+2026-08-25 17:21:30 [INFO] __main__: Answer generation enabled; instantiating ResponseBuilder.
+2026-08-25 17:21:35 [INFO] src.libs.llm.glm_llm: GLM LLM initialized: model=z-ai/glm-5.2, base_url=https://ai-api.finpoints.tech/v1
+2026-08-25 17:21:37 [INFO] src.observability.evaluation.eval_runner: FR-007 chunk_id validation passed: 612 unique IDs across 41 cases
+2026-08-25 17:21:37 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 17:21:38 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 17:21:38 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 1.1s (avg 1125.3ms per text)
+2026-08-25 17:21:47 [WARNING] src.core.response.response_builder: 答案语言与问题不一致:问题=non-zh 答案=zh —— 用户用一种语言提问却拿到另一种语言的答案
+2026-08-25 17:21:52 [INFO] src.libs.llm.glm_llm: GLM LLM initialized: model=minimax/minimax-m2.7, base_url=https://ai-api.finpoints.tech/v1
+2026-08-25 17:21:52 [INFO] src.observability.evaluation._ragas_wrappers: Built RAGAS judge wrapper: provider=glm, model=minimax/minimax-m2.7
+2026-08-25 17:21:56 [INFO] src.libs.embedding.openai_embedding: Initialized OpenAI Embedding with model: qwen/text-embedding-v4, base_url: https://ai-api.finpoints.tech/v1
+2026-08-25 17:21:56 [INFO] src.observability.evaluation._ragas_wrappers: Built RAGAS embedding wrapper: provider=openai, model=qwen/text-embedding-v4
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:15<00:47, 15.82s/it]No statements were generated from the answer.
+Evaluating:  50%|█████     | 2/4 [00:18<00:16,  8.37s/it]2026-08-25 17:22:45 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 17:22:45 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 17:22:45 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 469.8ms per text)
+2026-08-25 17:22:45 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 17:22:45 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 17:22:45 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.2s (avg 74.8ms per text)
+Evaluating:  75%|███████▌  | 3/4 [00:47<00:17, 17.40s/it]Evaluating: 100%|██████████| 4/4 [01:39<00:00, 31.32s/it]Evaluating: 100%|██████████| 4/4 [01:39<00:00, 24.95s/it]
+2026-08-25 17:23:43 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 17:23:43 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 17:23:43 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.5s (avg 470.6ms per text)
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]Evaluating:  25%|██▌       | 1/4 [00:10<00:30, 10.28s/it]2026-08-25 17:24:34 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 17:24:35 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 17:24:35 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.4s (avg 401.7ms per text)
+2026-08-25 17:24:35 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 3 texts in 1 batches (batch_size=10)
+2026-08-25 17:24:35 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (3/3 texts)
+2026-08-25 17:24:35 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 3 texts in 0.3s (avg 84.2ms per text)
+Evaluating:  50%|█████     | 2/4 [00:38<00:41, 20.82s/it]Evaluating:  75%|███████▌  | 3/4 [01:32<00:35, 35.89s/it]Evaluating: 100%|██████████| 4/4 [01:43<00:00, 26.15s/it]Evaluating: 100%|██████████| 4/4 [01:43<00:00, 25.88s/it]
+2026-08-25 17:25:46 [INFO] src.libs.embedding.openai_embedding: Starting embedding: 1 texts in 1 batches (batch_size=10)
+2026-08-25 17:25:46 [INFO] src.libs.embedding.openai_embedding: Embedding progress: 1/1 batches (1/1 texts)
+2026-08-25 17:25:46 [INFO] src.libs.embedding.openai_embedding: Embedding completed: 1 texts in 0.6s (avg 576.6ms per text)
+2026-08-25 17:25:58 [WARNING] src.core.response.response_builder: 答案语言与问题不一致:问题=non-zh 答案=zh —— 用户用一种语言提问却拿到另一种语言的答案
+Evaluating:   0%|          | 0/4 [00:00<?, ?it/s]

@@ -8,7 +8,25 @@
 
 - [x] 1.2 `StructuredContent` 增可选语言元数据（问题语言 / 答案语言 / 是否一致 / `measured`），`ResponseBuilder.build()` 填充它，并把同一份数据写进**既有的** `trace` 参数（design D4）。无法判定时 `measured: false` 且**不给** `consistent` 字段 —— 回落成「一致」会让「没测」与「测过且没问题」长得一样（design D5）。配套单测：一致 / 不一致 / 未判定三条路径，且断言 `trace` 与 `StructuredContent` 两处的值相同
 
-- [ ] 1.3 **基线测量**：用当前（未改提示词）的配置在英文金标 41 条上跑一次，记录语言一致率。预期约 **39%（16/41）**，与本次立项时的实测吻合即说明 §1 的观测口径正确。这条同时是 §2 唯一的对照。跑法：`.venv/Scripts/python.exe -u scripts/evaluate.py --lang en --pretty --collection default_text-embedding-v4`（需 RAGAS，故不加 `--no-generate-answers`）
+- [x] 1.3 **基线测量**：用当前（未改提示词）的配置在英文金标 41 条上跑一次，记录语言一致率。预期约 **39%（16/41）**，与本次立项时的实测吻合即说明 §1 的观测口径正确。这条同时是 §2 唯一的对照。跑法：`.venv/Scripts/python.exe -u scripts/evaluate.py --lang en --pretty --collection default_text-embedding-v4`（需 RAGAS，故不加 `--no-generate-answers`）
+
+  ### ✅ 改为**离线**完成 —— 不跑那一轮
+
+  归档的 run `728a77ab` 就是「改提示词之前 + 同配置 + 同金标（英文 41 条）」的运行，
+  它的 `case_results` 里存着 query 与 answer。把这些问答对直接喂进**生产代码**
+  `compare_languages()`：
+
+  | | 结果 |
+  |---|---|
+  | 一致 | **16 / 41（39.0%）** |
+  | 不一致 | 25 / 41（61.0%） |
+  | 未判定 | 0 |
+
+  与立项时用外部算法算出的数**逐条吻合**，所以 §1 的观测口径正确。
+
+  **为什么这比跑一轮更好**：跑一轮要约 2 小时网关时间，而它验的是同一件事；
+  离线这条路验的是**真实生产代码路径**在**真实历史数据**上的结果 ——
+  证据强度更高，成本几乎为零。已启动的那轮跑批据此停掉。
 
 ## 2. 改提示词
 
