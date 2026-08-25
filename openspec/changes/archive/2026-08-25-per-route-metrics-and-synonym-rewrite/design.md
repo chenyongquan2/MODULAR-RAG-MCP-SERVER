@@ -5,7 +5,7 @@
 - `QueryProcessor.process()` 产出 `ProcessedQuery`，`HybridSearch` 用 `keywords` 喂 sparse、用
   `original_query` 喂 dense。
 - **`ProcessedQuery.rewritten_query` 已经存在但是个死字段** —— 定义了、有文档、`from_dict`
-  会读，但**全仓没有任何生产路径写它或读它**（[types.py:302](../../../src/core/types.py#L302)）。
+  会读，但**全仓没有任何生产路径写它或读它**（[types.py:302](../../../../src/core/types.py#L302)）。
   它是当初为改写预留的钩子。
 - `EvalRunner` 只通过 `hybrid_search.search()` 拿**融合并重排后**的结果，
   两路各自的名次在它眼里不存在。
