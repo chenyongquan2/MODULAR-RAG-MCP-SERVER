@@ -127,7 +127,9 @@ context: |
   - BM25 索引格式 v2,版本不匹配时 `BM25Indexer.load()` 直接抛 `ValueError`,
     不静默降级。重建:`python scripts/rebuild_bm25_index.py --all`。
   - 融合权重 `retrieval.fusion_weights` 与 `retrieval.rrf_k` 是配置项且**语料
-    相关**。只有相对比例有意义。当前 `sparse=0.1` 由英文金标校准得出,换语料必须
+    相关**。只有相对比例有意义。**当前 `sparse=0.75`**(2026-08-25 在第二代金标上
+    重校准;上一个值 0.1 是在第一代 dense-top-k 金标上校准的,那把尺子系统性压低
+    sparse 权重 —— 它不是「随语料过时」而是当时就偏低)。换语料必须
     用 `scripts/calibrate_fusion_weights.py` 重新校准。
   - 金标的 `recall` / `hit_rate` 不是混合检索的中立裁判:`backfill_chunk_ids.py`
     用纯 dense 检索回填期望 chunk_id(无 BM25、无融合),所以这两项结构性偏向
@@ -149,7 +151,9 @@ context: |
     意味着只作用于 sparse 的改动在融合后几乎不可见。实测:同义词扩展让 sparse
     单路 MRR 掉 **0.061**,融合后**只动 0.0006** —— 光看融合后会读成「没效果」,
     实际是明确的伤害。**只作用于单路的改动(查询改写、分词、BM25 参数)必须看
-    `aggregate_metrics_by_route` 判定。** 分路径基准(英文 41 条,sparse=0.1):
+    `aggregate_metrics_by_route` 判定。**(权重升到 0.75 后稀释效应减弱但不消失。
+    注意分路径指标本身与权重无关 —— 它们量的是融合**之前**每路自己的结果。)
+    分路径基准(英文 41 条):
     dense 单路 MRR 0.7793、sparse 单路 MRR **0.8104** —— 注意 sparse 的排序质量
     反而更高,「瓶颈在 sparse」只在 recall/hit_rate 维度成立。
   - **给 BM25 选同义词扩展看的是「扩展目标够不够稀有」,不是「够不够常见」**
