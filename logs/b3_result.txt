@@ -1,0 +1,10 @@
+metric               none  cross_enc      delta
+------------------------------------------------
+hit_rate           0.9756     0.9756    +0.0000
+mrr                0.8748     0.9350    +0.0602
+ndcg               0.7184     0.7948    +0.0764
+recall             0.4584     0.5107    +0.0523
+
+per-route (should be identical - rerank acts after fusion):
+  dense   identical=False
+  sparse  identical=True
