@@ -1,0 +1,2 @@
+reranker received per query: [12, 15, 19, 18, 15]
+top_k_final=10  top_m=50

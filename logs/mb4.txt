@@ -1,0 +1,10 @@
+2026-08-26 18:16:42 [INFO] src.observability.evaluation.baseline_manager: Marked baseline: collection=default_text-embedding-v4 report_id=b3706441-69ec-4e7c-8b8d-2fd9a965175a status=fail (old baseline moved to history)
+collection        : default_text-embedding-v4
+labeling_method   : pooled-llm-judged
+acceptance_status : fail
+retrieval_mode    : (未标注)
+corpus_validity   : (未标注)
+当前基线          : 728a77ab-5755-460c-b088-0c1bd82396b4
+  → 会被降级进 history,不会删除
+
+[OK] marked as baseline: b3706441-69ec-4e7c-8b8d-2fd9a965175a (marked_by=post-language-fix-en-2026-08-25)

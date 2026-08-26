@@ -176,7 +176,11 @@ context: |
     `MRR`/`nDCG`,不要再用第一代**。
   - **重排默认关闭**:`cross_encoder` 需 `pip install -e ".[rerank]"`(增量约 9MB;
     `torch` 早已由核心依赖 `docling` 拉入)。`backend != none` 时 `model` 必填、
-    依赖缺失启动期抛 `SettingsError`。延迟实测:每候选 121-147 ms → 40 条约 5.2 秒。
+    依赖缺失启动期抛 `SettingsError`。延迟实测:每候选 121-147 ms。
+    ⚠️ 候选量此前记错一倍(2026-08-25 修):重排拿到的是**融合后**截断的结果
+    (`top_k_final * 2`),实测每次 12~19 条,真实延迟约 2 秒而非 5.2 秒。
+    因此 `rerank.top_m: 50` **永远不 binding** —— 上游截断更紧。想让重排看更多
+    候选要改 top_k_final,改 top_m 无效。
   - **`src/core/settings.py` 的校验一律抛 `SettingsError`,不是 `ValueError`** ——
     这是该模块既有的统一约定(`_validate_fusion_settings` / `_validate_evaluation_settings`
     皆然)。libs 层按 CLAUDE.md 的 convention 抛 `ValueError`,由 settings 层转换。

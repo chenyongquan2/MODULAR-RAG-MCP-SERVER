@@ -301,6 +301,19 @@ class HybridSearch:
         # （fuse 的键、fusion_weights 的键、SearchOutcome.routes 的键）必须
         # 是同一个字符串。Fusion.weight_for() 查不到路径名会**静默回落 1.0**，
         # 于是校准出的权重被悄悄作废而系统照常运行、不报错。
+        # ⚠️ `* 2` 是**给下游两步留的余量**,不是「两路」的意思
+        # (2026-08-25 补注 —— 此前这个乘数没有任何说明,谁也说不清它代表什么)。
+        #
+        # 融合之后还有两步会动这个列表:
+        #   1. 元数据过滤 —— 会**删**掉一些,不留余量就可能凑不满 top_k
+        #   2. 重排 —— 会**重排序**,候选给得越多,它越有机会把原本第 11~20 名
+        #      的相关片段提到前 10
+        # 最后才截到 effective_top_k。
+        #
+        # ⚠️ **这个截断决定了重排能看到多少候选,而它比 `rerank.top_m` 更紧。**
+        # 实测(top_k_final=10):重排每次收到 **12~19 条**,上限就是这里的 20 ——
+        # 而 `rerank.top_m` 配的是 50,**永远不会 binding**。
+        # 改 top_m 想让重排看更多候选是无效的,要改的是这里(或 top_k_final)。
         fused_results = self._fusion.fuse(
             {ROUTE_DENSE: dense_results, ROUTE_SPARSE: sparse_results},
             top_k=effective_top_k * 2,
