@@ -415,7 +415,7 @@ grep -rilE "agentic|react|rewrite|planner|sub_quer|subquer" src/
 |---|---|---|---|
 | ~~**C3**~~ | 治理「答案语言与问题语言不符」 | ✅ **2026-08-25 完成并归档**（`archive/2026-08-25-answer-language-follows-question/`，10/10）。**语言一致率 39.0% → 95~100%**（两轮独立测量，主判据成立）。⚠️ 降级率的改善**方向明确但幅度不可靠** —— 同配置两轮为 4.9% 与 31.7%，见归档 acceptance §一之二。⚠️ 修正了两处既有认识 + 查出两个关于测量本身的问题，见下方 | 中 · 走 SDD |
 | **C1** | 中文金标 ≥40 条：绕开 RAGAS evolution，直接用 LLM 从中文 chunk 生成问题 | 语料 **81.4% 是中文**，中文只有 6 条确实是硬伤。但要新建一整条合成链路，且目前没有中文侧实验在等它 | 大 · 走 SDD |
-| **B3** | 是否开启重排（`rerank.backend: none` → `cross_encoder`） | 🔵 **2026-08-25 已重测，等拍板**。此前那句「大概率不开」依据的**两个数都是错的**，见下方 | 小（决策） |
+| ~~**B3**~~ | 是否开启重排（`rerank.backend: none` → `cross_encoder`） | ✅ **2026-08-27 已拍板：开**。英文 nDCG **+0.0764**、中文 **+0.0914**，零 token，约 2.8 秒/查询，按 MCP 场景（调用方是 agent）接受。此前那句「大概率不开」依据的**两个数都是错的**，见下方 | 小（决策） |
 
 ### 2026-08-24 新登记
 
@@ -445,6 +445,30 @@ grep -rilE "agentic|react|rewrite|planner|sub_quer|subquer" src/
 | **C14** | 重名 trace 阶段：写入侧合法，**读取侧只取第一个** | `trace_service.get_stage_duration/get_stage_data` 命中即 return。多路会产生多个 `dense_retrieval` 阶段 → 面板只显示第 1 路，其余静默丢失。**引入多路前必须先处理** | 中 |
 | **C15** | `query_traces.py` 硬编码 5 个阶段名 + Dense/Sparse 两列 + `input_dense`/`input_sparse` | 多路下这两个键若换名，页面用 `.get(..., 0)` 显示 **0** —— 不报错，看起来像「输入为空」 | 中 |
 | **C16** | 相关改写变体各成一路时，同一 chunk 得分**成倍累加**，无贡献次数上限 | Multi-Query 的 3 个改写高度相关，同一 chunk 很可能被 3 路同时命中 → 得分近似 ×3。契约只写「多路出现则相加」，**没讨论相关路径** | 中（Multi-Query 的前置） |
+
+### 2026-08-27 新登记（B3 拍板时撞见）
+
+| # | 事项 | 为什么可以等 | 规模 |
+|---|---|---|---|
+| **C17** | **检索专项跑与全量跑的指标键名不同，把前者标成基线会让 delta 静默落空** | 不影响任何已有结论（B3 两臂是手工对照读数，没走 delta），但它是招牌病的**第 11 例形态**，且踩上去毫无征兆 | 小 |
+
+**C17 的实证**（都是【实测 2026-08-27】/【代码】）：
+
+- `--no-generate-answers` + `backends: [custom]` 的检索专项跑，`aggregate_metrics` 的键是
+  **无前缀**的 `['hit_rate', 'mrr', 'ndcg', 'recall']`（报告 `47e841b8`）
+- 全量跑是 `['custom__hit_rate', …, 'ragas__faithfulness']` 八项（报告 `b3706441`）
+- `BaselineManager._compute_delta` 逐键取基线值，**`base_value is None` 就 `continue`**
+  （[baseline_manager.py:256](../src/observability/evaluation/baseline_manager.py#L256)）
+  —— 两边键集不相交时 `per_metric_delta` 是**空 dict**，不报错、不告警、`delta_comparable`
+  也不会变 `False`（它判的是标注方式，不是键集）
+
+**「它没生效的时候我怎么会知道？」的答案是「不会知道」** —— 所以这条要修。最小修法：
+delta 计算时若**键集交集为空**，显式标一个 `delta_incomparable_reason: "metric key sets disjoint"`，
+而不是返回空 delta。与 C10（基线不分语种）、`_labeling_method` 那条是同一类：
+**让报告说出它到底在比什么。**
+
+⚠️ **在 C17 修好之前**：不要用 `--no-generate-answers` 的专项跑去标基线。要重标当前基线
+（`b3706441` 仍是 `rerank: none` 下测的，已与生产配置不符）必须跑一轮**带答案生成的完整英文评估**。
 
 **C14 / C15 / C16 是 Multi-Query 的真实前置** —— 比「实现多路检索」本身更该先做，
 否则多路一上，观测面（trace、面板）与打分口径（相关路径累加）会同时失真。
@@ -543,7 +567,7 @@ embedding 对同一文本两次调用逐位相同。
 而语料 81.4% 是中文。要解决那一半只有换掉 RAGAS 或绕开它 —— 那是另一个量级的决定，
 **尚未立项**。
 
-### 🔵 B3 重测结果（2026-08-25）—— 等拍板
+### ✅ B3 重测结果（2026-08-25）—— 已于 2026-08-27 拍板：**开启重排**
 
 在**当前配置**下重测（英文 41 条 `pooled-llm-judged`，`sparse=0.75`，
 答案语言已修，`--no-generate-answers` + `backends: [custom]`）：
@@ -579,6 +603,29 @@ embedding 对同一文本两次调用逐位相同。
 
 ⚠️ **`rerank.top_m: 50` 是不可达的**（上游截断 20 更紧）。想让重排看更多候选，
 要改 `top_k_final` 或 `hybrid_search` 里那个 `* 2`，**改 `top_m` 无效**。
+
+#### ✅ 拍板结论（2026-08-27）：**开**
+
+`config/settings.yaml` 已切到 `backend: cross_encoder` + `model: BAAI/bge-reranker-base`。
+理由：收益是本项目迄今最大的单项检索改进且**零 token**，2.8 秒对 MCP 场景（调用方是 agent）
+可接受。若 `smart-appointment-ai-agent` 那侧是面向真人的对话且不能忍这 2.8 秒，
+它可以在自己的配置里把 `backend` 关回 `none` —— 这本来就是一个配置项。
+
+**中文 6 条同向且相对增益更大**（`9f56c494` none → `804f57a9` cross_encoder）：
+MRR `0.6667 → 0.7500`（**+0.0833**）、nDCG `0.6120 → 0.7034`（**+0.0914**）、
+recall `0.4584 → 0.5556`（**+0.0972**）。与 `bge-reranker-base` 是中英双语模型一致。
+⚠️ 顺带盖过了「`sparse=0.75` 在中文上是负增益（MRR −0.0833）」那个损失 ——
+**中文 MRR 回到了 0.75**。分语种融合权重因此不再紧急，但问题仍在（见 CLAUDE.md）。
+
+**两条新税（都已写进 CLAUDE.md）**：
+
+1. ⚠️ **开启后每次冷启动都会尝试联网**。权重已落盘时 `sentence_transformers` 仍会向
+   HuggingFace 发校验请求，墙内**静默挂起** —— 实测 6 条的评估跑了 10 分钟零 CPU 占用，
+   看起来像死循环。**跑批前设 `HF_HUB_OFFLINE=1`**，同一轮 48 秒跑完。
+2. ⚠️ **当前基线 `b3706441` 是 `rerank: none` 下测的，已与生产配置不符**，但**不能**拿
+   B3 的两臂去重标 —— 它们是 `--no-generate-answers` + `backends:[custom]` 的检索专项跑，
+   `aggregate_metrics` 用**无前缀键名**（`mrr`），而全量报告用 `custom__mrr`，
+   标成基线会让此后所有 delta **静默落空**（见 C17）。要重标必须跑一轮带答案生成的完整英文评估。
 
 **C3 的关键事实**（做的时候直接用，别重新挖）：病因**不是** judge 弱、**不是** `max_tokens`。
 剔除限流干扰后 14 条真实判定失败**全部**是「英文问题 + 中文答案」，语言一致的 14 条**零失败**；
@@ -649,7 +696,7 @@ embedding 对同一文本两次调用逐位相同。
 - **选项 B：改名 + 显式标记**，例如 `_ARTIFACT_contaminated_zh_candidate.json`，并在文件里
   加一个醒目的 `_do_not_use` 字段。
 
-## D2 · B3（重排开关）—— 见梯队三，等 B1 之后再定
+## ~~D2 · B3（重排开关）~~ —— ✅ 2026-08-27 已拍板开启，见梯队三
 
 ## D3 · B4（换 judge）—— 已倾向砍掉，重启条件见 § 已决定推迟
 
@@ -691,7 +738,7 @@ embedding 对同一文本两次调用逐位相同。
 | `golden_test_sets_by_lang` | 第一代 zh/en | **B1 要改** |
 | `judge_llm` | `glm:minimax/minimax-m2.7` | B4 已倾向不换 |
 | `screening_llm` | `glm:z-ai/glm-5.2-free` | 与 judge 异源 ✅ |
-| `rerank.backend` | `none` | B3 待定 |
+| `rerank.backend` | **`cross_encoder`** + `BAAI/bge-reranker-base` | B3 已拍板 ✅ 2026-08-27 |
 
 ## 难度分组召回（T2 gate，英文金标）
 

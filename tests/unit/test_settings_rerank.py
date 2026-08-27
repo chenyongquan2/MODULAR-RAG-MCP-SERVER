@@ -219,14 +219,21 @@ class TestBackwardCompatibility:
 class TestRealConfigWiring:
     """settings.yaml 端到端装配。"""
 
-    def test_real_config_keeps_rerank_disabled(self) -> None:
-        """交付的默认配置必须保持不重排。
+    def test_real_config_enables_cross_encoder(self) -> None:
+        """交付的配置自 2026-08-27 起开启 cross_encoder 重排(B3 拍板)。
 
-        本变更只让 cross_encoder 这条路径「能真实跑通」,不改变默认行为 ——
-        既有中英金标基线全部是无重排产出的,改默认会让后续 delta 无法与历史
-        对比。A/B 数据出来后再单独一行配置切换。
+        依据是当前配置(第二代金标 / sparse=0.75 / 答案语言已修)下的 A/B:
+        MRR +0.0602、nDCG +0.0764、recall +0.0523,零 token,约 2.8 秒/查询。
+        此前那条「保持不重排」的断言写着「A/B 数据出来后再单独一行配置切换」,
+        这就是那一行。
+
+        这条断言的作用是让「悄悄切回 none」变红 —— 开关状态是个被实测支撑的
+        决策,不是可以随手改的默认值。model 必填同理:backend != none 时若
+        model 为空,启动期就会失败。
         """
-        assert load_settings(_REAL_CONFIG).rerank.backend == "none"
+        rerank = load_settings(_REAL_CONFIG).rerank
+        assert rerank.backend == "cross_encoder"
+        assert rerank.model == "BAAI/bge-reranker-base"
 
     def test_real_config_passes_validation(self) -> None:
         validate_settings(load_settings(_REAL_CONFIG))

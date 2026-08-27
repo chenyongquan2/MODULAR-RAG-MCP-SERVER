@@ -207,12 +207,15 @@ class TestSettingsIntegration:
         settings = load_settings(_REAL_CONFIG)
         settings.rerank.backend = "cross_encoder"
         settings.rerank.model = "BAAI/bge-reranker-base"
+        # load_settings 内部已经走过一次校验(真实配置现在就是 cross_encoder),
+        # 这里只关心下面这次显式调用有没有触发探测。
+        calls.clear()
         validate_settings(settings)
 
         assert calls == ["cross_encoder"]
 
     def test_real_config_still_validates(self) -> None:
-        """交付的默认配置(backend: none)必须仍能通过校验。"""
+        """交付的配置必须能通过校验(2026-08-27 起 backend 已切到 cross_encoder)。"""
         validate_settings(load_settings(_REAL_CONFIG))
 
     def test_missing_dependency_blocks_startup_end_to_end(

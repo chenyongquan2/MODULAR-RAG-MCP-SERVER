@@ -141,7 +141,7 @@ query:
 # ⚠️ 默认关闭。开启前先 pip install -e ".[rerank]"（cross_encoder 后端需要），
 #    否则启动期会直接报错并给出安装命令（不会静默降级成不重排）。
 rerank:
-  backend: none             # none | cross_encoder | llm
+  backend: cross_encoder    # none | cross_encoder | llm
   # backend != none 时必填，刻意没有隐式默认值 —— 此前的兜底默认值
   # cross-encoder/ms-marco-MiniLM-L-6-v2 是纯英文模型，对中文语料完全无效
   # 且不报错，属于「看起来可配、实际取默认值」那类静默失效。
@@ -153,17 +153,22 @@ rerank:
   #   落盘后完全离线可用
   #
   #   ⚠️ 延迟实测（AMD Zen 3 CPU、真实语料 chunk 中位 428 字符、batch_size=8）：
-  #      每候选 121-147 ms → 40 条候选约 5.2 秒、50 条约 7.3 秒。
-  #      重排会让查询延迟涨一个数量级，开启前先想清楚是否接受。
+  #      每候选 121-147 ms。**重排实际收到的是融合后截断的候选**
+  #      （hybrid_search 截到 top_k_final * 2 = 20，实测每次 12~19 条），
+  #      所以真实开销约 2.8 秒/查询，不是「两路各 20 条 = 40 条」的 5.2 秒。
   #      注意别拿短文本的微基准数字（约 25 ms/pair）做规划 —— cross-encoder
   #      的开销随 token 数走，真实 chunk 比测试样本长得多。
   #
   # llm 后端：复用 llm.provider 的网关配置，**每条候选一次独立串行调用**，
   #   慢且贵（top_m=50 时单次查询约 5-8 万输入 token）。仅作对照用。
-  model: ""
+  model: "BAAI/bge-reranker-base"
   top_m: 50                 # 送入重排的候选上限；超出部分按原名次追加在结果之后，
                             # 不参与重排但也不丢弃。这是 llm 后端唯一能约束调用
-                            # 次数与 token 消耗的旋钮
+                            # 次数与 token 消耗的旋钮。
+                            # ⚠️ 当前配置下这个值**不可达** —— 上游 hybrid_search
+                            # 已把融合结果截到 top_k_final * 2 = 20，比 50 紧得多。
+                            # 想让重排看到更多候选要改 top_k_final（或那个 *2），
+                            # 改 top_m 无效。由 tests/unit/test_rerank_candidate_budget.py 守住
   timeout_sec: 30.0         # 单次重排总耗时上限（秒）。超时保留已评分部分的排序，
                             # 未评分部分保持原名次追加 —— 不抛异常、不丢候选
   batch_size: 8             # 分批推理的批大小，同时决定超时检查的粒度。
