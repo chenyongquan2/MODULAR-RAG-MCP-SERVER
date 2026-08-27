@@ -28,15 +28,21 @@ uv venv .venv
 
 # 首次生成锁文件并安装（开发环境）
 uv lock
-uv sync --extra dev
+uv sync --extra dev --extra rerank
 ```
+
+> ⚠️ **`rerank` extra 不是可选的**（除非你打算关掉重排）。出厂配置
+> `rerank.backend: cross_encoder` 需要它；缺依赖时 `load_settings()` 会在**启动期**
+> 直接抛 `SettingsError` 并给出安装命令 —— 刻意不静默降级成「不重排」。
+> 不想装就把 `config/settings.yaml` 的 `rerank.backend` 改成 `none`。
+> 增量约 9 MB / 4 个包（`torch` 早已由核心依赖 `docling` 拉入，不是重排引入的）。
 
 若你暂时不使用 `uv`，也可以继续使用 `pip`（兼容旧流程）：
 
 ```powershell
 cd C:\workspace\MODULAR-RAG-MCP-SERVER
 .\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
+pip install -e ".[dev,rerank]"
 ```
 
 ### 1.1 迁移后日常依赖工作流（推荐）
@@ -46,11 +52,11 @@ pip install -e ".[dev]"
 ```powershell
 # 拉取最新代码后，先同步依赖
 .\.venv\Scripts\Activate.ps1
-uv sync --extra dev
+uv sync --extra dev --extra rerank
 
 # 运行项目脚本（推荐通过 uv run）
-uv run python scripts/ingest.py --path .\tests\fixtures\sample_documents --collection default
-uv run python scripts/query.py --query "北极星是什么？" --top-k 5 --collection default
+uv run python scripts/ingest.py --path .\tests\fixtures\sample_documents --collection default_text-embedding-v4
+uv run python scripts/query.py --query "北极星是什么？" --top-k 5 --collection default_text-embedding-v4
 uv run pytest tests/unit -v
 ```
 
@@ -80,16 +86,16 @@ Copy-Item .env.example .env
 
 ```powershell
 # 摄取单个文件
-python scripts/ingest.py --path .\asset\rag_test_doc.md --collection default --force
+python scripts/ingest.py --path .\asset\rag_test_doc.md --collection default_text-embedding-v4 --force
 
 # 摄取目录（递归扫描 .pdf/.md/.markdown/.chm）
-python scripts/ingest.py --path .\tests\fixtures\sample_documents --collection default
+python scripts/ingest.py --path .\tests\fixtures\sample_documents --collection default_text-embedding-v4
 ```
 
 ### 4. 查询验证
 
 ```powershell
-python scripts/query.py --query "北极星是什么？" --top-k 5 --collection default
+python scripts/query.py --query "北极星是什么？" --top-k 5 --collection default_text-embedding-v4
 ```
 
 ### 5. 启动 Dashboard
@@ -128,11 +134,16 @@ llm:
 
 ```yaml
 embedding:
-  provider: openai
-  model: text-embedding-3-small
+  provider: openai         # bge | openai | azure | ollama | glm
+  model: qwen/text-embedding-v4
   api_key: ${QWEN_EMBEDDING_API_KEY}
   base_url: ${QWEN_EMBEDDING_BASE_URL}
 ```
+
+> ⚠️ **不要改回 `text-embedding-3-small`** —— 该模型 2026-08-09 已从网关永久下架
+> （`503 model_not_found`）。它是 1536 维，而现存集合是 1024 维，换回去会直接维度不匹配报错
+> （刻意不静默降级）。**模型下架在这个网关上是常态**：遇到该错误先
+> `curl ${GLM_BASE_URL}/models` 看当前清单，再改配置 —— 项目是 provider 无关设计，换模型只改配置。
 
 ### Vector Store / Retrieval / Rerank
 
@@ -140,20 +151,37 @@ embedding:
 vector_store:
   backend: chroma
   persist_path: ./data/db/chroma
-  collection_name: default
+  # dense 与 sparse 两路共用的唯一真源：dense 用它决定打开哪个物理 collection，
+  # sparse 用它决定加载哪个 BM25 索引。切换语料只改这一个值。
+  collection_name: default_text-embedding-v4
 
 retrieval:
   sparse_backend: bm25
   fusion_algorithm: rrf
+  rrf_k: 60                # RRF 平滑参数
+  fusion_weights:          # 两路在融合中的相对分量，只有比例有意义
+    dense: 1.0
+    sparse: 0.75           # 在英文 41 条金标上校准得出
   top_k_dense: 20
   top_k_sparse: 20
   top_k_final: 10
 
 rerank:
-  backend: none      # none | cross_encoder | llm
-  model: ""
+  backend: cross_encoder   # none | cross_encoder | llm
+  model: BAAI/bge-reranker-base
   top_m: 50
+  timeout_sec: 30.0
+  batch_size: 8
 ```
+
+> **关于重排默认开启**（2026-08-27 起）：`cross_encoder` 需要 `pip install -e ".[rerank]"`，
+> **本地 CPU 推理、零 token**。实测收益（英文 41 条金标）nDCG **+0.0764**、MRR +0.0602，
+> 中文 6 条 nDCG **+0.0914**；代价约 **2.8 秒/查询**。若你的调用方是面向真人的对话、
+> 不能接受这个延迟，把 `backend` 改回 `none` 即可 —— 这本来就是一个配置项。
+>
+> ⚠️ **跑批前请设 `HF_HUB_OFFLINE=1`**。权重已落盘时 `sentence_transformers` 仍会向
+> HuggingFace 发校验请求，墙内会**静默挂起**（看起来像死循环，实际阻塞在网络）。
+> 首次下载权重则设 `HF_ENDPOINT=https://hf-mirror.com`。
 
 ### Ingestion 与 Observability
 
@@ -172,8 +200,11 @@ observability:
   log_file: ./logs/traces.jsonl
 
 evaluation:
-  backends: [custom]
-  golden_test_set: ./tests/fixtures/golden_test_set.json
+  backends: [custom, ragas]      # custom 永久启用；ragas 需配置 judge_llm
+  # 真正的金标按语种分开，由 scripts/evaluate.py 的 --lang 选择
+  golden_test_sets_by_lang:
+    zh: ./tests/fixtures/golden_test_set_zh_v2.json   # 6 条
+    en: ./tests/fixtures/golden_test_set_en_v2.json   # 41 条
 
 mcp_server:
   transport: stdio         # stdio | sse
@@ -318,11 +349,31 @@ pytest tests/e2e -v
 pytest -v
 ```
 
-可单独运行评估脚本：
+当前单元测试 **2,253 条**全绿（另有集成与 E2E 测试）。
+
+### 运行评估
 
 ```powershell
-python scripts/evaluate.py --test-set tests/fixtures/golden_test_set.json --pretty
+$env:HF_HUB_OFFLINE = "1"      # 开了重排必须设，否则会静默挂在网络请求上
+python -u scripts/evaluate.py --lang en --pretty --collection default_text-embedding-v4
 ```
+
+> ⚠️ **必须加 `--lang`**。不加会去跑 `golden_test_set.json` —— 那是 4 条的占位集，
+> 不是真金标。真金标由 `evaluation.golden_test_sets_by_lang` 指向（zh 6 条 / en 41 条）。
+>
+> ⚠️ **调试脚本时加 `-u`**。stdout 在管道下是全缓冲的，不加会看到空输出并误判成「进程卡死」。
+
+**当前生产配置下的英文基准**（41 条 `pooled-llm-judged` 金标）：
+
+| 指标 | 值 |
+|---|---|
+| `custom__hit_rate` | 0.9756 |
+| `custom__mrr` | 0.9350 |
+| `custom__ndcg` | 0.7948 |
+| `custom__recall` | 0.5107 |
+
+> 检索侧指标在多次独立运行中逐位可复现。⚠️ 但 RAGAS 四项**不可**这样解读 ——
+> 它们的分母随判定失败浮动，看数前先看报告里的 `metric_integrity` 与 `degraded_case_count`。
 
 ### 额度恢复后回归清单（防遗忘）
 
@@ -336,7 +387,7 @@ Remove-Item Env:SSLKEYLOGFILE -ErrorAction SilentlyContinue
 # 2) I5 手工全链路验收
 python scripts/ingest.py --path tests/fixtures/sample_documents/ --collection test --force
 python scripts/query.py --query "测试查询" --top-k 5 --collection test
-python scripts/evaluate.py --test-set tests/fixtures/golden_test_set.json --pretty
+python -u scripts/evaluate.py --lang en --pretty --collection default_text-embedding-v4
 
 # 3) 自动化回归
 pytest tests/e2e -v
@@ -367,7 +418,7 @@ pytest -v
 
 ```powershell
 uv lock --refresh
-uv sync --extra dev
+uv sync --extra dev --extra rerank
 ```
 
 使用 `pip` 时：
