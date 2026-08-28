@@ -14,10 +14,18 @@ llm:
   model: z-ai/glm-5.2       # 上游 finpoints 代理的 model id 需要 z-ai/ 前缀;查 ${GLM_BASE_URL}/models 可列出所有可用值
   api_key: ${GLM_API_KEY}
   base_url: ${GLM_BASE_URL}
-  # 批量评估（42 条金标 × 答案生成）对瞬时故障很敏感：评估器遇首个失败即
-  # fail-fast，一次网关抖动就让整轮白跑。给足超时与重试。
+  # 批量评估（41 条金标 × 答案生成）对瞬时故障很敏感：评估器遇首个失败即
+  # fail-fast，一次网关抖动就让整轮白跑（BACKLOG C9，尚未修）。给足超时与重试。
+  #
+  # ⚠️ max_retries 由 4 提到 12，是按**实测的突发窗口时长**定标的，不是拍脑袋：
+  #    2026-08-27 两次整轮失败（51 分钟 / 86 分钟全部丢失），其中一次的窗口是
+  #    21:37:01 → 21:37:56，即约 55 秒；事后立即探测网关 3/3 健康。
+  #    OpenAI SDK 的退避约 0.5→1→2→4→8s 后封顶 8s，4 次只覆盖约 15 秒，
+  #    穿不过 55 秒的窗口；12 次约覆盖 70 秒。
+  #    这只是提高单轮存活率，**不是 C9 的修复** —— 真正的修法是让答案生成
+  #    失败降级成 upstream_error 而非终止整轮（项目已有降级基础设施）。
   request_timeout_sec: 180
-  max_retries: 4
+  max_retries: 12
 
 # Embedding 配置（使用 OpenAI 兼容接口，可接入 Qwen/其他兼容 API）
 embedding:
